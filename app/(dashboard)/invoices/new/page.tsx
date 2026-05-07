@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
@@ -16,7 +16,7 @@ type PrefilledData = {
   items: JobLineItem[];
 };
 
-export default function NewInvoicePage() {
+function NewInvoiceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
@@ -124,5 +124,13 @@ export default function NewInvoicePage() {
         />
       </div>
     </div>
+  );
+}
+
+export default function NewInvoicePage() {
+  return (
+    <Suspense>
+      <NewInvoiceContent />
+    </Suspense>
   );
 }

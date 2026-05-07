@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
@@ -47,7 +47,7 @@ const SvcTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ n
   );
 };
 
-export default function RevenueAnalyticsPage() {
+function RevenueAnalyticsContent() {
   const supabase = createClient();
   const searchParams = useSearchParams();
   const [companyId, setCompanyId] = useState<string | null>(null);
@@ -232,5 +232,13 @@ export default function RevenueAnalyticsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function RevenueAnalyticsPage() {
+  return (
+    <Suspense>
+      <RevenueAnalyticsContent />
+    </Suspense>
   );
 }
