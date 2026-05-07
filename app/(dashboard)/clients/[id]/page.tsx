@@ -11,6 +11,7 @@ import { formatDate } from '@/lib/utils';
 import {
   Phone, Mail, MapPin, Edit, Briefcase, ClipboardList, Activity,
 } from 'lucide-react';
+import { InviteToPortalButton } from '@/components/clients/invite-to-portal-button';
 import type { Client, Job } from '@/types';
 
 interface Props {
@@ -29,14 +30,14 @@ export default async function ClientDetailPage({ params }: Props) {
 
   if (error || !client) notFound();
 
-  const { data: jobs } = await supabase
-    .from('jobs')
-    .select('*')
-    .eq('client_id', id)
-    .order('created_at', { ascending: false });
+  const [jobsRes, portalRes] = await Promise.all([
+    supabase.from('jobs').select('*').eq('client_id', id).order('created_at', { ascending: false }),
+    supabase.from('portal_users').select('id').eq('client_id', id).maybeSingle(),
+  ]);
 
   const c = client as Client;
-  const clientJobs = (jobs ?? []) as Job[];
+  const clientJobs = (jobsRes.data ?? []) as Job[];
+  const hasPortalUser = !!portalRes.data;
 
   return (
     <div>
@@ -63,12 +64,20 @@ export default async function ClientDetailPage({ params }: Props) {
             </span>
           </div>
         </div>
-        <Link
-          href={`/clients/${id}/edit`}
-          className={buttonVariants({ variant: 'outline' })}
-        >
-          <Edit className="h-4 w-4 mr-1.5" /> Edit
-        </Link>
+        <div className="flex items-center gap-2">
+          <InviteToPortalButton
+            clientId={id}
+            clientName={c.name}
+            email={c.email ?? ''}
+            hasPortalUser={hasPortalUser}
+          />
+          <Link
+            href={`/clients/${id}/edit`}
+            className={buttonVariants({ variant: 'outline' })}
+          >
+            <Edit className="h-4 w-4 mr-1.5" /> Edit
+          </Link>
+        </div>
       </div>
 
       {/* Tabs */}
