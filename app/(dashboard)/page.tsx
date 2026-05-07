@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,6 +39,15 @@ async function getDashboardData() {
 }
 
 export default async function DashboardPage() {
+  // Crew members use the mobile app, not the dispatcher dashboard
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    const { data: profile } = await supabase
+      .from('profiles').select('role').eq('id', user.id).single();
+    if (profile?.role === 'crew') redirect('/today');
+  }
+
   const { todayJobs, activeClients, openIssues, crewsOut, recentJobs } =
     await getDashboardData();
 

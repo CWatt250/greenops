@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, Users, Briefcase, Wrench, UsersRound, Settings, LogOut, Leaf, CalendarDays,
+  LayoutDashboard, Users, Briefcase, Wrench, UsersRound, Settings, LogOut, Leaf, CalendarDays, RadioTower,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -14,6 +14,7 @@ const navItems = [
   { href: '/clients',   label: 'Clients',         icon: Users },
   { href: '/jobs',      label: 'Jobs',            icon: Briefcase },
   { href: '/schedule',  label: 'Schedule',        icon: CalendarDays },
+  { href: '/crew',      label: 'Dispatch',        icon: RadioTower },
   { href: '/services',  label: 'Service Catalog', icon: Wrench },
   { href: '/crews',     label: 'Crews',           icon: UsersRound },
   { href: '/settings',  label: 'Settings',        icon: Settings },

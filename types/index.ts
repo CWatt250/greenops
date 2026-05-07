@@ -134,3 +134,38 @@ export interface ActivityLog {
   created_at: string;
   actor?: Profile;
 }
+
+export interface ClockEvent {
+  id: string;
+  company_id: string;
+  job_id: string;
+  profile_id: string;
+  event_type: 'clock_in' | 'clock_out';
+  latitude?: number | null;
+  longitude?: number | null;
+  notes?: string | null;
+  created_at: string;
+  profile?: Profile;
+}
+
+export interface JobPhoto {
+  id: string;
+  company_id: string;
+  job_id: string;
+  uploaded_by?: string | null;
+  storage_path: string;
+  caption?: string | null;
+  created_at: string;
+}
+
+export interface Notification {
+  id: string;
+  company_id: string;
+  profile_id: string;
+  title: string;
+  body?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  is_read: boolean;
+  created_at: string;
+}
