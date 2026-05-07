@@ -1,0 +1,136 @@
+export type UserRole = 'owner' | 'dispatcher' | 'crew' | 'customer';
+export type PreferredContact = 'phone' | 'email' | 'sms';
+export type PropertyType = 'residential' | 'commercial' | 'hoa';
+export type ClientStatus = 'active' | 'inactive' | 'prospect' | 'lead';
+export type ServiceCategory =
+  | 'mowing' | 'edging' | 'fertilization' | 'aeration'
+  | 'cleanup' | 'tree' | 'sprinkler' | 'snow' | 'holiday' | 'other';
+export type ServiceUnit = 'per_visit' | 'per_sqft' | 'per_hour' | 'flat' | 'per_unit';
+export type JobStatus =
+  | 'unscheduled' | 'scheduled' | 'in_progress' | 'complete' | 'cancelled' | 'issue';
+export type CrewMemberRole = 'lead' | 'member';
+
+export interface Company {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  created_at: string;
+}
+
+export interface Profile {
+  id: string;
+  company_id?: string;
+  full_name?: string;
+  phone?: string;
+  role: UserRole;
+  avatar_url?: string;
+  created_at: string;
+}
+
+export interface Client {
+  id: string;
+  company_id: string;
+  name: string;
+  company_name?: string;
+  phone?: string;
+  email?: string;
+  preferred_contact: PreferredContact;
+  property_type: PropertyType;
+  service_address: string;
+  service_city?: string;
+  service_state?: string;
+  service_zip?: string;
+  billing_same_as_service: boolean;
+  billing_address?: string;
+  lot_size_sqft?: number;
+  access_notes?: string;
+  gate_code?: string;
+  preferred_crew_id?: string;
+  status: ClientStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Service {
+  id: string;
+  company_id: string;
+  name: string;
+  description?: string;
+  category: ServiceCategory;
+  unit: ServiceUnit;
+  base_price: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface Crew {
+  id: string;
+  company_id: string;
+  name: string;
+  color: string;
+  is_active: boolean;
+  created_at: string;
+  members?: CrewMember[];
+}
+
+export interface CrewMember {
+  id: string;
+  crew_id: string;
+  profile_id: string;
+  role: CrewMemberRole;
+  created_at: string;
+  profile?: Profile;
+}
+
+export interface Job {
+  id: string;
+  company_id: string;
+  client_id?: string;
+  crew_id?: string;
+  title: string;
+  status: JobStatus;
+  scheduled_date?: string;
+  scheduled_start?: string;
+  scheduled_end?: string;
+  actual_start?: string;
+  actual_end?: string;
+  notes?: string;
+  is_recurring: boolean;
+  recurrence_rule?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  client?: Client;
+  crew?: Crew;
+}
+
+export interface JobLineItem {
+  id: string;
+  job_id: string;
+  service_id?: string;
+  description?: string;
+  quantity: number;
+  unit_price: number;
+  total: number;
+  created_at: string;
+  service?: Service;
+}
+
+export interface ActivityLog {
+  id: string;
+  company_id?: string;
+  entity_type?: string;
+  entity_id?: string;
+  action?: string;
+  actor_id?: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  actor?: Profile;
+}
