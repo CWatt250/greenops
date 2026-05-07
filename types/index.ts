@@ -193,6 +193,79 @@ export interface Route {
   crew?: Crew;
 }
 
+export type InvoiceStatus = 'draft' | 'sent' | 'viewed' | 'partial' | 'paid' | 'overdue' | 'cancelled';
+export type PaymentMethod = 'cash' | 'check' | 'card' | 'ach' | 'other';
+
+export interface Invoice {
+  id: string;
+  company_id: string;
+  client_id: string;
+  job_id?: string | null;
+  estimate_id?: string | null;
+  invoice_number: string;
+  status: InvoiceStatus;
+  issued_date: string;
+  due_date?: string | null;
+  subtotal: number;
+  tax_rate: number;
+  tax_amount: number;
+  total: number;
+  amount_paid: number;
+  balance_due: number;
+  notes?: string | null;
+  internal_notes?: string | null;
+  sent_at?: string | null;
+  paid_at?: string | null;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  client?: Client;
+  job?: Job;
+}
+
+export interface InvoiceLineItem {
+  id: string;
+  invoice_id: string;
+  service_id?: string | null;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  total: number;
+  sort_order: number;
+  created_at: string;
+  service?: Service;
+}
+
+export interface Payment {
+  id: string;
+  company_id: string;
+  invoice_id: string;
+  amount: number;
+  method: PaymentMethod;
+  reference_number?: string | null;
+  payment_date: string;
+  notes?: string | null;
+  created_by?: string | null;
+  created_at: string;
+}
+
+export interface BillingSchedule {
+  id: string;
+  company_id: string;
+  client_id: string;
+  job_id?: string | null;
+  recurrence_rule: string;
+  next_invoice_date?: string | null;
+  auto_send: boolean;
+  is_active: boolean;
+  template_notes?: string | null;
+  last_generated_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  client?: Client;
+  job?: Job;
+}
+
 export interface RouteStop {
   id: string;
   route_id: string;
