@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/status-badge';
-import { AlertTriangle, CheckCircle2, Play, Calendar, RotateCcw } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Play, Calendar, RotateCcw, FileText } from 'lucide-react';
 import type { JobStatus } from '@/types';
 
 interface Transition {
@@ -70,6 +71,7 @@ export function StatusWorkflow({ jobId, status, onStatusChange }: StatusWorkflow
   const supabase = createClient();
   const [current, setCurrent] = useState(status);
   const [loading, setLoading] = useState(false);
+  const [justCompleted, setJustCompleted] = useState(false);
 
   async function transition(next: JobStatus) {
     setLoading(true);
@@ -112,6 +114,7 @@ export function StatusWorkflow({ jobId, status, onStatusChange }: StatusWorkflow
 
       setCurrent(next);
       onStatusChange?.(next);
+      if (next === 'complete') setJustCompleted(true);
     }
     setLoading(false);
   }
@@ -152,6 +155,26 @@ export function StatusWorkflow({ jobId, status, onStatusChange }: StatusWorkflow
           <AlertTriangle className="h-4 w-4" />
           Flag Issue
         </Button>
+      )}
+
+      {justCompleted && (
+        <div className="w-full mt-2 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2">
+          <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+          <span className="text-sm text-green-700 font-medium flex-1">Job complete!</span>
+          <Link
+            href={`/invoices/new?job_id=${jobId}`}
+            className="flex items-center gap-1 text-xs font-semibold text-green-700 hover:text-green-900 underline underline-offset-2"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Generate Invoice
+          </Link>
+          <button
+            onClick={() => setJustCompleted(false)}
+            className="text-xs text-green-600 hover:text-green-800 ml-1"
+          >
+            ✕
+          </button>
+        </div>
       )}
     </div>
   );
