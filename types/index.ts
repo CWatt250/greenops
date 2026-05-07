@@ -170,6 +170,93 @@ export interface Notification {
   created_at: string;
 }
 
+export type ServiceRequestType = 'new_service' | 'reschedule' | 'quote_request' | 'cancel' | 'seasonal' | 'other';
+export type ServiceRequestStatus = 'pending' | 'reviewing' | 'scheduled' | 'completed' | 'declined';
+export type ComplaintSeverity = 'low' | 'medium' | 'high';
+export type ComplaintStatus = 'open' | 'reviewing' | 'resolved' | 'closed';
+export type PortalNotificationType = 'job_scheduled' | 'crew_enroute' | 'job_complete' | 'invoice_ready' | 'request_update' | 'complaint_update' | 'message';
+
+export interface PortalUser {
+  id: string;
+  client_id: string;
+  company_id: string;
+  full_name?: string | null;
+  phone?: string | null;
+  notification_prefs: {
+    email_job_reminder: boolean;
+    email_invoice: boolean;
+    email_request_update: boolean;
+    sms_crew_enroute: boolean;
+  };
+  last_seen_at?: string | null;
+  created_at: string;
+}
+
+export interface ServiceRequest {
+  id: string;
+  company_id: string;
+  client_id: string;
+  portal_user_id?: string | null;
+  type: ServiceRequestType;
+  service_id?: string | null;
+  title: string;
+  description?: string | null;
+  preferred_date?: string | null;
+  preferred_time?: string | null;
+  status: ServiceRequestStatus;
+  admin_notes?: string | null;
+  resolved_at?: string | null;
+  resolved_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  client?: Client;
+  service?: Service;
+}
+
+export interface Message {
+  id: string;
+  company_id: string;
+  client_id: string;
+  thread_id: string;
+  sender_type: 'portal_user' | 'admin';
+  sender_id: string;
+  body: string;
+  read_at?: string | null;
+  created_at: string;
+}
+
+export interface Complaint {
+  id: string;
+  company_id: string;
+  client_id: string;
+  portal_user_id?: string | null;
+  job_id?: string | null;
+  title: string;
+  description: string;
+  photo_urls?: string[] | null;
+  severity: ComplaintSeverity;
+  status: ComplaintStatus;
+  resolution_notes?: string | null;
+  resolved_at?: string | null;
+  resolved_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  client?: Client;
+  job?: Job;
+}
+
+export interface PortalNotification {
+  id: string;
+  portal_user_id: string;
+  title: string;
+  body?: string | null;
+  type?: PortalNotificationType | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  read: boolean;
+  created_at: string;
+}
+
 export type RouteStatus = 'draft' | 'active' | 'in_progress' | 'complete';
 export type StopStatus = 'pending' | 'en_route' | 'arrived' | 'complete' | 'skipped';
 
