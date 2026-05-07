@@ -3,13 +3,13 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, Users, Briefcase, Wrench, UsersRound, Settings, LogOut, Leaf, CalendarDays, RadioTower, Route, FileText, Wallet, BarChart2,
+  LayoutDashboard, Users, Briefcase, Wrench, UsersRound, Settings, LogOut, Leaf, CalendarDays, RadioTower, Route, FileText, Wallet, BarChart2, Globe,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 
-const navItems = [
+const mainNav = [
   { href: '/',          label: 'Dashboard',      icon: LayoutDashboard },
   { href: '/clients',   label: 'Clients',         icon: Users },
   { href: '/jobs',      label: 'Jobs',            icon: Briefcase },
@@ -24,6 +24,10 @@ const navItems = [
   { href: '/settings',  label: 'Settings',        icon: Settings },
 ];
 
+const portalNav = [
+  { href: '/portal-admin', label: 'Portal Admin', icon: Globe },
+];
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -32,6 +36,26 @@ export function Sidebar() {
   async function handleSignOut() {
     await supabase.auth.signOut();
     router.push('/login');
+  }
+
+  function NavLink({ href, label, icon: Icon }: { href: string; label: string; icon: React.ElementType }) {
+    const isActive = href === '/' ? pathname === '/' : pathname.startsWith(href);
+    return (
+      <li>
+        <Link
+          href={href}
+          className={cn(
+            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+            isActive
+              ? 'bg-[var(--color-brand-green-raw)] text-white'
+              : 'text-white/70 hover:bg-white/10 hover:text-white'
+          )}
+        >
+          <Icon className="h-4 w-4 shrink-0" />
+          {label}
+        </Link>
+      </li>
+    );
   }
 
   return (
@@ -51,28 +75,16 @@ export function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3">
+      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-4">
         <ul className="space-y-1">
-          {navItems.map(({ href, label, icon: Icon }) => {
-            const isActive = href === '/' ? pathname === '/' : pathname.startsWith(href);
-            return (
-              <li key={href}>
-                <Link
-                  href={href}
-                  className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                    isActive
-                      ? 'bg-[var(--color-brand-green-raw)] text-white'
-                      : 'text-white/70 hover:bg-white/10 hover:text-white'
-                  )}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {label}
-                </Link>
-              </li>
-            );
-          })}
+          {mainNav.map((item) => <NavLink key={item.href} {...item} />)}
         </ul>
+        <div>
+          <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-white/30">Portal</p>
+          <ul className="space-y-1">
+            {portalNav.map((item) => <NavLink key={item.href} {...item} />)}
+          </ul>
+        </div>
       </nav>
 
       {/* Footer */}

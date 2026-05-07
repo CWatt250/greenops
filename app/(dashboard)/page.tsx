@@ -46,6 +46,7 @@ export default async function DashboardPage() {
     const { data: profile } = await supabase
       .from('profiles').select('role').eq('id', user.id).single();
     if (profile?.role === 'crew') redirect('/today');
+    if (profile?.role === 'customer') redirect('/portal');
   }
 
   const { todayJobs, activeClients, openIssues, crewsOut, recentJobs } =
