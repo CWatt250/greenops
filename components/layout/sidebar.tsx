@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, Users, Briefcase, Wrench, UsersRound, Settings, LogOut, Leaf, CalendarDays, RadioTower, Route, FileText, Wallet,
+  LayoutDashboard, Users, Briefcase, Wrench, UsersRound, Settings, LogOut, Leaf, CalendarDays, RadioTower, Route, FileText, Wallet, BarChart2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -16,8 +16,9 @@ const navItems = [
   { href: '/schedule',  label: 'Schedule',        icon: CalendarDays },
   { href: '/routes',    label: 'Routes',          icon: Route },
   { href: '/crew',      label: 'Dispatch',        icon: RadioTower },
-  { href: '/invoices',  label: 'Invoices',        icon: FileText },
-  { href: '/billing',   label: 'Billing',         icon: Wallet },
+  { href: '/invoices',   label: 'Invoices',        icon: FileText },
+  { href: '/billing',    label: 'Billing',         icon: Wallet },
+  { href: '/analytics',  label: 'Analytics',       icon: BarChart2 },
   { href: '/services',  label: 'Service Catalog', icon: Wrench },
   { href: '/crews',     label: 'Crews',           icon: UsersRound },
   { href: '/settings',  label: 'Settings',        icon: Settings },

@@ -70,11 +70,12 @@ export function PaymentForm({ open, onOpenChange, invoiceId, companyId, balanceD
       return;
     }
 
-    // Trigger invoice recalculation via updated_at touch (server can handle via trigger if set up)
+    // Touch invoice updated_at and refresh analytics views
     await supabase
       .from('invoices')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', invoiceId);
+    void supabase.rpc('refresh_analytics');
 
     toast.success('Payment recorded.');
     onPaymentAdded(payment as Payment);

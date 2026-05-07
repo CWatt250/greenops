@@ -167,6 +167,7 @@ export default function CompleteJobPage() {
       );
     }
 
+    void supabase.rpc('refresh_analytics');
     setDone(true);
     setSubmitting(false);
   }

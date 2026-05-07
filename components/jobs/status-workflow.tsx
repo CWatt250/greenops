@@ -114,7 +114,10 @@ export function StatusWorkflow({ jobId, status, onStatusChange }: StatusWorkflow
 
       setCurrent(next);
       onStatusChange?.(next);
-      if (next === 'complete') setJustCompleted(true);
+      if (next === 'complete') {
+        setJustCompleted(true);
+        void supabase.rpc('refresh_analytics');
+      }
     }
     setLoading(false);
   }
