@@ -169,3 +169,42 @@ export interface Notification {
   is_read: boolean;
   created_at: string;
 }
+
+export type RouteStatus = 'draft' | 'active' | 'in_progress' | 'complete';
+export type StopStatus = 'pending' | 'en_route' | 'arrived' | 'complete' | 'skipped';
+
+export interface Route {
+  id: string;
+  company_id: string;
+  crew_id?: string | null;
+  route_date: string;
+  title?: string | null;
+  status: RouteStatus;
+  total_drive_minutes?: number | null;
+  total_job_minutes?: number | null;
+  total_stops?: number | null;
+  optimized_at?: string | null;
+  weather_checked_at?: string | null;
+  weather_summary?: string | null;
+  weather_flag: boolean;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  crew?: Crew;
+}
+
+export interface RouteStop {
+  id: string;
+  route_id: string;
+  job_id: string;
+  stop_order: number;
+  estimated_arrival?: string | null;
+  estimated_duration_minutes?: number | null;
+  drive_minutes_from_prev?: number | null;
+  drive_distance_miles?: number | null;
+  status: StopStatus;
+  actual_arrival?: string | null;
+  actual_departure?: string | null;
+  created_at: string;
+  job?: Job;
+}
