@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { MobileNav } from '@/components/layout/mobile-nav';
+import { NotificationBell } from '@/components/shared/notification-bell';
 import { Button } from '@/components/ui/button';
 import { Menu } from 'lucide-react';
 
@@ -22,16 +23,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Main content */}
       <div className="flex flex-1 flex-col md:ml-64">
         {/* Mobile top bar */}
-        <header className="sticky top-0 z-40 flex h-14 items-center gap-4 border-b bg-background px-4 md:hidden">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setMobileOpen(true)}
-            aria-label="Open menu"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-          <span className="font-semibold text-sm">TLC GreenOps</span>
+        <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-4 border-b bg-background px-4 md:hidden">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setMobileOpen(true)}
+              aria-label="Open menu"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            <span className="font-semibold text-sm">TLC GreenOps</span>
+          </div>
+          <NotificationBell />
         </header>
 
         <main className="flex-1 p-4 md:p-6 lg:p-8">{children}</main>
