@@ -39,15 +39,23 @@ export function AreaSummary({ shapes }: Props) {
           <p className="font-mono tabular-nums">{totals.bed.toLocaleString()} sf</p>
         </div>
         <div>
-          <p className="text-muted-foreground">Other</p>
+          <p className="text-muted-foreground">Other area</p>
           <p className="font-mono tabular-nums">{totals.other.toLocaleString()} sf</p>
         </div>
         <div>
-          <p className="text-muted-foreground">Total measured</p>
+          <p className="text-muted-foreground">Total area</p>
           <p className="font-mono tabular-nums font-semibold">
             {totals.total.toLocaleString()} sf
           </p>
         </div>
+        {totals.lineLength > 0 && (
+          <div className="col-span-2">
+            <p className="text-muted-foreground">Total line length</p>
+            <p className="font-mono tabular-nums">
+              {totals.lineLength.toLocaleString()} ft
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="rounded-lg bg-[var(--orange-soft)] p-3 space-y-1">

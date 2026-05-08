@@ -1,18 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Map, { type MapRef, NavigationControl, Marker } from 'react-map-gl/mapbox';
+import Map, {
+  type MapRef,
+  Marker,
+  NavigationControl,
+} from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { MAPBOX_TOKEN } from '@/lib/mapbox';
 import {
-  polygonAreaSqFt,
-  SHAPE_TYPE_COLORS,
-  type MeasuredShape,
-  type ShapeType,
+  lineLengthFt, polygonAreaSqFt, suggestLabel, SHAPE_TYPE_COLORS,
+  isAreaType, isLineType,
+  type MeasuredShape, type ShapeType,
 } from '@/lib/measurement';
-import { Layers } from 'lucide-react';
+import { Layers, Pentagon, Slash, Trash2, HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ShapeEditPopup } from './shape-edit-popup';
 
 const TRI_CITIES_FALLBACK = { longitude: -119.1734, latitude: 46.2087, zoom: 11 };
 
@@ -20,28 +24,38 @@ interface MeasureMapProps {
   center: { lng: number; lat: number } | null;
   shapes: MeasuredShape[];
   onShapesChange: (shapes: MeasuredShape[]) => void;
+  /** Imperatively focus on a shape (called via ref by the right panel). */
+  focusShapeRef?: React.MutableRefObject<((id: string) => void) | null>;
 }
 
 /**
- * Mapbox satellite map + Mapbox GL Draw for polygons.
- * Each drawn polygon is converted to a MeasuredShape with computed area.
+ * Mapbox satellite map + Mapbox GL Draw with a custom React tool panel.
+ * Big buttons, labeled controls, and a click-to-edit popup over each shape.
  */
-export default function MeasureMap({ center, shapes, onShapesChange }: MeasureMapProps) {
+export default function MeasureMap({
+  center, shapes, onShapesChange, focusShapeRef,
+}: MeasureMapProps) {
   const mapRef = useRef<MapRef>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const drawRef = useRef<any>(null);
   const shapesRef = useRef<MeasuredShape[]>(shapes);
   const onShapesRef = useRef(onShapesChange);
+  const centerRef = useRef(center);
+
   const [styleId, setStyleId] = useState<'satellite' | 'streets'>('satellite');
   const [drawReady, setDrawReady] = useState(false);
+  const [activeMode, setActiveMode] = useState<'simple_select' | 'draw_polygon' | 'draw_line_string'>('simple_select');
+  const [helpOpen, setHelpOpen] = useState(false);
 
-  useEffect(() => {
-    shapesRef.current = shapes;
-  }, [shapes]);
+  // Selected-shape editor state (popup positioned at the shape's centroid)
+  const [editing, setEditing] = useState<{
+    shapeId: string;
+    position: { x: number; y: number };
+  } | null>(null);
 
-  useEffect(() => {
-    onShapesRef.current = onShapesChange;
-  }, [onShapesChange]);
+  useEffect(() => { shapesRef.current = shapes; }, [shapes]);
+  useEffect(() => { onShapesRef.current = onShapesChange; }, [onShapesChange]);
+  useEffect(() => { centerRef.current = center; }, [center]);
 
   const initialViewState = useMemo(
     () => (center
@@ -50,21 +64,34 @@ export default function MeasureMap({ center, shapes, onShapesChange }: MeasureMa
     [center]
   );
 
+  // Pan/zoom to a shape's centroid (called by the right panel via ref).
+  useEffect(() => {
+    if (!focusShapeRef) return;
+    focusShapeRef.current = (id: string) => {
+      const map = mapRef.current?.getMap();
+      const shape = shapesRef.current.find((s) => s.id === id);
+      if (!map || !shape) return;
+      const c = computeCentroid(shape.geometry);
+      if (!c) return;
+      map.flyTo({ center: c, zoom: 19, duration: 600 });
+    };
+    return () => {
+      if (focusShapeRef) focusShapeRef.current = null;
+    };
+  }, [focusShapeRef]);
+
   const handleMapLoad = useCallback(async () => {
     const map = mapRef.current?.getMap();
     if (!map) return;
 
-    // mapbox-gl-draw is a vanilla mapbox-gl plugin — dynamic-import so it
-    // doesn't pull into the SSR bundle.
     const MapboxDraw = (await import('@mapbox/mapbox-gl-draw')).default;
 
     const draw = new MapboxDraw({
       displayControlsDefault: false,
-      controls: { polygon: true, line_string: true, trash: true },
+      controls: {}, // we render our own panel
       defaultMode: 'simple_select',
-      // Custom styles: orange while drawing, type-coloured when committed.
       styles: [
-        // Polygon fill — coloured by feature.properties.color (set on update).
+        // Polygon fill — coloured by user_color, set when type changes.
         {
           id: 'gl-draw-polygon-fill',
           type: 'fill',
@@ -74,7 +101,6 @@ export default function MeasureMap({ center, shapes, onShapesChange }: MeasureMa
             'fill-opacity': 0.3,
           },
         },
-        // Polygon outline.
         {
           id: 'gl-draw-polygon-stroke',
           type: 'line',
@@ -85,7 +111,6 @@ export default function MeasureMap({ center, shapes, onShapesChange }: MeasureMa
             'line-width': 2.5,
           },
         },
-        // Polygon vertices while editing.
         {
           id: 'gl-draw-polygon-and-line-vertex-active',
           type: 'circle',
@@ -97,19 +122,22 @@ export default function MeasureMap({ center, shapes, onShapesChange }: MeasureMa
             'circle-stroke-width': 2,
           },
         },
-        // Line string (perimeter measure).
+        // Line string with thicker stroke (we paint distance label via a marker).
         {
           id: 'gl-draw-line',
           type: 'line',
-          filter: ['all', ['==', '$type', 'LineString']],
+          filter: ['all', ['==', '$type', 'LineString'], ['!=', 'mode', 'static']],
           layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: { 'line-color': '#F15A24', 'line-width': 3 },
+          paint: {
+            'line-color': ['coalesce', ['get', 'user_color'], '#F15A24'],
+            'line-width': 3.5,
+          },
         },
       ],
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    map.addControl(draw as unknown as any, 'top-right');
+    map.addControl(draw as unknown as any);
     drawRef.current = draw;
     setDrawReady(true);
 
@@ -123,6 +151,7 @@ export default function MeasureMap({ center, shapes, onShapesChange }: MeasureMa
           properties: {
             label: s.label,
             shapeType: s.type,
+            kind: s.kind,
             color: SHAPE_TYPE_COLORS[s.type],
           },
           geometry: s.geometry,
@@ -136,28 +165,104 @@ export default function MeasureMap({ center, shapes, onShapesChange }: MeasureMa
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const fc = (drawRef.current as any).getAll() as GeoJSON.FeatureCollection;
       const next: MeasuredShape[] = [];
+      const prev = shapesRef.current;
+      let polyN = 0;
+      let lineN = 0;
       for (const feature of fc.features) {
-        if (feature.geometry.type !== 'Polygon') continue;
+        const geomType = feature.geometry.type;
+        if (geomType !== 'Polygon' && geomType !== 'LineString') continue;
         const id = String(feature.id ?? '');
-        const existing = shapesRef.current.find((s) => s.id === id);
-        const props = (feature.properties ?? {}) as { label?: string; shapeType?: ShapeType };
+        const existing = prev.find((s) => s.id === id);
+        const props = (feature.properties ?? {}) as {
+          label?: string; shapeType?: ShapeType; kind?: 'polygon' | 'line';
+        };
+        const kind = geomType === 'Polygon' ? 'polygon' : 'line';
+        // Default type based on kind: polygons start as Turf, lines as Edging.
+        const fallbackType: ShapeType = kind === 'polygon' ? 'turf' : 'edging';
+        const type = (props.shapeType ?? existing?.type ?? fallbackType) as ShapeType;
+
+        if (kind === 'polygon') polyN += 1;
+        else lineN += 1;
+
+        // Smart label suggestion for new shapes (no existing label).
+        const suggested = existing
+          ? null
+          : suggestLabel(feature.geometry as GeoJSON.Polygon | GeoJSON.LineString, type, centerRef.current);
+        const fallbackLabel = kind === 'polygon' ? `Area ${polyN}` : `Line ${lineN}`;
+
         next.push({
           id,
-          label: props.label ?? existing?.label ?? `Area ${next.length + 1}`,
-          type: (props.shapeType ?? existing?.type ?? 'turf') as ShapeType,
-          area_sqft: polygonAreaSqFt(feature.geometry as GeoJSON.Polygon),
-          geometry: feature.geometry as GeoJSON.Polygon,
+          label: existing?.label ?? props.label ?? suggested ?? fallbackLabel,
+          kind,
+          type,
+          area_sqft: kind === 'polygon'
+            ? polygonAreaSqFt(feature.geometry as GeoJSON.Polygon)
+            : 0,
+          length_ft: kind === 'line'
+            ? lineLengthFt(feature.geometry as GeoJSON.LineString)
+            : 0,
+          geometry: feature.geometry as GeoJSON.Polygon | GeoJSON.LineString,
         });
       }
       onShapesRef.current(next);
     }
 
-    map.on('draw.create', handleChange);
+    function handleSelectionChange(e: { features: GeoJSON.Feature[] }) {
+      const map = mapRef.current?.getMap();
+      const f = e.features?.[0];
+      if (!map || !f || (f.geometry.type !== 'Polygon' && f.geometry.type !== 'LineString')) {
+        setEditing(null);
+        return;
+      }
+      const id = String(f.id ?? '');
+      const c = computeCentroid(f.geometry as GeoJSON.Polygon | GeoJSON.LineString);
+      if (!c) return;
+      const pixel = map.project(c);
+      setEditing({ shapeId: id, position: { x: pixel.x, y: pixel.y } });
+    }
+
+    // Switch back to simple_select after a draw completes so users can pick
+    // up another tool intentionally. Without this, they'd stay in
+    // draw_polygon and the next click would start another shape.
+    function handleModeChange(e: { mode: string }) {
+      setActiveMode(e.mode as typeof activeMode);
+    }
+    function handleCreate() {
+      handleChange();
+      // After create, Mapbox Draw auto-flips to simple_select.
+    }
+
+    map.on('draw.create', handleCreate);
     map.on('draw.update', handleChange);
-    map.on('draw.delete', handleChange);
+    map.on('draw.delete', () => { setEditing(null); handleChange(); });
+    map.on('draw.selectionchange', handleSelectionChange);
+    map.on('draw.modechange', handleModeChange);
   }, []);
 
-  // Keep Draw's style/colour properties in sync when shapes' types change in the right panel.
+  // Re-position the editor popup as the user pans/zooms.
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map || !editing) return;
+    function reposition() {
+      if (!editing) return;
+      const m = mapRef.current?.getMap();
+      if (!m) return;
+      const shape = shapesRef.current.find((s) => s.id === editing.shapeId);
+      if (!shape) return;
+      const c = computeCentroid(shape.geometry);
+      if (!c) return;
+      const px = m.project(c);
+      setEditing({ shapeId: editing.shapeId, position: { x: px.x, y: px.y } });
+    }
+    map.on('move', reposition);
+    map.on('zoom', reposition);
+    return () => {
+      map.off('move', reposition);
+      map.off('zoom', reposition);
+    };
+  }, [editing]);
+
+  // Sync user_color back to draw features whenever the type changes from React.
   useEffect(() => {
     if (!drawReady || !drawRef.current) return;
     for (const s of shapes) {
@@ -166,12 +271,37 @@ export default function MeasureMap({ center, shapes, onShapesChange }: MeasureMa
         const draw = drawRef.current as any;
         draw.setFeatureProperty(s.id, 'label', s.label);
         draw.setFeatureProperty(s.id, 'shapeType', s.type);
+        draw.setFeatureProperty(s.id, 'kind', s.kind);
         draw.setFeatureProperty(s.id, 'color', SHAPE_TYPE_COLORS[s.type]);
-      } catch {
-        // Feature might have been removed elsewhere; ignore.
-      }
+      } catch { /* feature gone */ }
     }
   }, [shapes, drawReady]);
+
+  function setMode(mode: 'simple_select' | 'draw_polygon' | 'draw_line_string') {
+    if (!drawRef.current) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (drawRef.current as any).changeMode(mode);
+    setActiveMode(mode);
+  }
+
+  function deleteSelected() {
+    if (!drawRef.current) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const draw = drawRef.current as any;
+    const ids = draw.getSelectedIds();
+    if (ids.length === 0) return;
+    draw.delete(ids);
+    setEditing(null);
+    // draw.delete fires draw.delete event → onShapesChange already updates state.
+  }
+
+  function deleteOne(id: string) {
+    if (!drawRef.current) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const draw = drawRef.current as any;
+    draw.delete([id]);
+    setEditing(null);
+  }
 
   if (!MAPBOX_TOKEN) {
     return (
@@ -189,6 +319,28 @@ export default function MeasureMap({ center, shapes, onShapesChange }: MeasureMa
   const styleUrl = styleId === 'satellite'
     ? 'mapbox://styles/mapbox/satellite-streets-v12'
     : 'mapbox://styles/mapbox/streets-v12';
+
+  // Distance labels for line shapes — placed at each line's midpoint.
+  const lineLabels = shapes
+    .filter((s) => s.kind === 'line')
+    .map((s) => {
+      const midpoint = lineMidpoint(s.geometry as GeoJSON.LineString);
+      return midpoint ? { id: s.id, lng: midpoint[0], lat: midpoint[1], label: `${s.length_ft.toLocaleString()} ft` } : null;
+    })
+    .filter((x): x is { id: string; lng: number; lat: number; label: string } => x !== null);
+
+  // Polygon order badges — sequential numbers at centroids.
+  const orderBadges = shapes.map((s, i) => {
+    const c = computeCentroid(s.geometry);
+    return c ? {
+      id: s.id, lng: c[0], lat: c[1], n: i + 1, color: SHAPE_TYPE_COLORS[s.type],
+    } : null;
+  }).filter((x): x is { id: string; lng: number; lat: number; n: number; color: string } => x !== null);
+
+  const noShapes = shapes.length === 0;
+  const editingShape = editing
+    ? shapes.find((s) => s.id === editing.shapeId) ?? null
+    : null;
 
   return (
     <div className="relative w-full h-full">
@@ -211,10 +363,32 @@ export default function MeasureMap({ center, shapes, onShapesChange }: MeasureMa
             </div>
           </Marker>
         )}
+        {/* Sequential order badges */}
+        {orderBadges.map((b) => (
+          <Marker key={`n-${b.id}`} longitude={b.lng} latitude={b.lat} anchor="center">
+            <span
+              className="inline-flex h-5 w-5 items-center justify-center rounded-full text-white text-[10px] font-bold shadow"
+              style={{ backgroundColor: b.color, border: '2px solid #fff' }}
+            >
+              {b.n}
+            </span>
+          </Marker>
+        ))}
+        {/* Line distance labels */}
+        {lineLabels.map((l) => (
+          <Marker key={`d-${l.id}`} longitude={l.lng} latitude={l.lat} anchor="center">
+            <div
+              className="rounded-full bg-background/95 backdrop-blur-sm border shadow px-2 py-0.5 text-[10px] font-mono tabular-nums"
+              style={{ color: 'var(--orange-deep)', borderColor: 'var(--orange)' }}
+            >
+              {l.label}
+            </div>
+          </Marker>
+        ))}
       </Map>
 
-      {/* Style toggle */}
-      <div className="absolute top-3 left-3 inline-flex rounded-lg border bg-background/95 backdrop-blur-sm shadow p-0.5">
+      {/* Style toggle (top-left) */}
+      <div className="absolute top-3 left-3 inline-flex rounded-lg border bg-background/95 backdrop-blur-sm shadow p-0.5 z-10">
         {(['satellite', 'streets'] as const).map((s) => (
           <button
             key={s}
@@ -233,12 +407,177 @@ export default function MeasureMap({ center, shapes, onShapesChange }: MeasureMa
         ))}
       </div>
 
-      {/* Drawing instructions */}
-      {shapes.length === 0 && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-background/95 backdrop-blur-sm border shadow px-3 py-1.5 text-[11px] text-muted-foreground">
-          Use the polygon tool (top-right) to outline the lawn. Double-click to close.
+      {/* Custom tool panel (top-right) — big, labeled buttons */}
+      <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-10">
+        <div className="rounded-xl border bg-background/95 backdrop-blur-sm shadow-md p-1.5 flex flex-col gap-1">
+          <ToolButton
+            label="Area"
+            sublabel="Polygon"
+            active={activeMode === 'draw_polygon'}
+            onClick={() => setMode('draw_polygon')}
+            icon={<Pentagon className="h-5 w-5" />}
+            title="Polygon — measure area (click to add a vertex, double-click to close)"
+          />
+          <ToolButton
+            label="Line"
+            sublabel="Distance"
+            active={activeMode === 'draw_line_string'}
+            onClick={() => setMode('draw_line_string')}
+            icon={<Slash className="h-5 w-5" />}
+            title="Line — measure distance (click to add a vertex, double-click to finish)"
+          />
+          <div className="h-px bg-border my-0.5" aria-hidden />
+          <ToolButton
+            label="Delete"
+            sublabel=""
+            active={false}
+            onClick={deleteSelected}
+            icon={<Trash2 className="h-5 w-5" />}
+            title="Delete selected shape"
+            destructive
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setHelpOpen((o) => !o)}
+          className="ml-auto inline-flex items-center gap-1 rounded-lg border bg-background/95 backdrop-blur-sm shadow px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground"
+          aria-label="Tool descriptions"
+          title="What does each tool do?"
+        >
+          <HelpCircle className="h-3 w-3" />
+          help
+        </button>
+        {helpOpen && (
+          <div className="rounded-xl border bg-popover shadow-xl p-3 w-[220px] text-xs space-y-1.5">
+            <p className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground mb-1">
+              Tools
+            </p>
+            <p>
+              <strong>Area</strong> — click around the perimeter of a lawn / hardscape area. Double-click to close.
+            </p>
+            <p>
+              <strong>Line</strong> — measure distances like driveway length, fence line, or edging.
+            </p>
+            <p>
+              <strong>Delete</strong> — first select a shape on the map, then click Delete.
+            </p>
+            <p className="text-muted-foreground">
+              Tip: click any drawn shape to rename it or change its type.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* "Start drawing" pulse for empty state */}
+      {noShapes && drawReady && (
+        <div
+          className="pointer-events-none absolute top-3 right-[200px] z-10 flex items-center gap-2"
+          aria-hidden
+        >
+          <div className="rounded-full bg-background/95 backdrop-blur-sm border shadow px-3 py-1.5 text-xs font-semibold animate-pulse">
+            ← Start with the Area tool
+          </div>
         </div>
       )}
+
+      {/* Drawing instructions strip */}
+      {noShapes && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-background/95 backdrop-blur-sm border shadow px-3 py-1.5 text-[11px] text-muted-foreground z-10">
+          Click around the perimeter, double-click to close.
+        </div>
+      )}
+
+      {/* Floating shape editor */}
+      {editingShape && editing && (
+        <ShapeEditPopup
+          shape={editingShape}
+          position={editing.position}
+          onChange={(patch) => {
+            const next = shapesRef.current.map((s) => (
+              s.id === editingShape.id ? { ...s, ...patch } : s
+            ));
+            onShapesRef.current(next);
+          }}
+          onDelete={() => deleteOne(editingShape.id)}
+          onClose={() => setEditing(null)}
+        />
+      )}
+
+      {/* Mobile accuracy nudge */}
+      <p className="md:hidden absolute top-12 left-3 right-3 z-10 rounded-md bg-background/95 backdrop-blur-sm border shadow px-3 py-2 text-[11px] text-muted-foreground">
+        💡 For best accuracy, measure on desktop or tablet.
+      </p>
     </div>
   );
 }
+
+function ToolButton({
+  label, sublabel, active, onClick, icon, title, destructive = false,
+}: {
+  label: string;
+  sublabel: string;
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  title: string;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className={cn(
+        'group flex flex-col items-center justify-center gap-0.5 w-12 h-12 rounded-lg transition-all',
+        'border',
+        active
+          ? 'bg-[var(--orange)] text-white border-white ring-2 ring-[var(--orange)] shadow'
+          : destructive
+            ? 'bg-background text-destructive border-transparent hover:bg-destructive/10'
+            : 'bg-background text-foreground border-transparent hover:border-foreground/20 hover:bg-accent/40'
+      )}
+    >
+      {icon}
+      <span className="text-[8px] font-bold uppercase tracking-wider leading-none">
+        {label}
+      </span>
+      {sublabel && (
+        <span className="sr-only">{sublabel}</span>
+      )}
+    </button>
+  );
+}
+
+function computeCentroid(geom: GeoJSON.Polygon | GeoJSON.LineString): [number, number] | null {
+  try {
+    if (geom.type === 'Polygon') {
+      const ring = geom.coordinates[0] as [number, number][];
+      if (!ring || ring.length === 0) return null;
+      let x = 0, y = 0;
+      for (const [lng, lat] of ring) { x += lng; y += lat; }
+      return [x / ring.length, y / ring.length];
+    }
+    const line = geom.coordinates as [number, number][];
+    if (!line || line.length === 0) return null;
+    const mid = line[Math.floor(line.length / 2)];
+    return [mid[0], mid[1]];
+  } catch {
+    return null;
+  }
+}
+
+function lineMidpoint(geom: GeoJSON.LineString): [number, number] | null {
+  try {
+    const coords = geom.coordinates as [number, number][];
+    if (!coords || coords.length < 2) return null;
+    const mid = Math.floor(coords.length / 2);
+    return coords[mid];
+  } catch {
+    return null;
+  }
+}
+
+// Suppress unused-import warning when nothing references these helpers.
+void isAreaType;
+void isLineType;

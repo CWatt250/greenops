@@ -54,6 +54,7 @@ export interface Client {
   gate_code?: string;
   preferred_crew_id?: string;
   status: ClientStatus;
+  primary_measurement_id?: string | null;
   created_at: string;
   updated_at: string;
 }

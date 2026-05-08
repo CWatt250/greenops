@@ -11,6 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { ClientCombobox } from '@/components/clients/client-combobox';
+import { MeasurementBanner } from '@/components/proposals/measurement-banner';
 import { cn, formatCurrency } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -70,6 +71,7 @@ export function ProposalWizard({ companyId, userId, services, initialClientId }:
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [clientId, setClientId] = useState<string>(initialClientId ?? '');
   const [client, setClient] = useState<Client | null>(null);
+  const [measurementTurfSqft, setMeasurementTurfSqft] = useState<number>(0);
   const [title, setTitle] = useState('');
   const [validUntil, setValidUntil] = useState(() => {
     const d = new Date();
@@ -98,6 +100,49 @@ export function ProposalWizard({ companyId, userId, services, initialClientId }:
   const annual = useMemo(() => annualValue(items, flags), [items, flags]);
   const margin = useMemo(() => profitMargin(items, flags), [items, flags]);
   const marginTone = marginColor(margin);
+
+  // Look up the client's primary measurement so the banner can offer to
+  // apply turf sqft to per-sqft line items.
+  useEffect(() => {
+    if (!client) {
+      setMeasurementTurfSqft(0);
+      return;
+    }
+    const measId = (client as Client & { primary_measurement_id?: string | null }).primary_measurement_id;
+    if (!measId) {
+      setMeasurementTurfSqft(0);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('property_measurements')
+      .select('total_turf_sqft')
+      .eq('id', measId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setMeasurementTurfSqft(Number(data?.total_turf_sqft ?? 0));
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]);
+
+  // Count per-sqft line items so the banner can show how many would update.
+  const perSqftLineCount = useMemo(() => {
+    return items.reduce((acc, it) => {
+      const svc = services.find((s) => s.id === it.service_id);
+      return acc + (svc?.unit === 'per_sqft' ? 1 : 0);
+    }, 0);
+  }, [items, services]);
+
+  function applyMeasurementToLines() {
+    setItems((prev) => prev.map((it) => {
+      const svc = services.find((s) => s.id === it.service_id);
+      if (svc?.unit !== 'per_sqft') return it;
+      return { ...it, quantity: measurementTurfSqft };
+    }));
+    toast.success(`Applied ${measurementTurfSqft.toLocaleString()} sq ft to per-sq-ft services.`);
+  }
 
   // Auto-defaults from property type
   useEffect(() => {
@@ -407,6 +452,13 @@ export function ProposalWizard({ companyId, userId, services, initialClientId }:
 
           {/* RIGHT — line items + property panel */}
           <div className="space-y-4">
+            {measurementTurfSqft > 0 && (
+              <MeasurementBanner
+                totalTurfSqft={measurementTurfSqft}
+                perSqftLineCount={perSqftLineCount}
+                onApply={applyMeasurementToLines}
+              />
+            )}
             <div className="rounded-xl border bg-card overflow-hidden">
               <div className="px-4 py-3 border-b flex items-center justify-between">
                 <p className="text-sm font-semibold">Line items ({items.length})</p>

@@ -32,7 +32,8 @@ export default async function StandaloneMeasurePage({
       companyId={profile.company_id}
       userId={user.id}
       initialAddress={address}
-      backHref="/dashboard/clients"
+      backHref="/dashboard"
+      standalone
     />
   );
 }

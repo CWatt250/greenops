@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Users, Briefcase, Wrench, UsersRound, Settings, LogOut,
   CalendarDays, RadioTower, Route, FileText, Wallet, BarChart2, Globe,
-  ClipboardCheck,
+  ClipboardCheck, Ruler,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -27,10 +27,11 @@ const navGroups: NavGroup[] = [
   {
     section: 'Records',
     items: [
-      { href: '/dashboard/clients',  label: 'Clients',  icon: Users },
-      { href: '/dashboard/jobs',     label: 'Jobs',     icon: Briefcase },
-      { href: '/dashboard/crews',    label: 'Crews',    icon: UsersRound },
-      { href: '/dashboard/services', label: 'Services', icon: Wrench },
+      { href: '/dashboard/clients',  label: 'Clients',          icon: Users },
+      { href: '/dashboard/jobs',     label: 'Jobs',             icon: Briefcase },
+      { href: '/dashboard/measure',  label: 'Measure Property', icon: Ruler },
+      { href: '/dashboard/crews',    label: 'Crews',            icon: UsersRound },
+      { href: '/dashboard/services', label: 'Services',         icon: Wrench },
     ],
   },
   {

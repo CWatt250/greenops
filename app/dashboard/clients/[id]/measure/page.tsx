@@ -38,7 +38,6 @@ export default async function ClientMeasurePage({
   if (!client) notFound();
   const c = client as Client;
 
-  // Pull the most recent saved measurement (if any) so it pre-populates.
   const { data: existing } = await supabase
     .from('property_measurements')
     .select('*')
@@ -47,7 +46,6 @@ export default async function ClientMeasurePage({
     .limit(1)
     .maybeSingle();
 
-  // Build the address line for geocoding.
   const fullAddress = [c.service_address, c.service_city, c.service_state, c.service_zip]
     .filter(Boolean)
     .join(', ');
@@ -56,8 +54,8 @@ export default async function ClientMeasurePage({
     <MeasureView
       companyId={profile.company_id}
       userId={user.id}
-      clientId={id}
-      clientName={c.name}
+      lockedClientId={id}
+      lockedClientName={c.name}
       initialAddress={fullAddress || undefined}
       initial={existing as PropertyMeasurement | null}
       backHref={`/dashboard/clients/${id}`}
