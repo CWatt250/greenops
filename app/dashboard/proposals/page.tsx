@@ -1,0 +1,161 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import { PageHeader } from '@/components/shared/page-header';
+import { EmptyState } from '@/components/shared/empty-state';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { Plus, FileText } from 'lucide-react';
+import { cn, formatCurrency, formatDate } from '@/lib/utils';
+import type { Estimate, EstimateStatus } from '@/types';
+
+const STATUS_CHIPS: Array<{ label: string; value: EstimateStatus | 'all' }> = [
+  { label: 'All', value: 'all' },
+  { label: 'Draft', value: 'draft' },
+  { label: 'Sent', value: 'sent' },
+  { label: 'Accepted', value: 'accepted' },
+  { label: 'Declined', value: 'declined' },
+  { label: 'Expired', value: 'expired' },
+];
+
+const STATUS_COLORS: Record<EstimateStatus, string> = {
+  draft: 'bg-gray-100 text-gray-700',
+  sent: 'bg-blue-100 text-blue-700',
+  accepted: 'bg-green-100 text-green-700',
+  declined: 'bg-red-100 text-red-700',
+  expired: 'bg-amber-100 text-amber-700',
+};
+
+type ProposalRow = Estimate & {
+  client: { id: string; name: string } | null;
+  estimate_line_items: Array<{ total: number | null }> | null;
+};
+
+export default function ProposalsPage() {
+  const router = useRouter();
+  const supabase = createClient();
+  const [proposals, setProposals] = useState<ProposalRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<EstimateStatus | 'all'>('all');
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      let query = supabase
+        .from('estimates')
+        .select('*, client:clients(id,name), estimate_line_items(total)')
+        .order('created_at', { ascending: false });
+      if (filter !== 'all') query = query.eq('status', filter);
+      const { data } = await query;
+      setProposals((data ?? []) as ProposalRow[]);
+      setLoading(false);
+    }
+    load();
+  }, [filter, supabase]);
+
+  return (
+    <div>
+      <PageHeader
+        title="Proposals"
+        eyebrow="Build it, send it, win it"
+        description="Estimates and proposals — annual contracts and one-off bids."
+      >
+        <Link
+          href="/dashboard/proposals/new"
+          className={buttonVariants()}
+          style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
+        >
+          <Plus className="h-4 w-4 mr-1.5" /> New Proposal
+        </Link>
+      </PageHeader>
+
+      <div className="flex gap-2 flex-wrap mb-5">
+        {STATUS_CHIPS.map(({ label, value }) => (
+          <button
+            key={value}
+            onClick={() => setFilter(value)}
+            className={cn(
+              'rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
+              filter === value
+                ? 'text-white'
+                : 'bg-muted text-muted-foreground hover:bg-muted/80'
+            )}
+            style={filter === value ? { backgroundColor: 'var(--orange)' } : {}}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="text-sm text-muted-foreground text-center py-16">Loading…</div>
+      ) : proposals.length === 0 ? (
+        <EmptyState
+          icon={FileText}
+          title={filter === 'all' ? 'No proposals yet' : `No ${filter} proposals`}
+          description="Build your first proposal to send a polished estimate to a client."
+          action={{
+            label: '+ New Proposal',
+            onClick: () => router.push('/dashboard/proposals/new'),
+          }}
+        />
+      ) : (
+        <div className="rounded-xl border bg-card overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="text-left px-4 py-2.5 font-semibold">Title</th>
+                <th className="text-left px-4 py-2.5 font-semibold">Client</th>
+                <th className="text-left px-4 py-2.5 font-semibold">Status</th>
+                <th className="text-right px-4 py-2.5 font-semibold">Total</th>
+                <th className="text-right px-4 py-2.5 font-semibold">Annual</th>
+                <th className="text-right px-4 py-2.5 font-semibold">Created</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {proposals.map((p) => {
+                const subtotal = (p.estimate_line_items ?? []).reduce(
+                  (s, li) => s + Number(li.total ?? 0),
+                  0
+                );
+                return (
+                  <tr
+                    key={p.id}
+                    className="cursor-pointer hover:bg-muted/30"
+                    onClick={() => router.push(`/dashboard/proposals/${p.id}`)}
+                  >
+                    <td className="px-4 py-3 font-medium">{p.title}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {p.client?.name ?? '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium capitalize',
+                          STATUS_COLORS[p.status]
+                        )}
+                      >
+                        {p.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {formatCurrency(subtotal)}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                      {p.annual_value ? formatCurrency(Number(p.annual_value)) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right text-muted-foreground tabular-nums">
+                      {formatDate(p.created_at)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

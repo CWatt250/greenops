@@ -283,6 +283,59 @@ export interface Route {
 export type InvoiceStatus = 'draft' | 'sent' | 'viewed' | 'partial' | 'paid' | 'overdue' | 'cancelled';
 export type PaymentMethod = 'cash' | 'check' | 'card' | 'ach' | 'other';
 
+export type EstimateStatus = 'draft' | 'sent' | 'accepted' | 'declined' | 'expired';
+export type PropertyComplexity = 'simple' | 'moderate' | 'complex';
+export type LineItemFrequency =
+  | 'one_time' | 'weekly' | 'biweekly' | 'monthly' | 'seasonal' | 'annual';
+
+export interface Estimate {
+  id: string;
+  company_id: string;
+  client_id: string | null;
+  title: string;
+  status: EstimateStatus;
+  valid_until?: string | null;
+  notes?: string | null;
+  tax_rate: number;
+  // Phase 9 columns (migration 009)
+  property_complexity?: PropertyComplexity | null;
+  has_slopes?: boolean;
+  has_dogs?: boolean;
+  has_obstacles?: boolean;
+  payment_terms?: string | null;
+  annual_value?: number | null;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EstimateLineItem {
+  id: string;
+  estimate_id: string;
+  service_id?: string | null;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  markup_pct: number;
+  discount_pct: number;
+  total: number;
+  sort_order: number;
+  // Phase 9 columns (migration 009)
+  frequency?: LineItemFrequency | null;
+  frequency_discount_pct?: number | null;
+  created_at: string;
+}
+
+export interface ServicePreset {
+  id: string;
+  company_id: string;
+  name: string;
+  description?: string | null;
+  service_ids: string[];
+  is_active: boolean;
+  created_at: string;
+}
+
 export interface Invoice {
   id: string;
   company_id: string;
