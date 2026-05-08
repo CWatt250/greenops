@@ -14,6 +14,10 @@ interface GroupedStopListProps {
   onStopSelect: (id: string | null) => void;
   onRemove: (key: string) => void;
   onDurationChange: (key: string, minutes: number) => void;
+  /** Pass active crews to enable inline crew reassignment on each card. */
+  crews?: Crew[];
+  /** Called with the stop _key + new crew_id (null = unassigned). */
+  onStopCrewChange?: (key: string, newCrewId: string | null) => void;
 }
 
 function formatMinutes(mins: number): string {
@@ -30,6 +34,8 @@ export function GroupedStopList({
   onStopSelect,
   onRemove,
   onDurationChange,
+  crews,
+  onStopCrewChange,
 }: GroupedStopListProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -128,6 +134,8 @@ export function GroupedStopList({
                           onDurationChange(stop._key, mins)
                         }
                         readonly
+                        crews={crews}
+                        onCrewChange={(c) => onStopCrewChange?.(stop._key, c)}
                       />
                     ))
                   )}
@@ -166,6 +174,8 @@ export function GroupedStopList({
                 onRemove={() => onRemove(stop._key)}
                 onDurationChange={(mins) => onDurationChange(stop._key, mins)}
                 readonly
+                crews={crews}
+                onCrewChange={(c) => onStopCrewChange?.(stop._key, c)}
               />
             ))}
           </div>

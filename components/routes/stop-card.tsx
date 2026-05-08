@@ -5,6 +5,8 @@ import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, X, MapPin, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { StopDraft } from './stop-list';
+import { CrewAssignSelect } from '@/components/jobs/crew-assign-select';
+import type { Crew } from '@/types';
 
 interface StopCardProps {
   stop: StopDraft;
@@ -15,6 +17,13 @@ interface StopCardProps {
   onRemove: () => void;
   onDurationChange: (minutes: number) => void;
   readonly?: boolean;
+  /**
+   * When provided, renders an inline crew picker on the card. The picker
+   * writes back to the underlying job; the parent should reflect the change
+   * by updating its local stop state via onCrewChange.
+   */
+  crews?: Crew[];
+  onCrewChange?: (newCrewId: string | null) => void;
 }
 
 export function StopCard({
@@ -26,6 +35,8 @@ export function StopCard({
   onRemove,
   onDurationChange,
   readonly = false,
+  crews,
+  onCrewChange,
 }: StopCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: stop._key });
@@ -117,6 +128,29 @@ export function StopCard({
 
         {/* Job title / ad-hoc chip */}
         <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
+
+        {/* Inline crew reassignment — only available for job-backed stops. */}
+        {crews && crews.length > 0 && stop.job_id && (
+          <div className="pt-1">
+            <CrewAssignSelect
+              jobId={stop.job_id}
+              currentCrewId={stop.assigned_crew_id ?? null}
+              currentCrewName={
+                stop.assigned_crew_id
+                  ? crews.find((c) => c.id === stop.assigned_crew_id)?.name ?? null
+                  : null
+              }
+              currentCrewColor={
+                stop.assigned_crew_id
+                  ? crews.find((c) => c.id === stop.assigned_crew_id)?.color ?? null
+                  : null
+              }
+              crews={crews}
+              onAssigned={(newCrewId) => onCrewChange?.(newCrewId)}
+              variant="chip"
+            />
+          </div>
+        )}
       </div>
 
       {/* Remove button */}

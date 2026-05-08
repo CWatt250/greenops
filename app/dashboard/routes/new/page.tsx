@@ -236,37 +236,68 @@ export default function RouteBuilderPage() {
       setAutoLoaded(false);
       setOptimized(false);
 
-      const { data: jobs } = await supabase
-        .from('jobs')
-        .select('id, title, status, crew_id, scheduled_start, client:clients(id,name,service_address)')
-        .in('crew_id', selectedCrewIds)
-        .eq('scheduled_date', selectedDate)
-        .not('status', 'in', '("cancelled","complete")')
-        .order('scheduled_start');
+      // Pull jobs assigned to the selected crews + jobs that are unassigned.
+      // .in() doesn't match nulls, so we issue both queries in parallel and merge.
+      const baseSelect = 'id, title, status, crew_id, scheduled_start, client:clients(id,name,service_address)';
+      const [assignedRes, unassignedRes] = await Promise.all([
+        supabase
+          .from('jobs')
+          .select(baseSelect)
+          .in('crew_id', selectedCrewIds)
+          .eq('scheduled_date', selectedDate)
+          .not('status', 'in', '("cancelled","complete")')
+          .order('scheduled_start'),
+        supabase
+          .from('jobs')
+          .select(baseSelect)
+          .is('crew_id', null)
+          .eq('scheduled_date', selectedDate)
+          .not('status', 'in', '("cancelled","complete")')
+          .order('scheduled_start'),
+      ]);
 
       if (cancelled) return;
-      const jobList = (jobs ?? []) as unknown as JobWithClient[];
+      const jobList = ([
+        ...(assignedRes.data ?? []),
+        ...(unassignedRes.data ?? []),
+      ]) as unknown as JobWithClient[];
 
       const isMulti = selectedCrewIds.length > 1;
 
-      // Geocode in parallel
+      // Per-crew local stop_order so each crew's polyline is sequenced
+      // correctly. In single-crew mode we still use a global order.
+      const orderByCrew = new Map<string, number>();
+      function nextOrderFor(crewId: string | null): number {
+        const k = crewId ?? '__unassigned';
+        const n = (orderByCrew.get(k) ?? 0) + 1;
+        orderByCrew.set(k, n);
+        return n;
+      }
+
       const drafted: StopDraft[] = await Promise.all(
         jobList.map(async (job, i) => {
           const address = job.client?.service_address ?? '';
           const coords = address ? await geocodeStop(address) : null;
+          // Multi-crew: pre-populate with the job's existing crew assignment
+          // so each crew's currently-assigned jobs render in their colour
+          // immediately, without waiting on Optimize. Single mode stays as
+          // before — every stop maps to the one selected crew.
+          const initialCrew = isMulti
+            ? (job.crew_id ?? null)
+            : selectedCrewIds[0];
           return {
             _key: makeKey(),
             job_id: job.id,
             job: job as StopDraft['job'],
             label: null,
             address: null,
-            stop_order: i + 1,
+            stop_order: isMulti ? nextOrderFor(initialCrew) : i + 1,
             estimated_duration_minutes: 30,
             drive_minutes_from_prev: 0,
             drive_distance_miles: 0,
             lat: coords ? coords[1] : null,
             lng: coords ? coords[0] : null,
-            assigned_crew_id: isMulti ? null : selectedCrewIds[0],
+            assigned_crew_id: initialCrew,
           };
         })
       );
@@ -319,6 +350,29 @@ export default function RouteBuilderPage() {
     setStops(reorderedStops);
     setPolylinesByGroup({});
     void handleReorderSingle(reorderedStops);
+  }
+
+  /**
+   * Inline crew reassignment from a stop card in multi-crew mode.
+   * The CrewAssignSelect already wrote to Supabase by the time we get here;
+   * we just update local state, renumber stop_order per crew, and rebuild
+   * polylines. Used in multi mode only — single mode bypasses this.
+   */
+  async function handleStopCrewChange(stopKey: string, newCrewId: string | null) {
+    // Compute next state synchronously, then rebuild geometry with it.
+    const next = stops.map((s) => (
+      s._key === stopKey ? { ...s, assigned_crew_id: newCrewId } : s
+    ));
+    // Renumber stop_order within each crew (1..N) based on existing order.
+    const counters = new Map<string, number>();
+    const renumbered: StopDraft[] = next.map((s) => {
+      const k = s.assigned_crew_id ?? '__unassigned';
+      const n = (counters.get(k) ?? 0) + 1;
+      counters.set(k, n);
+      return { ...s, stop_order: n };
+    });
+    const withGeometry = await rebuildGeometry(renumbered, mode === 'multi');
+    setStops(withGeometry);
   }
 
   async function handleAddStop(place: PlaceSuggestion) {
@@ -445,9 +499,12 @@ export default function RouteBuilderPage() {
       return null;
     }
 
-    if (mode === 'multi' && !optimized) {
-      toast.error('Click ✨ Optimize Routes before saving the multi-crew distribution.');
-      return null;
+    if (mode === 'multi') {
+      const anyAssigned = stops.some((s) => !!s.assigned_crew_id);
+      if (!anyAssigned) {
+        toast.error('No stops are assigned yet. Click ✨ Optimize Routes or assign crews inline first.');
+        return null;
+      }
     }
 
     // Weather check using first geocoded stop
@@ -762,7 +819,7 @@ export default function RouteBuilderPage() {
             size="sm"
             variant="outline"
             onClick={handleSave}
-            disabled={saving || dispatching || stops.length === 0 || (mode === 'multi' && !optimized)}
+            disabled={saving || dispatching || stops.length === 0}
             className="gap-1.5"
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
@@ -771,7 +828,7 @@ export default function RouteBuilderPage() {
           <Button
             size="sm"
             onClick={handleDispatch}
-            disabled={saving || dispatching || stops.length === 0 || (mode === 'multi' && !optimized)}
+            disabled={saving || dispatching || stops.length === 0}
             className="gap-1.5"
             style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
           >
@@ -828,9 +885,14 @@ export default function RouteBuilderPage() {
                       >
                         <p className="font-semibold" style={{ color: 'var(--orange-deep)' }}>
                           {stops.length} stop{stops.length === 1 ? '' : 's'} loaded across {selectedCrewIds.length} crews.
+                          {unassignedStops.length > 0 && (
+                            <> · {unassignedStops.length} unassigned</>
+                          )}
                         </p>
                         <p className="mt-0.5 text-[var(--orange-deep)]/80">
-                          Click <span className="font-semibold">✨ Optimize Routes</span> to distribute them.
+                          Showing current assignments. Click{' '}
+                          <span className="font-semibold">✨ Optimize Routes</span>{' '}
+                          to redistribute.
                         </p>
                       </div>
                     </div>
@@ -839,12 +901,14 @@ export default function RouteBuilderPage() {
                     emptyState
                   ) : (
                     <GroupedStopList
-                      groups={optimized ? groupedStops : []}
-                      unassignedStops={optimized ? unassignedStops : stops}
+                      groups={groupedStops}
+                      unassignedStops={unassignedStops}
                       selectedStopId={selectedStopKey}
                       onStopSelect={setSelectedStopKey}
                       onRemove={handleRemove}
                       onDurationChange={handleDurationChange}
+                      crews={crews}
+                      onStopCrewChange={handleStopCrewChange}
                     />
                   )}
                 </>

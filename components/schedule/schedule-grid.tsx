@@ -157,6 +157,38 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
 
   const unscheduledJobs = jobMap.get('unscheduled') ?? [];
 
+  /**
+   * Move a job's local cell when its crew changes via the inline picker.
+   * Mirrors what onDragEnd does, minus the Supabase write (CrewAssignSelect
+   * already wrote it).
+   */
+  function handleInlineCrewChange(jobId: string, newCrewId: string | null) {
+    const found = findJobById(jobId);
+    if (!found) return;
+    const { job, fromKey } = found;
+    const targetCrew = newCrewId ? crews.find((c) => c.id === newCrewId) : null;
+    const newKey = newCrewId && job.scheduled_date
+      ? cellKey(newCrewId, job.scheduled_date as string)
+      : 'unscheduled';
+    if (newKey === fromKey) return;
+
+    setJobMap((prev) => {
+      const next = new Map(prev);
+      next.set(fromKey, (next.get(fromKey) ?? []).filter((j) => j.id !== jobId));
+      const updatedJob: Job = {
+        ...job,
+        crew_id: newCrewId ?? undefined,
+        crew: targetCrew
+          ? { id: targetCrew.id, name: targetCrew.name, color: targetCrew.color } as unknown as Crew
+          : undefined,
+        scheduled_date: newKey === 'unscheduled' ? undefined : job.scheduled_date,
+        status: newKey === 'unscheduled' ? 'unscheduled' : job.status,
+      };
+      next.set(newKey, [...(next.get(newKey) ?? []), updatedJob]);
+      return next;
+    });
+  }
+
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="space-y-4">
@@ -168,7 +200,11 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
           <DroppableCell id="unscheduled" className="bg-muted/30 min-h-[60px] flex flex-wrap gap-2 flex-row">
             {unscheduledJobs.map((job) => (
               <div key={job.id} className="w-48 shrink-0">
-                <DraggableJobCard job={job} />
+                <DraggableJobCard
+                  job={job}
+                  crews={crews}
+                  onCrewChange={(c) => handleInlineCrewChange(job.id, c)}
+                />
               </div>
             ))}
             {unscheduledJobs.length === 0 && (
@@ -224,7 +260,12 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
                       isToday={isToday(date)}
                     >
                       {dayJobs.map((job) => (
-                        <DraggableJobCard key={job.id} job={job} />
+                        <DraggableJobCard
+                          key={job.id}
+                          job={job}
+                          crews={crews}
+                          onCrewChange={(c) => handleInlineCrewChange(job.id, c)}
+                        />
                       ))}
                     </DroppableCell>
                   );
