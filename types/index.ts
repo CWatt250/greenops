@@ -336,6 +336,21 @@ export interface ServicePreset {
   created_at: string;
 }
 
+export interface PropertyMeasurement {
+  id: string;
+  company_id: string;
+  client_id: string;
+  measured_by?: string | null;
+  total_turf_sqft: number;
+  total_hardscape_sqft: number;
+  total_bed_sqft: number;
+  total_other_sqft: number;
+  shapes: unknown; // jsonb — see lib/measurement.ts MeasuredShape[]
+  notes?: string | null;
+  imagery_source?: string | null;
+  measured_at: string;
+}
+
 export interface Invoice {
   id: string;
   company_id: string;

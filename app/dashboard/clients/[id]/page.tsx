@@ -9,7 +9,7 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { EmptyState } from '@/components/shared/empty-state';
 import { formatDate } from '@/lib/utils';
 import {
-  Phone, Mail, MapPin, Edit, Briefcase, ClipboardList, Activity,
+  Phone, Mail, MapPin, Edit, Briefcase, ClipboardList, Activity, Ruler,
 } from 'lucide-react';
 import { InviteToPortalButton } from '@/components/clients/invite-to-portal-button';
 import { DeleteClientButton } from '@/components/clients/delete-client-button';
@@ -72,6 +72,13 @@ export default async function ClientDetailPage({ params }: Props) {
             email={c.email ?? ''}
             hasPortalUser={hasPortalUser}
           />
+          <Link
+            href={`/dashboard/clients/${id}/measure`}
+            className={buttonVariants({ variant: 'outline' })}
+            title="Measure property"
+          >
+            <Ruler className="h-4 w-4 mr-1.5" /> Measure Property
+          </Link>
           <Link
             href={`/dashboard/clients/${id}/edit`}
             className={buttonVariants({ variant: 'outline' })}
