@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
-import { Leaf } from 'lucide-react';
+import Image from 'next/image';
 import { NotificationBell } from '@/components/shared/notification-bell';
 
 export default async function CrewLayout({ children }: { children: React.ReactNode }) {
@@ -22,17 +22,30 @@ export default async function CrewLayout({ children }: { children: React.ReactNo
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header
-        className="sticky top-0 z-50 flex h-14 items-center justify-between px-4 border-b shrink-0"
-        style={{ backgroundColor: 'var(--color-brand-dark-raw)' }}
+        className="sticky top-0 z-50 flex h-14 items-center justify-between px-4 border-b border-[var(--moss-800)] shrink-0"
+        style={{ backgroundColor: '#000' }}
       >
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--color-brand-green-raw)]">
-            <Leaf className="h-4 w-4 text-white" />
-          </div>
+          <Image
+            src="/tlc-logo.png"
+            alt="TLC"
+            width={36}
+            height={36}
+            className="h-9 w-auto"
+          />
           <div>
-            <p className="text-sm font-bold text-white leading-none">TLC GreenOps</p>
+            <p
+              className="text-white uppercase leading-none"
+              style={{
+                fontFamily: 'var(--font-display), Impact, sans-serif',
+                fontSize: '11px',
+                letterSpacing: '0.1em',
+              }}
+            >
+              Crew Mobile
+            </p>
             {profile?.full_name && (
-              <p className="text-[11px] text-white/50 leading-tight">{profile.full_name}</p>
+              <p className="text-[11px] text-white/60 leading-tight mt-0.5">{profile.full_name}</p>
             )}
           </div>
         </div>

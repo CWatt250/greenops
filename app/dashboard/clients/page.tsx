@@ -103,7 +103,7 @@ export default function ClientsPage() {
         <EmptyState
           icon={Users}
           title="No clients yet"
-          description="Add your first client to get started with GreenOps."
+          description="Add your first client to get started."
           action={{
             label: '+ Add your first client',
             onClick: () => router.push('/dashboard/clients/new'),

@@ -61,7 +61,7 @@ export default async function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" description="Welcome to GreenOps">
+      <PageHeader title="Dashboard" description="Welcome to TLC Management Platform">
         <Link
           href="/dashboard/jobs/new"
           className={buttonVariants()}

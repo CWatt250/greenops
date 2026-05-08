@@ -1,16 +1,16 @@
-# 🌿 GreenOps
+# TLC Management Platform
 
-**Field Service Management Platform for TLC Landscape Management**
+**Field Service Management Platform for TLC Landscape Management — built by Watt Systems**
 
 A full-stack, production-grade crew management, estimating, route optimization, billing, and customer portal platform — built specifically for TLC Landscape Management in the Tri-Cities, WA.
 
-🔗 **Live App:** [greenops-git-main-cwatt250s-projects.vercel.app](https://greenops-git-main-cwatt250s-projects.vercel.app)
+🔗 **Live App:** [greenops-rho.vercel.app](https://greenops-rho.vercel.app)
 
 ---
 
-## 🚀 What It Does
+## What It Does
 
-GreenOps replaces clipboards, group texts, spreadsheets, and disconnected tools with one unified platform for every role:
+TLC Management Platform replaces clipboards, group texts, spreadsheets, and disconnected tools with one unified platform for every role:
 
 | Role | What They Get |
 |---|---|

@@ -8,9 +8,11 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
-  --font-heading: var(--font-playfair);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sans);
+  --font-heading: var(--font-display);
+  --font-display: var(--font-display);
+  --font-hand: var(--font-hand);
+  --font-mono: var(--font-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -52,64 +54,134 @@
   --color-brand-green-light: var(--color-brand-green-light-raw);
   --color-brand-gold: var(--color-brand-gold-raw);
   --color-brand-cream: var(--color-brand-cream-raw);
+  --color-brand-orange: var(--orange);
+  --color-brand-orange-deep: var(--orange-deep);
+  --color-brand-orange-soft: var(--orange-soft);
+  --color-brand-ink: var(--ink-900);
 
   /* Status colors */
-  --color-status-scheduled: #3B82F6;
-  --color-status-in-progress: #F59E0B;
-  --color-status-complete: #22C55E;
-  --color-status-issue: #EF4444;
+  --color-status-scheduled: #3B6FB8;
+  --color-status-in-progress: #C97B1F;
+  --color-status-complete: #4F8438;
+  --color-status-issue: #B23A2A;
 }
 
 :root {
-  /* TLC Brand */
-  --color-brand-dark-raw:        #1C2B1A;
-  --color-brand-green-raw:       #3D6B2C;
-  --color-brand-green-light-raw: #5A9040;
-  --color-brand-gold-raw:        #C9A84C;
-  --color-brand-cream-raw:       #F5F5F0;
+  /* TLC Brand — orange + black (mapped from old green/gold tokens) */
+  --color-brand-dark-raw:        #0B0B0B;
+  --color-brand-green-raw:       #F15A24;
+  --color-brand-green-light-raw: #FF6A2C;
+  --color-brand-gold-raw:        #F15A24;
+  --color-brand-cream-raw:       #FAF7F2;
+
+  /* Direct TLC tokens (preferred new names) */
+  --orange:        #F15A24;
+  --orange-deep:   #D14816;
+  --orange-soft:   #FFE3CF;
+  --ink-950:       #000000;
+  --ink-900:       #0B0B0B;
+  --ink-800:       #1A1A1A;
+  --ink-700:       #2A2A2A;
+  --moss-950:      #000000;
+  --moss-900:      #0B0B0B;
+  --moss-800:      #1A1A1A;
+  --moss-700:      #262626;
+  --forest-600:    #F15A24;
+  --forest-500:    #FF6A2C;
+  --sage-500:      #FF8347;
+  --sage-300:      #FFB48C;
+  --sage-100:      #FDE4D4;
+  --gold-700:      #B8410F;
+  --gold-600:      #D14816;
+  --gold-500:      #F15A24;
+  --gold-300:      #FFB48C;
+  --gold-100:      #FFE3CF;
+  --cream-50:      #FFFFFF;
+  --cream-100:     #FAF7F2;
+  --cream-200:     #F0EBE2;
+  --cream-300:     #DCD4C4;
+  --bark-700:      #2A2723;
+  --bark-500:      #5A5450;
+  --bark-400:      #847E78;
+  --bark-300:      #B5AFA8;
 
   /* Status */
-  --color-scheduled:   #3B82F6;
-  --color-in-progress: #F59E0B;
-  --color-complete:    #22C55E;
-  --color-issue:       #EF4444;
+  --color-scheduled:   #3B6FB8;
+  --color-in-progress: #C97B1F;
+  --color-complete:    #4F8438;
+  --color-issue:       #B23A2A;
 
-  /* shadcn overrides — TLC brand */
-  --background:   oklch(0.97 0.003 98);
-  --foreground:   oklch(0.12 0.02 145);
-  --card:         oklch(1 0 0);
-  --card-foreground: oklch(0.12 0.02 145);
-  --popover:      oklch(1 0 0);
-  --popover-foreground: oklch(0.12 0.02 145);
-  --primary:      oklch(0.42 0.1 145);
-  --primary-foreground: oklch(0.98 0 0);
-  --secondary:    oklch(0.72 0.1 85);
-  --secondary-foreground: oklch(0.98 0 0);
-  --muted:        oklch(0.93 0.003 98);
-  --muted-foreground: oklch(0.5 0.02 145);
-  --accent:       oklch(0.93 0.003 98);
-  --accent-foreground: oklch(0.12 0.02 145);
-  --destructive:  oklch(0.577 0.245 27.325);
-  --border:       oklch(0.88 0.01 145);
-  --input:        oklch(0.88 0.01 145);
-  --ring:         oklch(0.42 0.1 145);
-  --radius:       0.5rem;
+  --st-scheduled:      #3B6FB8;
+  --st-scheduled-bg:   #E5EDF7;
+  --st-progress:       #C97B1F;
+  --st-progress-bg:    #FAEED9;
+  --st-complete:       #4F8438;
+  --st-complete-bg:    #E2EDD7;
+  --st-issue:          #B23A2A;
+  --st-issue-bg:       #F5DCD8;
+  --st-paid:           #4F8438;
+  --st-paid-bg:        #E2EDD7;
+  --st-overdue:        #B23A2A;
+  --st-overdue-bg:     #F5DCD8;
+  --st-draft:          #6B5D4A;
+  --st-draft-bg:       #ECEBE2;
 
-  /* Sidebar — TLC dark green */
-  --sidebar:                     oklch(0.19 0.04 145);
-  --sidebar-foreground:          oklch(0.93 0.01 145);
-  --sidebar-primary:             oklch(0.56 0.12 145);
-  --sidebar-primary-foreground:  oklch(0.98 0 0);
-  --sidebar-accent:              oklch(0.24 0.05 145);
-  --sidebar-accent-foreground:   oklch(0.93 0.01 145);
-  --sidebar-border:              oklch(0.28 0.055 145);
-  --sidebar-ring:                oklch(0.56 0.12 145);
+  /* Surfaces shorthand */
+  --surface:           #FFFFFF;
+  --surface-2:         #FFFFFF;
+  --border-strong:     #C9C2AE;
+  --text-muted:        #5A5450;
+  --text-subtle:       #847E78;
 
-  --chart-1: oklch(0.42 0.1 145);
-  --chart-2: oklch(0.72 0.1 85);
-  --chart-3: oklch(0.56 0.12 145);
+  /* Radii */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 0 0 rgba(11, 11, 11, 0.04);
+  --shadow-sm: 0 1px 2px 0 rgba(11, 11, 11, 0.06), 0 1px 1px 0 rgba(11, 11, 11, 0.04);
+  --shadow-md: 0 4px 12px -2px rgba(11, 11, 11, 0.08), 0 2px 4px -1px rgba(11, 11, 11, 0.04);
+  --shadow-lg: 0 12px 32px -8px rgba(11, 11, 11, 0.14), 0 4px 8px -2px rgba(11, 11, 11, 0.06);
+
+  /* shadcn overrides — TLC orange/cream theme */
+  --background:           oklch(0.97 0.005 80);
+  --foreground:           oklch(0.13 0 0);
+  --card:                 oklch(1 0 0);
+  --card-foreground:      oklch(0.13 0 0);
+  --popover:              oklch(1 0 0);
+  --popover-foreground:   oklch(0.13 0 0);
+  --primary:              oklch(0.65 0.18 35);
+  --primary-foreground:   oklch(0.99 0 0);
+  --secondary:            oklch(0.94 0.012 70);
+  --secondary-foreground: oklch(0.18 0 0);
+  --muted:                oklch(0.94 0.008 80);
+  --muted-foreground:     oklch(0.45 0.012 50);
+  --accent:               oklch(0.94 0.012 70);
+  --accent-foreground:    oklch(0.18 0 0);
+  --destructive:          oklch(0.577 0.245 27.325);
+  --border:               oklch(0.88 0.012 70);
+  --input:                oklch(0.88 0.012 70);
+  --ring:                 oklch(0.65 0.18 35);
+  --radius:               0.5rem;
+
+  /* Sidebar — true black */
+  --sidebar:                     oklch(0.07 0 0);
+  --sidebar-foreground:          oklch(0.92 0 0);
+  --sidebar-primary:             oklch(0.65 0.18 35);
+  --sidebar-primary-foreground:  oklch(0.99 0 0);
+  --sidebar-accent:              oklch(0.18 0 0);
+  --sidebar-accent-foreground:   oklch(0.92 0 0);
+  --sidebar-border:              oklch(0.22 0 0);
+  --sidebar-ring:                oklch(0.65 0.18 35);
+
+  --chart-1: oklch(0.65 0.18 35);
+  --chart-2: oklch(0.72 0.15 60);
+  --chart-3: oklch(0.55 0.16 25);
   --chart-4: oklch(0.6 0.15 200);
-  --chart-5: oklch(0.65 0.18 30);
+  --chart-5: oklch(0.45 0.12 240);
 }
 
 @layer base {
@@ -118,11 +190,154 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 500;
   }
   html {
     @apply font-sans;
   }
   h1, h2, h3, h4 {
-    font-family: var(--font-playfair), serif;
+    font-family: var(--font-display), Impact, sans-serif;
+    letter-spacing: -0.01em;
   }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TLC redesign component classes — opt-in utilities for custom
+   chrome (sidebar, page headers, badges, etc.). Tailwind/shadcn
+   utilities still work everywhere; these are additive.
+   ───────────────────────────────────────────────────────────── */
+
+/* TLC diagonal stripe — subtle background flourish */
+.tlc-stripes {
+  background-image:
+    repeating-linear-gradient(
+      115deg,
+      transparent 0 140px,
+      rgba(241, 90, 36, 0.04) 140px 142px,
+      transparent 142px 280px,
+      rgba(11, 11, 11, 0.025) 280px 282px
+    );
+}
+
+/* Page header recipe: eyebrow + chunky uppercase title */
+.page-eyebrow {
+  font-family: var(--font-hand), 'Brush Script MT', cursive;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--orange);
+  margin-bottom: 4px;
+  line-height: 1;
+}
+.page-eyebrow::before { content: '— '; }
+
+.page-title {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 38px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: var(--ink-900);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.card-title-tlc {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--ink-900);
+  text-transform: uppercase;
+}
+
+/* Money / numbers */
+.num { font-family: var(--font-mono), ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.money-lg {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 30px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--ink-900);
+}
+
+/* Status badges — TLC palette */
+.tlc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+.tlc-badge-scheduled  { background: var(--st-scheduled-bg); color: var(--st-scheduled); }
+.tlc-badge-progress   { background: var(--st-progress-bg);  color: var(--st-progress); }
+.tlc-badge-complete   { background: var(--st-complete-bg);  color: var(--st-complete); }
+.tlc-badge-issue      { background: var(--st-issue-bg);     color: var(--st-issue); }
+.tlc-badge-paid       { background: var(--st-paid-bg);      color: var(--st-paid); }
+.tlc-badge-overdue    { background: var(--st-overdue-bg);   color: var(--st-overdue); }
+.tlc-badge-draft      { background: var(--st-draft-bg);     color: var(--st-draft); }
+.tlc-badge-unscheduled{ background: var(--cream-200);       color: var(--bark-500); }
+
+/* Property tag chips */
+.tlc-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--cream-200);
+  color: var(--bark-700);
+  border: 1px solid var(--cream-300);
+}
+.tlc-tag-residential { background: #FDE4D4; color: var(--orange-deep); border-color: var(--gold-300); }
+.tlc-tag-commercial  { background: #FAEED9; color: #8B5C18; border-color: var(--gold-300); }
+.tlc-tag-hoa         { background: #E5EDF7; color: #2F5A9C; border-color: #C7D7EC; }
+
+/* Route stop pin */
+.tlc-pin {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--orange);
+  color: white;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  border: 2px solid white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+.tlc-pin-issue { background: var(--st-issue); }
+
+/* Pulse for live indicators */
+@keyframes tlc-pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(1.4); }
+}
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--st-issue);
+  animation: tlc-pulse-dot 1.6s ease-in-out infinite;
+}
+
+/* Login background — black with orange radial wash */
+.tlc-login-bg {
+  min-height: 100vh;
+  background: #000;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(241, 90, 36, 0.22), transparent 60%),
+    radial-gradient(circle at 80% 70%, rgba(241, 90, 36, 0.10), transparent 55%);
+  display: grid;
+  place-items: center;
+  padding: 24px;
 }

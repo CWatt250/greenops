@@ -60,9 +60,31 @@ export default function LoginPage() {
           />
         </div>
 
-        <h1 className="text-2xl font-bold text-center text-foreground mb-1">Welcome back</h1>
+        <p
+          className="text-center mb-1"
+          style={{
+            fontFamily: 'var(--font-hand), cursive',
+            fontSize: '20px',
+            color: 'var(--orange)',
+            fontWeight: 700,
+            lineHeight: 1,
+          }}
+        >
+          — Welcome back
+        </p>
+        <h1
+          className="text-center text-foreground mb-1 uppercase"
+          style={{
+            fontFamily: 'var(--font-display), Impact, sans-serif',
+            fontSize: '30px',
+            letterSpacing: '-0.01em',
+            lineHeight: 1.05,
+          }}
+        >
+          TLC Management Platform
+        </h1>
         <p className="text-sm text-muted-foreground text-center mb-8">
-          Sign in to your GreenOps account
+          Sign in to continue
         </p>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">

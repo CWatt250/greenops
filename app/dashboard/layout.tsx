@@ -33,7 +33,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               <Menu className="h-5 w-5" />
             </Button>
-            <span className="font-semibold text-sm">TLC GreenOps</span>
+            <span
+              className="uppercase"
+              style={{
+                fontFamily: 'var(--font-display), Impact, sans-serif',
+                fontSize: '13px',
+                letterSpacing: '0.1em',
+              }}
+            >
+              TLC Management
+            </span>
           </div>
           <NotificationBell />
         </header>

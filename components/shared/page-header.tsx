@@ -3,17 +3,24 @@ import { cn } from '@/lib/utils';
 interface PageHeaderProps {
   title: string;
   description?: string;
+  eyebrow?: string;
   children?: React.ReactNode;
   className?: string;
 }
 
-export function PageHeader({ title, description, children, className }: PageHeaderProps) {
+export function PageHeader({ title, description, eyebrow, children, className }: PageHeaderProps) {
   return (
-    <div className={cn('flex items-start justify-between gap-4 mb-6', className)}>
+    <div
+      className={cn(
+        'flex items-end justify-between gap-6 mb-6 pb-5 border-b border-border',
+        className
+      )}
+    >
       <div>
-        <h1 className="text-2xl font-bold text-foreground">{title}</h1>
+        {eyebrow && <p className="page-eyebrow">{eyebrow}</p>}
+        <h1 className="page-title">{title}</h1>
         {description && (
-          <p className="text-sm text-muted-foreground mt-0.5">{description}</p>
+          <p className="text-sm text-muted-foreground mt-1.5 max-w-[600px]">{description}</p>
         )}
       </div>
       {children && <div className="flex items-center gap-2 shrink-0">{children}</div>}

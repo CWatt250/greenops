@@ -1,8 +1,8 @@
 @AGENTS.md
 
-# GreenOps — TLC Landscape Management
+# TLC Management Platform
 
-Operations platform for TLC Landscape Management built with Next.js 16, Supabase, and shadcn/ui.
+Operations platform for TLC Landscape Management — built by Watt Systems with Next.js 16, Supabase, and shadcn/ui. (Repo name `greenops` is preserved internally.)
 
 ## Stack
 
