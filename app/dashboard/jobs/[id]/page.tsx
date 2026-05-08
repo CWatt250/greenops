@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { buttonVariants } from '@/components/ui/button';
 import { StatusWorkflow } from '@/components/jobs/status-workflow';
+import { JobActions } from '@/components/jobs/job-actions';
 import { Separator } from '@/components/ui/separator';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { rruleToText } from '@/lib/rrule-helpers';
@@ -71,12 +72,21 @@ export default async function JobDetailPage({ params }: Props) {
           {/* Status workflow */}
           <StatusWorkflow jobId={job.id} status={job.status} />
         </div>
-        <Link
-          href={`/dashboard/jobs/${id}/edit`}
-          className={buttonVariants({ variant: 'outline', size: 'sm' })}
-        >
-          <Edit className="h-4 w-4 mr-1.5" /> Edit
-        </Link>
+        <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+          <Link
+            href={`/dashboard/jobs/${id}/edit`}
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            <Edit className="h-4 w-4 mr-1.5" /> Edit
+          </Link>
+          <JobActions
+            jobId={id}
+            jobTitle={job.title}
+            status={job.status}
+            clientId={job.client?.id ?? null}
+            crewId={job.crew?.id ?? null}
+          />
+        </div>
       </div>
 
       <div className="space-y-6">

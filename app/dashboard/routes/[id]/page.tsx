@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { StopList, type StopDraft } from '@/components/routes/stop-list';
 import { RouteSummaryBar } from '@/components/routes/route-summary-bar';
 import { WeatherBanner } from '@/components/routes/weather-banner';
+import { DeleteRouteButton } from '@/components/routes/delete-route-button';
 import { buttonVariants } from '@/components/ui/button';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -268,14 +269,21 @@ export default function RouteDetailPage() {
                 )}
               </div>
             </div>
-            {(route.status === 'draft' || route.status === 'active') && (
-              <Link
-                href={`/dashboard/routes/${id}/edit`}
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0')}
-              >
-                <Edit className="h-3.5 w-3.5 mr-1" /> Edit
-              </Link>
-            )}
+            <div className="flex items-center gap-1 shrink-0">
+              {(route.status === 'draft' || route.status === 'active') && (
+                <Link
+                  href={`/dashboard/routes/${id}/edit`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0')}
+                >
+                  <Edit className="h-3.5 w-3.5 mr-1" /> Edit
+                </Link>
+              )}
+              <DeleteRouteButton
+                routeId={route.id}
+                routeTitle={route.title ?? route.crew?.name ?? 'route'}
+                status={route.status}
+              />
+            </div>
           </div>
         </div>
 

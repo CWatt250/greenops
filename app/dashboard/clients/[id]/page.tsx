@@ -12,6 +12,7 @@ import {
   Phone, Mail, MapPin, Edit, Briefcase, ClipboardList, Activity,
 } from 'lucide-react';
 import { InviteToPortalButton } from '@/components/clients/invite-to-portal-button';
+import { DeleteClientButton } from '@/components/clients/delete-client-button';
 import type { Client, Job } from '@/types';
 
 interface Props {
@@ -77,6 +78,11 @@ export default async function ClientDetailPage({ params }: Props) {
           >
             <Edit className="h-4 w-4 mr-1.5" /> Edit
           </Link>
+          <DeleteClientButton
+            clientId={id}
+            clientName={c.name}
+            jobCount={clientJobs.length}
+          />
         </div>
       </div>
 

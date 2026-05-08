@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyState } from '@/components/shared/empty-state';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,11 +15,12 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Plus, Wrench, Scissors, Leaf, Droplets, Snowflake, TreePine, Zap, Package } from 'lucide-react';
+import { Plus, Wrench, Scissors, Leaf, Droplets, Snowflake, TreePine, Zap, Package, Pencil, Trash2 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { toast } from 'sonner';
 import type { Service, ServiceCategory } from '@/types';
 
 const categoryConfig: Record<ServiceCategory, { label: string; icon: React.ReactNode }> = {
@@ -57,6 +59,8 @@ export default function ServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Service | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<ServiceCategory | 'all'>('all');
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -80,6 +84,26 @@ export default function ServicesPage() {
 
   useEffect(() => { load(); }, []);
 
+  function openCreate() {
+    setEditingId(null);
+    setServerError(null);
+    reset({ name: '', description: '', category: 'mowing', unit: 'per_visit', base_price: 0 });
+    setSheetOpen(true);
+  }
+
+  function openEdit(service: Service) {
+    setEditingId(service.id);
+    setServerError(null);
+    reset({
+      name: service.name,
+      description: service.description ?? '',
+      category: service.category,
+      unit: service.unit,
+      base_price: Number(service.base_price),
+    });
+    setSheetOpen(true);
+  }
+
   async function onSubmit(data: ServiceFormData) {
     setServerError(null);
     const { data: { user } } = await supabase.auth.getUser();
@@ -89,15 +113,24 @@ export default function ServicesPage() {
       .from('profiles').select('company_id').eq('id', user.id).single();
     if (!profile?.company_id) { setServerError('No company found'); return; }
 
-    const { error } = await supabase.from('services').insert({
-      ...data,
-      company_id: profile.company_id,
-    });
+    if (editingId) {
+      const { error } = await supabase
+        .from('services')
+        .update(data)
+        .eq('id', editingId);
+      if (error) { setServerError(error.message); return; }
+      toast.success('Service updated.');
+    } else {
+      const { error } = await supabase.from('services').insert({
+        ...data,
+        company_id: profile.company_id,
+      });
+      if (error) { setServerError(error.message); return; }
+      toast.success('Service added.');
+    }
 
-    if (error) { setServerError(error.message); return; }
-
-    reset();
     setSheetOpen(false);
+    setEditingId(null);
     load();
   }
 
@@ -111,6 +144,19 @@ export default function ServicesPage() {
     );
   }
 
+  async function handleDelete(service: Service) {
+    const { error } = await supabase.from('services').delete().eq('id', service.id);
+    if (error) {
+      // FK violations from existing job_line_items pointing here, etc.
+      toast.error(error.message.includes('foreign')
+        ? 'This service is used by existing jobs/invoices. Mark it inactive instead.'
+        : error.message);
+      return;
+    }
+    toast.success('Service deleted.');
+    setServices((prev) => prev.filter((s) => s.id !== service.id));
+  }
+
   const categories = ['all', ...Object.keys(categoryConfig)] as const;
   const filtered = categoryFilter === 'all'
     ? services
@@ -120,8 +166,8 @@ export default function ServicesPage() {
     <div>
       <PageHeader title="Service Catalog" description="Manage your services and pricing">
         <Button
-          onClick={() => setSheetOpen(true)}
-          style={{ backgroundColor: 'var(--color-brand-gold-raw)', color: '#fff' }}
+          onClick={openCreate}
+          style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
         >
           <Plus className="h-4 w-4 mr-1.5" /> Add Service
         </Button>
@@ -141,7 +187,7 @@ export default function ServicesPage() {
             )}
             style={
               categoryFilter === cat
-                ? { backgroundColor: 'var(--color-brand-green-raw)' }
+                ? { backgroundColor: 'var(--orange)' }
                 : {}
             }
           >
@@ -157,7 +203,7 @@ export default function ServicesPage() {
           icon={Wrench}
           title="No services yet"
           description="Add your first service to the catalog."
-          action={{ label: '+ Add Service', onClick: () => setSheetOpen(true) }}
+          action={{ label: '+ Add Service', onClick: openCreate }}
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -167,22 +213,24 @@ export default function ServicesPage() {
               <div
                 key={service.id}
                 className={cn(
-                  'rounded-xl border bg-card p-5 flex flex-col gap-3 transition-opacity',
+                  'group rounded-xl border bg-card p-5 flex flex-col gap-3 transition-opacity',
                   !service.is_active && 'opacity-60'
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div
                     className="flex h-10 w-10 items-center justify-center rounded-lg shrink-0"
-                    style={{ backgroundColor: 'var(--color-brand-green-raw)', color: '#fff' }}
+                    style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
                   >
                     {cat?.icon}
                   </div>
-                  <Switch
-                    checked={service.is_active}
-                    onCheckedChange={() => toggleActive(service)}
-                    aria-label="Toggle active"
-                  />
+                  <div className="flex items-center gap-1">
+                    <Switch
+                      checked={service.is_active}
+                      onCheckedChange={() => toggleActive(service)}
+                      aria-label="Toggle active"
+                    />
+                  </div>
                 </div>
                 <div>
                   <h3 className="font-semibold text-sm">{service.name}</h3>
@@ -196,9 +244,27 @@ export default function ServicesPage() {
                   <span className="text-xs text-muted-foreground capitalize">
                     {unitLabel[service.unit] ?? service.unit}
                   </span>
-                  <span className="font-bold text-sm" style={{ color: 'var(--color-brand-green-raw)' }}>
+                  <span className="font-bold text-sm" style={{ color: 'var(--orange)' }}>
                     {formatCurrency(service.base_price)}
                   </span>
+                </div>
+                <div className="flex gap-1 pt-1 border-t -mx-5 px-5 -mb-2 pb-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex-1 gap-1 text-xs h-8"
+                    onClick={() => openEdit(service)}
+                  >
+                    <Pencil className="h-3 w-3" /> Edit
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex-1 gap-1 text-xs h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => setConfirmDelete(service)}
+                  >
+                    <Trash2 className="h-3 w-3" /> Delete
+                  </Button>
                 </div>
               </div>
             );
@@ -206,12 +272,14 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {/* Add Service Sheet */}
-      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+      {/* Add/Edit Service Sheet */}
+      <Sheet open={sheetOpen} onOpenChange={(o) => { setSheetOpen(o); if (!o) setEditingId(null); }}>
         <SheetContent>
           <SheetHeader>
-            <SheetTitle>Add Service</SheetTitle>
-            <SheetDescription>Add a new service to your catalog.</SheetDescription>
+            <SheetTitle>{editingId ? 'Edit Service' : 'Add Service'}</SheetTitle>
+            <SheetDescription>
+              {editingId ? 'Update this service in your catalog.' : 'Add a new service to your catalog.'}
+            </SheetDescription>
           </SheetHeader>
 
           <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-5">
@@ -258,7 +326,13 @@ export default function ServicesPage() {
 
             <div className="space-y-2">
               <Label htmlFor="svc-price">Base Price ($) *</Label>
-              <Input id="svc-price" type="number" step="0.01" min="0" {...register('base_price')} />
+              <Input
+                id="svc-price"
+                type="number"
+                step="0.01"
+                min="0"
+                {...register('base_price', { valueAsNumber: true })}
+              />
               {errors.base_price && <p className="text-xs text-destructive">{errors.base_price.message}</p>}
             </div>
 
@@ -272,13 +346,25 @@ export default function ServicesPage() {
               type="submit"
               disabled={isSubmitting}
               className="w-full text-white"
-              style={{ backgroundColor: 'var(--color-brand-green-raw)' }}
+              style={{ backgroundColor: 'var(--orange)' }}
             >
-              {isSubmitting ? 'Saving…' : 'Add Service'}
+              {isSubmitting ? 'Saving…' : editingId ? 'Update Service' : 'Add Service'}
             </Button>
           </form>
         </SheetContent>
       </Sheet>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onOpenChange={(o) => { if (!o) setConfirmDelete(null); }}
+        title={`Delete "${confirmDelete?.name ?? ''}"?`}
+        description="This permanently removes the service from your catalog. If it's already used by jobs or invoices, deletion will fail — mark it inactive instead."
+        confirmLabel="Delete service"
+        destructive
+        onConfirm={async () => {
+          if (confirmDelete) await handleDelete(confirmDelete);
+        }}
+      />
     </div>
   );
 }

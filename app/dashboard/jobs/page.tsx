@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { JobCard } from '@/components/jobs/job-card';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -20,6 +21,7 @@ const statusFilters: { label: string; value: JobStatus | 'all' }[] = [
 ];
 
 export default function JobsPage() {
+  const router = useRouter();
   const supabase = createClient();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,8 +84,16 @@ export default function JobsPage() {
       ) : jobs.length === 0 ? (
         <EmptyState
           icon={Briefcase}
-          title="No jobs found"
-          description="Create your first job to get started."
+          title={statusFilter === 'all' ? 'No jobs yet' : `No ${statusFilter.replace('_', ' ')} jobs`}
+          description={
+            statusFilter === 'all'
+              ? 'Create your first job to start scheduling work.'
+              : 'Try a different status filter or create a new job.'
+          }
+          action={{
+            label: '+ New Job',
+            onClick: () => router.push('/dashboard/jobs/new'),
+          }}
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
