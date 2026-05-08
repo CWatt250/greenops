@@ -1,5 +1,8 @@
 export const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '';
 
+// Tri-Cities, WA — proximity bias for geocoding queries
+const TRI_CITIES_PROXIMITY = '-119.1734,46.2087';
+
 export async function geocodeAddress(
   address: string
 ): Promise<[number, number] | null> {
@@ -7,7 +10,7 @@ export async function geocodeAddress(
   try {
     const encoded = encodeURIComponent(address);
     const res = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?limit=1&access_token=${MAPBOX_TOKEN}`
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?limit=1&proximity=${TRI_CITIES_PROXIMITY}&country=us&access_token=${MAPBOX_TOKEN}`
     );
     const data = await res.json();
     if (data.features?.length > 0) {
@@ -15,6 +18,44 @@ export async function geocodeAddress(
     }
   } catch {}
   return null;
+}
+
+export interface PlaceSuggestion {
+  id: string;
+  placeName: string;
+  shortName: string;
+  context: string;
+  lng: number;
+  lat: number;
+}
+
+export async function searchPlaces(query: string): Promise<PlaceSuggestion[]> {
+  if (!MAPBOX_TOKEN || query.trim().length < 3) return [];
+  try {
+    const encoded = encodeURIComponent(query);
+    const res = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?` +
+      `limit=5&proximity=${TRI_CITIES_PROXIMITY}&country=us&types=address,poi&autocomplete=true&access_token=${MAPBOX_TOKEN}`
+    );
+    const data = await res.json();
+    const features = (data.features ?? []) as Array<{
+      id: string;
+      place_name: string;
+      text: string;
+      center: [number, number];
+      context?: Array<{ text: string }>;
+    }>;
+    return features.map((f) => ({
+      id: f.id,
+      placeName: f.place_name,
+      shortName: f.text,
+      context: (f.context ?? []).map((c) => c.text).join(', '),
+      lng: f.center[0],
+      lat: f.center[1],
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function getRoutePolyline(

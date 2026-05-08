@@ -26,7 +26,8 @@ interface RouteMapProps {
   className?: string;
 }
 
-const FALLBACK_CENTER = { longitude: -98.5795, latitude: 39.8283, zoom: 4 };
+// Tri-Cities, WA — TLC's service area
+const FALLBACK_CENTER = { longitude: -119.1734, latitude: 46.2087, zoom: 11 };
 
 export default function RouteMap({
   stops,

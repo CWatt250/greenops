@@ -8,16 +8,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger,
 } from '@/components/ui/select';
 import { StopList, type StopDraft } from '@/components/routes/stop-list';
 import { RouteSummaryBar } from '@/components/routes/route-summary-bar';
 import { OptimizeButton } from '@/components/routes/optimize-button';
 import { WeatherBanner } from '@/components/routes/weather-banner';
-import { geocodeAddress, getRouteLegs, getRoutePolyline } from '@/lib/mapbox';
+import { AddStopInput } from '@/components/routes/add-stop-input';
+import { geocodeAddress, getRouteLegs, getRoutePolyline, type PlaceSuggestion } from '@/lib/mapbox';
 import { getWeatherForRoute } from '@/lib/weather';
 import { toast } from 'sonner';
-import { Loader2, Save, Send } from 'lucide-react';
+import { Loader2, Save, Send, MapPin } from 'lucide-react';
 import type { Crew } from '@/types';
 import type { MapStop } from '@/components/routes/route-map';
 
@@ -39,6 +40,12 @@ function makeKey() {
   return Math.random().toString(36).slice(2);
 }
 
+function formatDateLabel(dateStr: string) {
+  return new Date(`${dateStr}T12:00`).toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric',
+  });
+}
+
 export default function RouteBuilderPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -56,7 +63,6 @@ export default function RouteBuilderPage() {
   // Stop state
   const [stops, setStops] = useState<StopDraft[]>([]);
   const [selectedStopKey, setSelectedStopKey] = useState<string | null>(null);
-  const [availableJobs, setAvailableJobs] = useState<JobWithClient[]>([]);
 
   // Map
   const [polyline, setPolyline] = useState<GeoJSON.LineString | null>(null);
@@ -68,6 +74,7 @@ export default function RouteBuilderPage() {
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dispatching, setDispatching] = useState(false);
+  const [autoLoaded, setAutoLoaded] = useState(false);
 
   const geocodeCache = useRef<Map<string, [number, number]>>(new Map());
 
@@ -80,6 +87,7 @@ export default function RouteBuilderPage() {
     });
     supabase.from('crews').select('*').eq('is_active', true).order('name')
       .then(({ data }) => setCrews((data ?? []) as Crew[]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Geocode a stop address (with local cache)
@@ -111,7 +119,6 @@ export default function RouteBuilderPage() {
 
     if (!legs) return currentStops;
 
-    // Map leg durations back to stops that have coordinates
     let legIdx = 0;
     return currentStops.map((stop, i) => {
       if (i === 0 || stop.lat === null) return { ...stop, drive_minutes_from_prev: 0 };
@@ -126,66 +133,78 @@ export default function RouteBuilderPage() {
     });
   }, []);
 
-  // Load jobs for selected crew + date
-  const loadJobs = useCallback(async () => {
+  // Auto-load jobs whenever crew + date are both set and companyId is known
+  useEffect(() => {
     if (!selectedCrewId || !selectedDate || !companyId) return;
-    setLoadingJobs(true);
 
-    const { data: jobs } = await supabase
-      .from('jobs')
-      .select('id, title, status, scheduled_start, client:clients(id,name,service_address)')
-      .eq('crew_id', selectedCrewId)
-      .eq('scheduled_date', selectedDate)
-      .not('status', 'in', '("cancelled","complete")')
-      .order('scheduled_start');
+    let cancelled = false;
+    (async () => {
+      setLoadingJobs(true);
+      setAutoLoaded(false);
 
-    const jobList = (jobs ?? []) as unknown as JobWithClient[];
-    setAvailableJobs(jobList);
+      const { data: jobs } = await supabase
+        .from('jobs')
+        .select('id, title, status, scheduled_start, client:clients(id,name,service_address)')
+        .eq('crew_id', selectedCrewId)
+        .eq('scheduled_date', selectedDate)
+        .not('status', 'in', '("cancelled","complete")')
+        .order('scheduled_start');
 
-    // Geocode all jobs in parallel
-    const drafted: StopDraft[] = await Promise.all(
-      jobList.map(async (job, i) => {
-        const address = job.client?.service_address ?? '';
-        const coords = address ? await geocodeStop(address) : null;
-        return {
-          _key: makeKey(),
-          job_id: job.id,
-          job: job as StopDraft['job'],
-          stop_order: i + 1,
-          estimated_duration_minutes: 30,
-          drive_minutes_from_prev: 0,
-          drive_distance_miles: 0,
-          lat: coords ? coords[1] : null,
-          lng: coords ? coords[0] : null,
-        };
-      })
-    );
+      if (cancelled) return;
 
-    const withGeometry = await rebuildRouteGeometry(drafted);
-    setStops(withGeometry);
+      const jobList = (jobs ?? []) as unknown as JobWithClient[];
 
-    // Auto-generate title
-    const crew = crews.find((c) => c.id === selectedCrewId);
-    if (crew && selectedDate) {
-      const dateLabel = new Date(`${selectedDate}T12:00`).toLocaleDateString('en-US', {
-        month: 'short', day: 'numeric',
-      });
-      setRouteTitle(`${crew.name} · ${dateLabel}`);
-    }
+      const drafted: StopDraft[] = await Promise.all(
+        jobList.map(async (job, i) => {
+          const address = job.client?.service_address ?? '';
+          const coords = address ? await geocodeStop(address) : null;
+          return {
+            _key: makeKey(),
+            job_id: job.id,
+            job: job as StopDraft['job'],
+            label: null,
+            address: null,
+            stop_order: i + 1,
+            estimated_duration_minutes: 30,
+            drive_minutes_from_prev: 0,
+            drive_distance_miles: 0,
+            lat: coords ? coords[1] : null,
+            lng: coords ? coords[0] : null,
+          };
+        })
+      );
 
-    setLoadingJobs(false);
-  }, [selectedCrewId, selectedDate, companyId, crews, geocodeStop, rebuildRouteGeometry]);
+      if (cancelled) return;
 
-  useEffect(() => { loadJobs(); }, [loadJobs]);
+      const withGeometry = await rebuildRouteGeometry(drafted);
+      if (cancelled) return;
 
-  // When stops are reordered (DnD or optimize), rebuild geometry
+      setStops(withGeometry);
+
+      const crew = crews.find((c) => c.id === selectedCrewId);
+      if (crew && selectedDate) {
+        setRouteTitle(`${crew.name} · ${formatDateLabel(selectedDate)}`);
+      }
+
+      setAutoLoaded(true);
+      setLoadingJobs(false);
+    })();
+
+    return () => { cancelled = true; };
+  }, [selectedCrewId, selectedDate, companyId, supabase, geocodeStop, rebuildRouteGeometry, crews]);
+
   async function handleReorder(reordered: StopDraft[]) {
     const withGeometry = await rebuildRouteGeometry(reordered);
     setStops(withGeometry);
   }
 
   function handleRemove(key: string) {
-    setStops((prev) => prev.filter((s) => s._key !== key));
+    setStops((prev) => {
+      const next = prev.filter((s) => s._key !== key).map((s, i) => ({ ...s, stop_order: i + 1 }));
+      // re-geocode geometry after removal
+      void rebuildRouteGeometry(next).then(setStops);
+      return next;
+    });
     if (selectedStopKey === key) setSelectedStopKey(null);
   }
 
@@ -197,8 +216,28 @@ export default function RouteBuilderPage() {
 
   function handleOptimized(reorderedStops: StopDraft[]) {
     setStops(reorderedStops);
-    setPolyline(null); // will be refreshed on next geometry rebuild
-    handleReorder(reorderedStops);
+    setPolyline(null);
+    void handleReorder(reorderedStops);
+  }
+
+  async function handleAddStop(place: PlaceSuggestion) {
+    const newStop: StopDraft = {
+      _key: makeKey(),
+      job_id: null,
+      job: null,
+      label: place.shortName,
+      address: place.placeName,
+      stop_order: stops.length + 1,
+      estimated_duration_minutes: 30,
+      drive_minutes_from_prev: 0,
+      drive_distance_miles: 0,
+      lat: place.lat,
+      lng: place.lng,
+    };
+    const next = [...stops, newStop];
+    const withGeometry = await rebuildRouteGeometry(next);
+    setStops(withGeometry);
+    toast.success(`Added stop: ${place.shortName}`);
   }
 
   async function saveRoute(dispatch = false): Promise<string | null> {
@@ -211,7 +250,6 @@ export default function RouteBuilderPage() {
       return null;
     }
 
-    // Weather check using first geocoded stop
     const firstGeo = stops.find((s) => s.lat !== null && s.lng !== null);
     let weather = weatherInfo;
     if (!weather && firstGeo?.lat && firstGeo?.lng) {
@@ -249,6 +287,10 @@ export default function RouteBuilderPage() {
     const stopInserts = stops.map((s) => ({
       route_id: route.id,
       job_id: s.job_id,
+      label: s.job_id ? null : s.label,
+      address: s.job_id ? null : s.address,
+      lat: s.job_id ? null : s.lat,
+      lng: s.job_id ? null : s.lng,
       stop_order: s.stop_order,
       estimated_duration_minutes: s.estimated_duration_minutes,
       drive_minutes_from_prev: Math.round(s.drive_minutes_from_prev),
@@ -279,20 +321,18 @@ export default function RouteBuilderPage() {
     const routeId = await saveRoute(true);
     if (!routeId) { setDispatching(false); return; }
 
-    // Notify crew members
     const { data: members } = await supabase
       .from('crew_members')
       .select('profile_id')
       .eq('crew_id', selectedCrewId);
 
     if (members?.length && companyId) {
-      const crew = crews.find((c) => c.id === selectedCrewId);
       await supabase.from('notifications').insert(
         members.map((m: { profile_id: string }) => ({
           company_id: companyId,
           profile_id: m.profile_id,
           title: `Route dispatched: ${routeTitle || 'Today\'s route'}`,
-          body: `${stops.length} stops · ${new Date(`${selectedDate}T12:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}`,
+          body: `${stops.length} stops · ${formatDateLabel(selectedDate)}`,
           entity_type: 'route',
           entity_id: routeId,
         }))
@@ -305,7 +345,7 @@ export default function RouteBuilderPage() {
   }
 
   const selectedCrew = crews.find((c) => c.id === selectedCrewId);
-  const crewColor = selectedCrew?.color ?? '#3D6B2C';
+  const crewColor = selectedCrew?.color ?? 'var(--orange)';
 
   const mapStops: MapStop[] = stops
     .filter((s) => s.lat !== null && s.lng !== null)
@@ -314,10 +354,30 @@ export default function RouteBuilderPage() {
       lat: s.lat!,
       lng: s.lng!,
       order: s.stop_order,
-      label: (s.job.client as { name: string } | null)?.name ?? s.job.title,
+      label: s.job_id
+        ? ((s.job?.client as { name: string } | null)?.name ?? s.job?.title ?? 'Stop')
+        : (s.label ?? 'Custom stop'),
       color: crewColor,
       isSelected: s._key === selectedStopKey,
     }));
+
+  // Empty state shown after auto-load returns no jobs
+  const emptyState = (
+    <div className="flex flex-col items-center justify-center py-12 text-center px-6">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--orange-soft)] mb-3">
+        <MapPin className="h-5 w-5" style={{ color: 'var(--orange)' }} />
+      </div>
+      <p className="text-sm font-semibold mb-1">
+        No jobs scheduled
+      </p>
+      <p className="text-xs text-muted-foreground max-w-[280px] leading-relaxed">
+        {selectedCrew
+          ? <>No jobs for <span className="font-medium text-foreground">{selectedCrew.name}</span> on {formatDateLabel(selectedDate)}.</>
+          : <>No jobs found for {formatDateLabel(selectedDate)}.</>}
+        {' '}Assign jobs in <span className="font-medium text-foreground">Jobs</span> or <span className="font-medium text-foreground">Schedule</span>, or add stops manually below.
+      </p>
+    </div>
+  );
 
   return (
     <div
@@ -339,13 +399,26 @@ export default function RouteBuilderPage() {
                 className="h-8 text-sm"
               />
             </div>
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <Label className="text-xs mb-1 block">Crew</Label>
               <Select value={selectedCrewId} onValueChange={(v) => setSelectedCrewId(v ?? '')}>
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue placeholder="Select crew…" />
+                <SelectTrigger className="h-8 text-sm w-full" aria-label="Select crew">
+                  {selectedCrew ? (
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="inline-block h-2 w-2 rounded-full shrink-0"
+                        style={{ backgroundColor: selectedCrew.color }}
+                      />
+                      <span className="truncate">{selectedCrew.name}</span>
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">Select crew…</span>
+                  )}
                 </SelectTrigger>
                 <SelectContent>
+                  {crews.length === 0 && (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">No active crews.</div>
+                  )}
                   {crews.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       <span className="flex items-center gap-2">
@@ -364,7 +437,7 @@ export default function RouteBuilderPage() {
           <div>
             <Label className="text-xs mb-1 block">Route Title</Label>
             <Input
-              placeholder="e.g. Green Team · Mon Jan 15"
+              placeholder="e.g. Crew Alpha · Mon May 8"
               value={routeTitle}
               onChange={(e) => setRouteTitle(e.target.value)}
               className="h-8 text-sm"
@@ -394,7 +467,7 @@ export default function RouteBuilderPage() {
             onClick={handleDispatch}
             disabled={saving || dispatching || stops.length === 0}
             className="gap-1.5"
-            style={{ backgroundColor: 'var(--color-brand-green-raw)', color: '#fff' }}
+            style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
           >
             {dispatching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
             Dispatch
@@ -409,20 +482,36 @@ export default function RouteBuilderPage() {
         {/* Stop list — scrollable */}
         <div className="flex-1 overflow-y-auto min-h-0">
           {loadingJobs ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-sm text-muted-foreground">Loading jobs…</span>
+            <div className="space-y-2 p-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="rounded-lg border bg-card p-3 animate-pulse flex gap-2">
+                  <div className="h-6 w-6 rounded-full bg-muted shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 w-32 bg-muted rounded" />
+                    <div className="h-2 w-48 bg-muted/70 rounded" />
+                    <div className="h-2 w-24 bg-muted/50 rounded" />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
-            <StopList
-              stops={stops}
-              crewColor={crewColor}
-              selectedStopId={selectedStopKey}
-              onReorder={handleReorder}
-              onRemove={handleRemove}
-              onDurationChange={handleDurationChange}
-              onStopSelect={setSelectedStopKey}
-            />
+            <>
+              <StopList
+                stops={stops}
+                crewColor={crewColor}
+                selectedStopId={selectedStopKey}
+                onReorder={handleReorder}
+                onRemove={handleRemove}
+                onDurationChange={handleDurationChange}
+                onStopSelect={setSelectedStopKey}
+                emptyState={
+                  selectedCrewId && autoLoaded ? emptyState : undefined
+                }
+              />
+              {selectedCrewId && (
+                <AddStopInput onAdd={handleAddStop} crewColor={crewColor} />
+              )}
+            </>
           )}
         </div>
 
@@ -443,7 +532,7 @@ export default function RouteBuilderPage() {
         />
         {!selectedCrewId && (
           <div className="absolute inset-0 flex items-center justify-center bg-muted/60 backdrop-blur-sm pointer-events-none">
-            <p className="text-sm font-medium text-muted-foreground bg-background rounded-lg px-4 py-2.5 shadow">
+            <p className="text-sm font-medium text-foreground bg-background rounded-lg px-4 py-2.5 shadow border">
               Select a crew to build the route
             </p>
           </div>

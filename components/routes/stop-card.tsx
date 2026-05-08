@@ -35,10 +35,14 @@ export function StopCard({
     transition,
   };
 
-  const clientName =
-    (stop.job.client as { name: string } | null)?.name ?? 'Unknown Client';
-  const address =
-    (stop.job.client as { service_address: string } | null)?.service_address ?? '';
+  const isAdHoc = stop.job_id === null;
+  const clientName = isAdHoc
+    ? (stop.label ?? 'Custom Stop')
+    : ((stop.job?.client as { name: string } | null)?.name ?? 'Unknown Client');
+  const address = isAdHoc
+    ? (stop.address ?? '')
+    : ((stop.job?.client as { service_address: string } | null)?.service_address ?? '');
+  const subtitle = isAdHoc ? 'Custom stop' : (stop.job?.title ?? '');
 
   return (
     <div
@@ -111,8 +115,8 @@ export function StopCard({
           </div>
         </div>
 
-        {/* Job title chip */}
-        <p className="text-xs text-muted-foreground truncate">{stop.job.title}</p>
+        {/* Job title / ad-hoc chip */}
+        <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
       </div>
 
       {/* Remove button */}

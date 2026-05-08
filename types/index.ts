@@ -356,7 +356,12 @@ export interface BillingSchedule {
 export interface RouteStop {
   id: string;
   route_id: string;
-  job_id: string;
+  job_id: string | null;
+  // Ad-hoc stop fields (when job_id is null)
+  label?: string | null;
+  address?: string | null;
+  lat?: number | null;
+  lng?: number | null;
   stop_order: number;
   estimated_arrival?: string | null;
   estimated_duration_minutes?: number | null;

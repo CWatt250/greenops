@@ -30,6 +30,16 @@ type StopWithJob = RouteStop & {
   } | null;
 };
 
+function stopAddress(s: StopWithJob): string {
+  return s.job?.client?.service_address ?? s.address ?? '';
+}
+
+function stopLabel(s: StopWithJob): string {
+  return s.job
+    ? (s.job.client?.name ?? s.job.title ?? 'Stop')
+    : (s.label ?? 'Custom stop');
+}
+
 const STOP_STATUS_COLORS: Record<StopStatus, string> = {
   pending: 'bg-gray-100 text-gray-600',
   en_route: 'bg-blue-100 text-blue-700',
@@ -59,7 +69,7 @@ export default function RouteDetailPage() {
         .single(),
       supabase
         .from('route_stops')
-        .select('*, job:jobs(id,title,client:clients(name,service_address))')
+        .select('*, label, address, lat, lng, job:jobs(id,title,client:clients(name,service_address))')
         .eq('route_id', id)
         .order('stop_order'),
     ]);
@@ -68,28 +78,21 @@ export default function RouteDetailPage() {
     const stopList = (stopsRes.data ?? []) as unknown as StopWithJob[];
     setStops(stopList);
 
-    // Build polyline from stop addresses
-    const coords = stopList
-      .filter((s) => s.job?.client?.service_address)
-      .map((s) => s.job!.client!.service_address);
-
-    if (coords.length >= 2) {
-      // Use stored drive times to derive approximate coordinates via Directions API
-      // For now, re-geocode from addresses (could cache this in route_stops.lat/lng in a future migration)
-      const geocodeResults = await Promise.all(
-        coords.map(async (addr) => {
-          const { geocodeAddress } = await import('@/lib/mapbox');
-          return geocodeAddress(addr);
-        })
-      );
-      const geoCoords = geocodeResults
-        .filter((c): c is [number, number] => c !== null)
-        .map(([lng, lat]) => ({ lat, lng }));
-
-      if (geoCoords.length >= 2) {
-        const poly = await getRoutePolyline(geoCoords);
-        setPolyline(poly);
-      }
+    // Build polyline. Use stored lat/lng for ad-hoc stops; geocode jobs.
+    const { geocodeAddress } = await import('@/lib/mapbox');
+    const allCoords = await Promise.all(
+      stopList.map(async (s) => {
+        if (s.lat != null && s.lng != null) return { lat: s.lat, lng: s.lng };
+        const addr = stopAddress(s);
+        if (!addr) return null;
+        const c = await geocodeAddress(addr);
+        return c ? { lat: c[1], lng: c[0] } : null;
+      })
+    );
+    const geoCoords = allCoords.filter((c): c is { lat: number; lng: number } => c !== null);
+    if (geoCoords.length >= 2) {
+      const poly = await getRoutePolyline(geoCoords);
+      setPolyline(poly);
     }
 
     // Get latest GPS position for crew members on this route's jobs today
@@ -159,16 +162,22 @@ export default function RouteDetailPage() {
       const results: MapStop[] = [];
       for (let i = 0; i < stops.length; i++) {
         const stop = stops[i];
-        const addr = stop.job?.client?.service_address ?? '';
-        if (!addr) continue;
-        const coords = await geocodeAddress(addr);
-        if (!coords || cancelled) continue;
+        let lat = stop.lat ?? null;
+        let lng = stop.lng ?? null;
+        if (lat == null || lng == null) {
+          const addr = stopAddress(stop);
+          if (!addr) continue;
+          const coords = await geocodeAddress(addr);
+          if (!coords || cancelled) continue;
+          lng = coords[0];
+          lat = coords[1];
+        }
         results.push({
           id: stop.id,
-          lat: coords[1],
-          lng: coords[0],
+          lat,
+          lng,
           order: stop.stop_order,
-          label: stop.job?.client?.name ?? stop.job?.title ?? '',
+          label: stopLabel(stop),
           color: crewColor,
           isSelected: stop.id === selectedStopId,
           status: stop.status,
@@ -184,13 +193,15 @@ export default function RouteDetailPage() {
   const stopDrafts: StopDraft[] = stops.map((s) => ({
     _key: s.id,
     job_id: s.job_id,
-    job: (s.job ?? { id: s.job_id, title: '—', client: null }) as StopDraft['job'],
+    job: s.job ?? null,
+    label: s.label ?? null,
+    address: s.address ?? null,
     stop_order: s.stop_order,
     estimated_duration_minutes: s.estimated_duration_minutes ?? 30,
     drive_minutes_from_prev: s.drive_minutes_from_prev ?? 0,
     drive_distance_miles: s.drive_distance_miles ?? 0,
-    lat: geoStops.find((g) => g.id === s.id)?.lat ?? null,
-    lng: geoStops.find((g) => g.id === s.id)?.lng ?? null,
+    lat: geoStops.find((g) => g.id === s.id)?.lat ?? s.lat ?? null,
+    lng: geoStops.find((g) => g.id === s.id)?.lng ?? s.lng ?? null,
   }));
 
   const remaining = stops.filter((s) => s.status !== 'complete' && s.status !== 'skipped').length;

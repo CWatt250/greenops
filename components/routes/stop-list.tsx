@@ -21,8 +21,12 @@ import type { Job } from '@/types';
 
 export interface StopDraft {
   _key: string;
-  job_id: string;
-  job: Job & { client: { id: string; name: string; service_address: string } | null };
+  // Job-backed stop (from auto-load). When null, this is an ad-hoc stop.
+  job_id: string | null;
+  job: (Job & { client: { id: string; name: string; service_address: string } | null }) | null;
+  // Ad-hoc fields. For job-backed stops, label/address are derived from the job.
+  label?: string | null;
+  address?: string | null;
   stop_order: number;
   estimated_duration_minutes: number;
   drive_minutes_from_prev: number;
@@ -40,6 +44,7 @@ interface StopListProps {
   onDurationChange: (key: string, minutes: number) => void;
   onStopSelect: (id: string | null) => void;
   readonly?: boolean;
+  emptyState?: React.ReactNode;
 }
 
 export function StopList({
@@ -51,6 +56,7 @@ export function StopList({
   onDurationChange,
   onStopSelect,
   readonly = false,
+  emptyState,
 }: StopListProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -70,7 +76,7 @@ export function StopList({
   }
 
   if (stops.length === 0) {
-    return (
+    return emptyState ?? (
       <div className="flex flex-col items-center justify-center py-16 text-center px-4">
         <p className="text-sm text-muted-foreground">No stops yet.</p>
         <p className="text-xs text-muted-foreground mt-1">
