@@ -337,6 +337,15 @@ export interface ServicePreset {
   created_at: string;
 }
 
+export interface NoteTemplate {
+  id: string;
+  company_id: string;
+  label: string;
+  body: string;
+  created_by?: string | null;
+  created_at: string;
+}
+
 export interface PropertyMeasurement {
   id: string;
   company_id: string;

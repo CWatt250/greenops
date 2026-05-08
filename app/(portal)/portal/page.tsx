@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { Loader2, ClipboardList, MessageCircle, Camera, Receipt, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { PortalBanner } from '@/components/portal/portal-banner';
 import type { Job, Invoice, ServiceRequest, Complaint } from '@/types';
 
 function fmt(n: number) {
@@ -27,14 +28,42 @@ export default function PortalHomePage() {
   const [unpaidTotal, setUnpaidTotal] = useState(0);
   const [unpaidInvoiceId, setUnpaidInvoiceId] = useState<string | null>(null);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const [banner, setBanner] = useState<{
+    message: string;
+    ctaLabel: string | null;
+    ctaUrl: string | null;
+  } | null>(null);
 
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: pu } = await supabase.from('portal_users').select('full_name, client_id').eq('id', user.id).single();
+      const { data: pu } = await supabase.from('portal_users').select('full_name, client_id, company_id').eq('id', user.id).single();
       if (!pu) { setLoading(false); return; }
+
+      // Pull the company's portal banner if one is enabled and not expired.
+      const { data: company } = await supabase
+        .from('companies')
+        .select(
+          'portal_banner_enabled, portal_banner_message, portal_banner_cta_label, portal_banner_cta_url, portal_banner_expires_at'
+        )
+        .eq('id', pu.company_id)
+        .single();
+
+      if (company?.portal_banner_enabled && company?.portal_banner_message) {
+        const expiresAt = company.portal_banner_expires_at
+          ? new Date(company.portal_banner_expires_at as string).getTime()
+          : null;
+        const stillLive = expiresAt === null || Date.now() < expiresAt;
+        if (stillLive) {
+          setBanner({
+            message: String(company.portal_banner_message),
+            ctaLabel: company.portal_banner_cta_label as string | null,
+            ctaUrl: company.portal_banner_cta_url as string | null,
+          });
+        }
+      }
 
       const fn = pu.full_name?.split(' ')[0] ?? 'there';
       setFirstName(fn);
@@ -117,6 +146,14 @@ export default function PortalHomePage() {
 
   return (
     <div className="px-4 py-5 space-y-5">
+      {banner && (
+        <PortalBanner
+          message={banner.message}
+          ctaLabel={banner.ctaLabel}
+          ctaUrl={banner.ctaUrl}
+        />
+      )}
+
       {/* Welcome */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">

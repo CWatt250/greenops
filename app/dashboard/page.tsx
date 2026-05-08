@@ -7,6 +7,7 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
+import { AnnounceButton } from '@/components/dashboard/announce-button';
 import { Briefcase, Users, AlertTriangle, UsersRound, Plus, MapPin } from 'lucide-react';
 import { formatDate, cn } from '@/lib/utils';
 import type { Job } from '@/types';
@@ -52,6 +53,12 @@ export default async function DashboardPage() {
   const { todayJobs, activeClients, openIssues, crewsOut, recentJobs } =
     await getDashboardData();
 
+  // Pull company_id for the Announce button.
+  const { data: profileForCompany } = user
+    ? await supabase.from('profiles').select('company_id').eq('id', user.id).single()
+    : { data: null };
+  const companyId = (profileForCompany as { company_id?: string } | null)?.company_id;
+
   const stats = [
     { label: "Today's Jobs", value: todayJobs, icon: Briefcase, color: 'var(--color-brand-green-raw)' },
     { label: 'Active Clients', value: activeClients, icon: Users, color: 'var(--color-brand-gold-raw)' },
@@ -62,10 +69,11 @@ export default async function DashboardPage() {
   return (
     <div>
       <PageHeader title="Dashboard" description="Welcome to TLC Management Platform">
+        {companyId && <AnnounceButton companyId={companyId} />}
         <Link
           href="/dashboard/jobs/new"
           className={buttonVariants()}
-          style={{ backgroundColor: 'var(--color-brand-gold-raw)', color: '#fff' }}
+          style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
         >
           <Plus className="h-4 w-4 mr-1.5" /> New Job
         </Link>

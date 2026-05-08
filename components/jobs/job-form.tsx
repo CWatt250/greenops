@@ -15,6 +15,7 @@ import {
 import { ClientCombobox } from '@/components/clients/client-combobox';
 import { LineItemsTable, type LineItemDraft } from '@/components/jobs/line-items-table';
 import { RecurrencePicker } from '@/components/jobs/recurrence-picker';
+import { NoteTemplatePicker } from '@/components/jobs/note-template-picker';
 import { Separator } from '@/components/ui/separator';
 import type { Job, Crew } from '@/types';
 
@@ -60,6 +61,7 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
     register,
     handleSubmit,
     setValue,
+    getValues,
     formState: { errors, isSubmitting },
   } = useForm<JobFormData>({
     resolver: zodResolver(jobSchema),
@@ -228,7 +230,16 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
 
       {/* --- Notes --- */}
       <div className="space-y-2">
-        <Label htmlFor="notes">Notes</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="notes">Notes</Label>
+          <NoteTemplatePicker
+            onApply={(body) => {
+              const current = (getValues('notes') ?? '').trim();
+              const next = current ? `${current}\n\n${body}` : body;
+              setValue('notes', next, { shouldDirty: true });
+            }}
+          />
+        </div>
         <textarea
           id="notes"
           rows={3}

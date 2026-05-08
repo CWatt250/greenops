@@ -4,12 +4,19 @@ import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PortalBannerForm } from '@/components/settings/portal-banner-form';
+import { NoteTemplatesManager } from '@/components/settings/note-templates-manager';
 
 interface CompanyData {
   id: string;
   name: string;
-  phone?: string;
-  email?: string;
+  phone?: string | null;
+  email?: string | null;
+  portal_banner_message?: string | null;
+  portal_banner_cta_label?: string | null;
+  portal_banner_cta_url?: string | null;
+  portal_banner_expires_at?: string | null;
+  portal_banner_enabled?: boolean | null;
 }
 
 interface ProfileWithCompany {
@@ -25,11 +32,18 @@ export default async function SettingsPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('full_name, role, company:companies(id, name, phone, email)')
+    .select(
+      `full_name, role, company:companies(
+        id, name, phone, email,
+        portal_banner_message, portal_banner_cta_label, portal_banner_cta_url,
+        portal_banner_expires_at, portal_banner_enabled
+      )`
+    )
     .eq('id', user.id)
     .single();
 
   const p = profile as ProfileWithCompany | null;
+  const c = p?.company ?? null;
 
   return (
     <div className="max-w-2xl">
@@ -56,7 +70,7 @@ export default async function SettingsPage() {
           </CardContent>
         </Card>
 
-        {p?.company && (
+        {c && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Company</CardTitle>
@@ -64,12 +78,34 @@ export default async function SettingsPage() {
             <CardContent className="space-y-3">
               <div>
                 <p className="text-xs text-muted-foreground">Company Name</p>
-                <p className="text-sm font-medium">{p.company.name}</p>
+                <p className="text-sm font-medium">{c.name}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Phone</p>
-                <p className="text-sm font-medium">{p.company.phone ?? '—'}</p>
+                <p className="text-sm font-medium">{c.phone ?? '—'}</p>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {c && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Portal Banner</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PortalBannerForm companyId={c.id} initial={c} />
+            </CardContent>
+          </Card>
+        )}
+
+        {c && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Note Templates</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <NoteTemplatesManager companyId={c.id} />
             </CardContent>
           </Card>
         )}
