@@ -235,7 +235,7 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
             {crews.length === 0 && (
               <p className="text-sm text-muted-foreground text-center py-8">
                 No crews yet — add crews on the{' '}
-                <a href="/crews" className="underline">Crews page</a>.
+                <a href="/dashboard/crews" className="underline">Crews page</a>.
               </p>
             )}
           </div>

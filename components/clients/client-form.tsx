@@ -98,7 +98,7 @@ export function ClientForm({ initialData, companyId }: ClientFormProps) {
       return;
     }
 
-    router.push(`/clients/${result.data.id}`);
+    router.push(`/dashboard/clients/${result.data.id}`);
   }
 
   const propertyTypes = [

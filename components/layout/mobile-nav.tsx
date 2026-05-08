@@ -10,13 +10,13 @@ import {
 import { cn } from '@/lib/utils';
 
 const navItems = [
-  { href: '/',          label: 'Dashboard',      icon: LayoutDashboard },
-  { href: '/clients',   label: 'Clients',         icon: Users },
-  { href: '/jobs',      label: 'Jobs',            icon: Briefcase },
-  { href: '/schedule',  label: 'Schedule',        icon: CalendarDays },
-  { href: '/services',  label: 'Service Catalog', icon: Wrench },
-  { href: '/crews',     label: 'Crews',           icon: UsersRound },
-  { href: '/settings',  label: 'Settings',        icon: Settings },
+  { href: '/dashboard',           label: 'Dashboard',       icon: LayoutDashboard },
+  { href: '/dashboard/clients',   label: 'Clients',         icon: Users },
+  { href: '/dashboard/jobs',      label: 'Jobs',            icon: Briefcase },
+  { href: '/dashboard/schedule',  label: 'Schedule',        icon: CalendarDays },
+  { href: '/dashboard/services',  label: 'Service Catalog', icon: Wrench },
+  { href: '/dashboard/crews',     label: 'Crews',           icon: UsersRound },
+  { href: '/dashboard/settings',  label: 'Settings',        icon: Settings },
 ];
 
 interface MobileNavProps {
@@ -41,7 +41,7 @@ export function MobileNav({ open, onOpenChange }: MobileNavProps) {
         <nav className="py-4 px-3">
           <ul className="space-y-1">
             {navItems.map(({ href, label, icon: Icon }) => {
-              const isActive = href === '/' ? pathname === '/' : pathname.startsWith(href);
+              const isActive = href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(href);
               return (
                 <li key={href}>
                   <Link

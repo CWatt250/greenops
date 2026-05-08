@@ -125,7 +125,7 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
       if (error) { setServerError(error.message); return; }
     }
 
-    router.push(`/jobs/${jobId}`);
+    router.push(`/dashboard/jobs/${jobId}`);
   }
 
   return (

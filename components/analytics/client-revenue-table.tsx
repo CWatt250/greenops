@@ -47,7 +47,7 @@ const columns = [
     cell: (info) => (
       <div className="flex items-center gap-2">
         <Link
-          href={`/clients/${info.row.original.client_id}`}
+          href={`/dashboard/clients/${info.row.original.client_id}`}
           className="text-sm font-medium hover:underline"
         >
           {info.getValue()}
@@ -90,7 +90,7 @@ const columns = [
     id: 'actions',
     cell: (info) => (
       <Link
-        href={`/clients/${info.row.original.client_id}`}
+        href={`/dashboard/clients/${info.row.original.client_id}`}
         className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'text-xs')}
       >
         View

@@ -34,7 +34,7 @@ const columns = [
   col.accessor('invoice_number', {
     header: 'Invoice',
     cell: (info) => (
-      <Link href={`/invoices/${info.row.original.id}`} className="font-medium hover:underline text-sm">
+      <Link href={`/dashboard/invoices/${info.row.original.id}`} className="font-medium hover:underline text-sm">
         {info.getValue()}
       </Link>
     ),
@@ -91,7 +91,7 @@ const columns = [
     id: 'actions',
     cell: (info) => (
       <Link
-        href={`/invoices/${info.row.original.id}`}
+        href={`/dashboard/invoices/${info.row.original.id}`}
         className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'text-xs')}
       >
         View

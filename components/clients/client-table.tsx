@@ -75,7 +75,7 @@ const columns = [
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem
-            render={<a href={`/clients/${row.original.id}`} />}
+            render={<a href={`/dashboard/clients/${row.original.id}`} />}
           >
             View
           </DropdownMenuItem>
@@ -127,7 +127,7 @@ export function ClientTable({ data, globalFilter }: ClientTableProps) {
               <TableRow
                 key={row.id}
                 className="cursor-pointer hover:bg-muted/40 transition-colors"
-                onClick={() => router.push(`/clients/${row.original.id}`)}
+                onClick={() => router.push(`/dashboard/clients/${row.original.id}`)}
               >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id}>

@@ -128,7 +128,7 @@ export function ClientCombobox({ value, onChange, placeholder = 'Search clientsâ
                       type="button"
                       onClick={() => {
                         setOpen(false);
-                        router.push('/clients/new');
+                        router.push('/dashboard/clients/new');
                       }}
                       className={cn(buttonVariants({ size: 'sm' }))}
                       style={{ backgroundColor: 'var(--color-brand-gold-raw)', color: '#fff' }}

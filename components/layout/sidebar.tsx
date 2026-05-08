@@ -10,22 +10,22 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 
 const mainNav = [
-  { href: '/',          label: 'Dashboard',      icon: LayoutDashboard },
-  { href: '/clients',   label: 'Clients',         icon: Users },
-  { href: '/jobs',      label: 'Jobs',            icon: Briefcase },
-  { href: '/schedule',  label: 'Schedule',        icon: CalendarDays },
-  { href: '/routes',    label: 'Routes',          icon: Route },
-  { href: '/crew',      label: 'Dispatch',        icon: RadioTower },
-  { href: '/invoices',   label: 'Invoices',        icon: FileText },
-  { href: '/billing',    label: 'Billing',         icon: Wallet },
-  { href: '/analytics',  label: 'Analytics',       icon: BarChart2 },
-  { href: '/services',  label: 'Service Catalog', icon: Wrench },
-  { href: '/crews',     label: 'Crews',           icon: UsersRound },
-  { href: '/settings',  label: 'Settings',        icon: Settings },
+  { href: '/dashboard',           label: 'Dashboard',       icon: LayoutDashboard },
+  { href: '/dashboard/clients',   label: 'Clients',         icon: Users },
+  { href: '/dashboard/jobs',      label: 'Jobs',            icon: Briefcase },
+  { href: '/dashboard/schedule',  label: 'Schedule',        icon: CalendarDays },
+  { href: '/dashboard/routes',    label: 'Routes',          icon: Route },
+  { href: '/dashboard/crew',      label: 'Dispatch',        icon: RadioTower },
+  { href: '/dashboard/invoices',  label: 'Invoices',        icon: FileText },
+  { href: '/dashboard/billing',   label: 'Billing',         icon: Wallet },
+  { href: '/dashboard/analytics', label: 'Analytics',       icon: BarChart2 },
+  { href: '/dashboard/services',  label: 'Service Catalog', icon: Wrench },
+  { href: '/dashboard/crews',     label: 'Crews',           icon: UsersRound },
+  { href: '/dashboard/settings',  label: 'Settings',        icon: Settings },
 ];
 
 const portalNav = [
-  { href: '/portal-admin', label: 'Portal Admin', icon: Globe },
+  { href: '/dashboard/portal-admin', label: 'Portal Admin', icon: Globe },
 ];
 
 export function Sidebar() {
@@ -39,7 +39,7 @@ export function Sidebar() {
   }
 
   function NavLink({ href, label, icon: Icon }: { href: string; label: string; icon: React.ElementType }) {
-    const isActive = href === '/' ? pathname === '/' : pathname.startsWith(href);
+    const isActive = href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(href);
     return (
       <li>
         <Link

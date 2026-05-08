@@ -60,7 +60,7 @@ export function PortalActivityFeed({ companyId }: Props) {
         subtitle: `Status: ${r.status}`,
         clientName: r.client?.name ?? '—',
         createdAt: r.created_at,
-        href: '/portal-admin/requests',
+        href: '/dashboard/portal-admin/requests',
       })),
       ...((compRes.data ?? []) as unknown as Array<{ id: string; title: string; severity: string; status: string; created_at: string; client: { name: string } | null }>).map((c) => ({
         id: `comp-${c.id}`,
@@ -70,7 +70,7 @@ export function PortalActivityFeed({ companyId }: Props) {
         clientName: c.client?.name ?? '—',
         severity: c.severity,
         createdAt: c.created_at,
-        href: '/portal-admin/complaints',
+        href: '/dashboard/portal-admin/complaints',
       })),
       ...((msgRes.data ?? []) as unknown as Array<{ id: string; body: string; client_id: string; created_at: string; client: { name: string } | null }>).map((m) => ({
         id: `msg-${m.id}`,
@@ -79,7 +79,7 @@ export function PortalActivityFeed({ companyId }: Props) {
         subtitle: 'Unread message',
         clientName: m.client?.name ?? '—',
         createdAt: m.created_at,
-        href: '/portal-admin',
+        href: '/dashboard/portal-admin',
       })),
     ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 

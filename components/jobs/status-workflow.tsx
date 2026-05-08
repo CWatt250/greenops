@@ -165,7 +165,7 @@ export function StatusWorkflow({ jobId, status, onStatusChange }: StatusWorkflow
           <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
           <span className="text-sm text-green-700 font-medium flex-1">Job complete!</span>
           <Link
-            href={`/invoices/new?job_id=${jobId}`}
+            href={`/dashboard/invoices/new?job_id=${jobId}`}
             className="flex items-center gap-1 text-xs font-semibold text-green-700 hover:text-green-900 underline underline-offset-2"
           >
             <FileText className="h-3.5 w-3.5" />

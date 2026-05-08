@@ -188,7 +188,7 @@ export function RequestQueue({ requests, onUpdate }: Props) {
                     </Button>
                   )}
                   <Link
-                    href={`/jobs/new?client_id=${selected.client_id}&request_id=${selected.id}`}
+                    href={`/dashboard/jobs/new?client_id=${selected.client_id}&request_id=${selected.id}`}
                     className="flex items-center justify-center gap-1.5 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
                     onClick={async () => {
                       if (selected.status !== 'scheduled') {
