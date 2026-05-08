@@ -9,9 +9,22 @@ import type { Job } from '@/types';
 interface DraggableJobCardProps {
   job: Job;
   isDragOverlay?: boolean;
+  /**
+   * If a draggable card is rendered inside a container that already shows
+   * the crew, pass `compact` to suppress the duplicate crew-color dot.
+   */
+  compact?: boolean;
 }
 
-export function DraggableJobCard({ job, isDragOverlay = false }: DraggableJobCardProps) {
+function tintFromHex(hex: string, alpha: number): string {
+  // Convert "#RRGGBB" → "rgba(r, g, b, alpha)"
+  const m = hex.replace('#', '').match(/.{1,2}/g);
+  if (!m || m.length < 3) return `rgba(0,0,0,${alpha})`;
+  const [r, g, b] = m.map((p) => parseInt(p, 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+export function DraggableJobCard({ job, isDragOverlay = false, compact = false }: DraggableJobCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: job.id,
     data: { job },
@@ -21,10 +34,24 @@ export function DraggableJobCard({ job, isDragOverlay = false }: DraggableJobCar
     ? { transform: CSS.Translate.toString(transform) }
     : undefined;
 
+  // The schedule page joins crew(name, color); shape arrives via job.crew.
+  const crewColor =
+    (job.crew as { color?: string } | undefined)?.color ?? null;
+
+  const cardStyle: React.CSSProperties = {
+    ...(style ?? {}),
+    ...(crewColor
+      ? {
+          borderLeft: `4px solid ${crewColor}`,
+          backgroundColor: tintFromHex(crewColor, 0.08),
+        }
+      : {}),
+  };
+
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={cardStyle}
       {...listeners}
       {...attributes}
       className={cn(
@@ -33,9 +60,18 @@ export function DraggableJobCard({ job, isDragOverlay = false }: DraggableJobCar
         isDragOverlay && 'rotate-1 shadow-xl opacity-100 cursor-grabbing'
       )}
     >
-      <p className="font-medium leading-tight truncate mb-1">{job.title}</p>
+      {crewColor && !compact && (
+        <span
+          className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full"
+          style={{ backgroundColor: crewColor }}
+          aria-hidden
+        />
+      )}
+      <p className="font-medium leading-tight truncate mb-1 pr-3">{job.title}</p>
       {job.scheduled_start && (
-        <p className="text-muted-foreground">{(job.scheduled_start as string).slice(0, 5)}</p>
+        <p className="text-muted-foreground tabular-nums">
+          {(job.scheduled_start as string).slice(0, 5)}
+        </p>
       )}
       {(job.client as { name: string } | null)?.name && (
         <p className="text-muted-foreground truncate mt-0.5">

@@ -1,63 +1,139 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { ScheduleGrid } from '@/components/schedule/schedule-grid';
+import { ScheduleDayGrid } from '@/components/schedule/schedule-day-grid';
+import { ScheduleMonthGrid } from '@/components/schedule/schedule-month-grid';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, CalendarDays, Plus } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import type { Job, Crew } from '@/types';
 
-function getMondayOf(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day; // Mon=1, so if Sun (0) go back 6
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
+type View = 'day' | 'week' | 'month';
+
+function parseView(value: string | null): View {
+  return value === 'day' || value === 'month' ? value : 'week';
 }
 
-function addDays(date: Date, days: number): Date {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
+function parseDate(value: string | null): Date {
+  if (value) {
+    const d = new Date(`${value}T00:00:00`);
+    if (!isNaN(d.getTime())) return d;
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
 }
 
-function formatWeekRange(monday: Date): string {
+function toDateStr(d: Date): string {
+  return d.toISOString().split('T')[0];
+}
+
+function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+function getMondayOf(d: Date): Date {
+  const x = new Date(d);
+  const day = x.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  x.setDate(x.getDate() + diff);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function startOfMonth(d: Date): Date {
+  const x = new Date(d);
+  x.setDate(1);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function endOfMonthGrid(d: Date): Date {
+  // 6-week month grid → last cell is start-of-week-sunday(month start) + 41 days
+  const monthStart = startOfMonth(d);
+  const gridStart = new Date(monthStart);
+  gridStart.setDate(monthStart.getDate() - monthStart.getDay());
+  const gridEnd = new Date(gridStart);
+  gridEnd.setDate(gridStart.getDate() + 41);
+  return gridEnd;
+}
+
+function startOfMonthGrid(d: Date): Date {
+  const monthStart = startOfMonth(d);
+  const gridStart = new Date(monthStart);
+  gridStart.setDate(monthStart.getDate() - monthStart.getDay());
+  return gridStart;
+}
+
+function formatDayLabel(d: Date): string {
+  return d.toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  });
+}
+
+function formatWeekLabel(monday: Date): string {
   const sunday = addDays(monday, 6);
   const fmt = (d: Date) =>
     d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const year = sunday.getFullYear();
-  return `${fmt(monday)} – ${fmt(sunday)}, ${year}`;
+  return `${fmt(monday)} – ${fmt(sunday)}, ${sunday.getFullYear()}`;
 }
 
-export default function SchedulePage() {
+function formatMonthLabel(d: Date): string {
+  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+function SchedulePageInner() {
   const supabase = createClient();
-  const [weekStart, setWeekStart] = useState(() => getMondayOf(new Date()));
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const view = parseView(searchParams.get('view'));
+  const anchor = useMemo(
+    () => parseDate(searchParams.get('date')),
+    [searchParams]
+  );
+
   const [crews, setCrews] = useState<Crew[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [unassigned, setUnassigned] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Compute query window per view
+  const { rangeStart, rangeEnd } = useMemo(() => {
+    if (view === 'day') {
+      return { rangeStart: toDateStr(anchor), rangeEnd: toDateStr(anchor) };
+    }
+    if (view === 'month') {
+      return {
+        rangeStart: toDateStr(startOfMonthGrid(anchor)),
+        rangeEnd: toDateStr(endOfMonthGrid(anchor)),
+      };
+    }
+    // week
+    const monday = getMondayOf(anchor);
+    return {
+      rangeStart: toDateStr(monday),
+      rangeEnd: toDateStr(addDays(monday, 6)),
+    };
+  }, [view, anchor]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
 
-    const weekEnd = addDays(weekStart, 6);
-    const startStr = weekStart.toISOString().split('T')[0];
-    const endStr = weekEnd.toISOString().split('T')[0];
-
-    const [crewsRes, weekJobsRes, unassignedRes] = await Promise.all([
-      supabase
-        .from('crews')
-        .select('*')
-        .eq('is_active', true)
-        .order('name'),
+    const [crewsRes, jobsRes, unassignedRes] = await Promise.all([
+      supabase.from('crews').select('*').eq('is_active', true).order('name'),
       supabase
         .from('jobs')
-        .select('*, client:clients(name), crew:crews(name,color)')
-        .gte('scheduled_date', startStr)
-        .lte('scheduled_date', endStr)
+        .select('*, client:clients(name), crew:crews(id,name,color)')
+        .gte('scheduled_date', rangeStart)
+        .lte('scheduled_date', rangeEnd)
         .not('status', 'eq', 'cancelled'),
       supabase
         .from('jobs')
@@ -69,16 +145,16 @@ export default function SchedulePage() {
     ]);
 
     setCrews((crewsRes.data ?? []) as Crew[]);
-    setJobs((weekJobsRes.data ?? []) as Job[]);
+    setJobs((jobsRes.data ?? []) as Job[]);
     setUnassigned((unassignedRes.data ?? []) as Job[]);
     setLoading(false);
-  }, [weekStart]);
+  }, [rangeStart, rangeEnd, supabase]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Supabase Realtime — refresh grid when jobs change
+  // Realtime: re-fetch on any jobs change.
   useEffect(() => {
     const channel = supabase
       .channel('schedule-realtime')
@@ -88,13 +164,39 @@ export default function SchedulePage() {
         () => { loadData(); }
       )
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
-  }, [weekStart]);
+  }, [loadData, supabase]);
 
-  function prevWeek() { setWeekStart((w) => addDays(w, -7)); }
-  function nextWeek() { setWeekStart((w) => addDays(w, 7)); }
-  function goToday() { setWeekStart(getMondayOf(new Date())); }
+  function navigate({ view: nextView, date: nextDate }: { view?: View; date?: Date }) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextView) params.set('view', nextView);
+    if (nextDate) params.set('date', toDateStr(nextDate));
+    router.replace(`/dashboard/schedule?${params.toString()}`, { scroll: false });
+  }
+
+  function step(direction: 1 | -1) {
+    if (view === 'day') {
+      navigate({ date: addDays(anchor, direction) });
+    } else if (view === 'week') {
+      navigate({ date: addDays(anchor, direction * 7) });
+    } else {
+      const next = new Date(anchor);
+      next.setMonth(next.getMonth() + direction);
+      next.setDate(1);
+      navigate({ date: next });
+    }
+  }
+
+  function jumpToday() {
+    navigate({ date: new Date() });
+  }
+
+  const headerLabel =
+    view === 'day'
+      ? formatDayLabel(anchor)
+      : view === 'week'
+        ? formatWeekLabel(getMondayOf(anchor))
+        : formatMonthLabel(anchor);
 
   return (
     <div>
@@ -102,38 +204,81 @@ export default function SchedulePage() {
         <Link
           href="/dashboard/jobs/new"
           className={buttonVariants()}
-          style={{ backgroundColor: 'var(--color-brand-gold-raw)', color: '#fff' }}
+          style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
         >
           <Plus className="h-4 w-4 mr-1.5" /> New Job
         </Link>
       </PageHeader>
 
-      {/* Week navigation */}
-      <div className="flex items-center gap-2 mb-5">
-        <Button variant="outline" size="icon" onClick={prevWeek} aria-label="Previous week">
+      {/* Top bar: nav + view toggle + label */}
+      <div className="flex items-center gap-2 mb-5 flex-wrap">
+        <Button variant="outline" size="icon" onClick={() => step(-1)} aria-label="Previous">
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <Button variant="outline" size="icon" onClick={nextWeek} aria-label="Next week">
+        <Button variant="outline" size="icon" onClick={() => step(1)} aria-label="Next">
           <ChevronRight className="h-4 w-4" />
         </Button>
-        <Button variant="outline" size="sm" onClick={goToday} className="gap-1.5">
+        <Button variant="outline" size="sm" onClick={jumpToday} className="gap-1.5">
           <CalendarDays className="h-4 w-4" />
           Today
         </Button>
-        <span className="text-sm font-semibold ml-1">{formatWeekRange(weekStart)}</span>
+
+        {/* View toggle (segmented) */}
+        <div className="inline-flex rounded-lg border bg-background p-0.5">
+          {(['day', 'week', 'month'] as View[]).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => navigate({ view: v })}
+              className={cn(
+                'rounded-md px-3 py-1 text-xs font-semibold capitalize transition-colors',
+                view === v
+                  ? 'bg-[var(--orange)] text-white'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+
+        <span className="text-sm font-semibold ml-1">{headerLabel}</span>
       </div>
 
       {loading ? (
         <div className="text-sm text-muted-foreground text-center py-24">Loading schedule…</div>
+      ) : view === 'day' ? (
+        <ScheduleDayGrid
+          key={toDateStr(anchor)}
+          date={anchor}
+          crews={crews}
+          initialJobs={jobs}
+        />
+      ) : view === 'month' ? (
+        <ScheduleMonthGrid
+          key={`${anchor.getFullYear()}-${anchor.getMonth()}`}
+          monthAnchor={anchor}
+          crews={crews}
+          jobs={jobs}
+          onDayClick={(date) => navigate({ view: 'day', date })}
+        />
       ) : (
         <ScheduleGrid
-          key={weekStart.toISOString()}
-          weekStart={weekStart}
+          key={toDateStr(getMondayOf(anchor))}
+          weekStart={getMondayOf(anchor)}
           crews={crews}
           initialJobs={jobs}
           unassignedInitial={unassigned}
         />
       )}
     </div>
+  );
+}
+
+export default function SchedulePage() {
+  return (
+    <Suspense fallback={<div className="text-sm text-muted-foreground text-center py-24">Loading schedule…</div>}>
+      <SchedulePageInner />
+    </Suspense>
   );
 }
