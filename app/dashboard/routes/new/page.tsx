@@ -1,33 +1,39 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger,
-} from '@/components/ui/select';
 import { StopList, type StopDraft } from '@/components/routes/stop-list';
+import { GroupedStopList } from '@/components/routes/grouped-stop-list';
 import { RouteSummaryBar } from '@/components/routes/route-summary-bar';
 import { OptimizeButton } from '@/components/routes/optimize-button';
 import { WeatherBanner } from '@/components/routes/weather-banner';
 import { AddStopInput } from '@/components/routes/add-stop-input';
-import { geocodeAddress, getRouteLegs, getRoutePolyline, type PlaceSuggestion } from '@/lib/mapbox';
+import { CrewMultiPicker } from '@/components/routes/crew-multi-picker';
+import {
+  geocodeAddress, getRouteLegs, getRoutePolyline, type PlaceSuggestion,
+} from '@/lib/mapbox';
+import { optimizeMultiCrewRoute, routeCentroid, type VroomStop } from '@/lib/vroom';
 import { getWeatherForRoute } from '@/lib/weather';
 import { toast } from 'sonner';
-import { Loader2, Save, Send, MapPin } from 'lucide-react';
+import { Loader2, Save, Send, MapPin, Sparkles } from 'lucide-react';
 import type { Crew } from '@/types';
-import type { MapStop } from '@/components/routes/route-map';
+import type { MapStop, MapPolyline, MapLegendItem } from '@/components/routes/route-map';
 
 const RouteMap = dynamic(() => import('@/components/routes/route-map'), { ssr: false });
+
+const TRI_CITIES_DEFAULT: [number, number] = [-119.1734, 46.2087];
+const UNASSIGNED_COLOR = '#9CA3AF'; // gray-400
 
 type JobWithClient = {
   id: string;
   title: string;
   status: string;
+  crew_id: string | null;
   scheduled_start?: string | null;
   client: { id: string; name: string; service_address: string } | null;
 };
@@ -46,114 +52,204 @@ function formatDateLabel(dateStr: string) {
   });
 }
 
+function formatMinutes(mins: number): string {
+  if (mins <= 0) return '0m';
+  if (mins < 60) return `${Math.round(mins)}m`;
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
 export default function RouteBuilderPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  // Auth
+  // Auth + company
   const [userId, setUserId] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  const [officeCoords, setOfficeCoords] = useState<[number, number] | null>(null);
 
   // Selectors
   const [crews, setCrews] = useState<Crew[]>([]);
-  const [selectedCrewId, setSelectedCrewId] = useState('');
+  const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState(toDateStr(new Date()));
   const [routeTitle, setRouteTitle] = useState('');
 
-  // Stop state
+  // Stops
   const [stops, setStops] = useState<StopDraft[]>([]);
   const [selectedStopKey, setSelectedStopKey] = useState<string | null>(null);
+  const [optimized, setOptimized] = useState(false);
 
-  // Map
-  const [polyline, setPolyline] = useState<GeoJSON.LineString | null>(null);
+  // Polylines: keyed by crew_id (or 'single' in single-crew mode).
+  const [polylinesByGroup, setPolylinesByGroup] = useState<Record<string, GeoJSON.LineString>>({});
 
   // Weather
   const [weatherInfo, setWeatherInfo] = useState<{ summary: string; flag: boolean } | null>(null);
 
   // Loading states
   const [loadingJobs, setLoadingJobs] = useState(false);
+  const [optimizingMulti, setOptimizingMulti] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [autoLoaded, setAutoLoaded] = useState(false);
 
   const geocodeCache = useRef<Map<string, [number, number]>>(new Map());
 
+  const mode: 'single' | 'multi' = selectedCrewIds.length <= 1 ? 'single' : 'multi';
+  const crewById = useMemo(() => {
+    const m = new Map<string, Crew>();
+    crews.forEach((c) => m.set(c.id, c));
+    return m;
+  }, [crews]);
+
+  // ── Bootstrapping ──────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return;
       setUserId(user.id);
-      supabase.from('profiles').select('company_id').eq('id', user.id).single()
-        .then(({ data }) => setCompanyId(data?.company_id ?? null));
+      const { data } = await supabase
+        .from('profiles')
+        .select('company_id')
+        .eq('id', user.id)
+        .single();
+      if (data?.company_id) {
+        setCompanyId(data.company_id);
+        // Pull company address and try to geocode it for the depot location.
+        const { data: company } = await supabase
+          .from('companies')
+          .select('address, city, state, zip')
+          .eq('id', data.company_id)
+          .single();
+        if (company?.address) {
+          const full = [company.address, company.city, company.state, company.zip]
+            .filter(Boolean)
+            .join(', ');
+          const coords = await geocodeAddress(full);
+          if (coords) setOfficeCoords(coords);
+        }
+      }
     });
     supabase.from('crews').select('*').eq('is_active', true).order('name')
       .then(({ data }) => setCrews((data ?? []) as Crew[]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Geocode a stop address (with local cache)
+  // ── Geocoding helpers ──────────────────────────────────────────────────
   const geocodeStop = useCallback(async (address: string): Promise<[number, number] | null> => {
-    if (geocodeCache.current.has(address)) {
-      return geocodeCache.current.get(address)!;
-    }
+    if (geocodeCache.current.has(address)) return geocodeCache.current.get(address)!;
     const coords = await geocodeAddress(address);
     if (coords) geocodeCache.current.set(address, coords);
     return coords;
   }, []);
 
-  // Rebuild polyline + drive times when stop coords change
-  const rebuildRouteGeometry = useCallback(async (currentStops: StopDraft[]) => {
-    const geocoded = currentStops.filter((s) => s.lat !== null && s.lng !== null);
-    if (geocoded.length < 2) {
-      setPolyline(null);
-      return currentStops;
+  // Build polylines + drive-times. Per-crew when grouped, single when not.
+  const rebuildGeometry = useCallback(async (currentStops: StopDraft[], multi: boolean) => {
+    if (!multi) {
+      const geocoded = currentStops.filter((s) => s.lat !== null && s.lng !== null);
+      if (geocoded.length < 2) {
+        setPolylinesByGroup({});
+        return currentStops.map((s) => ({ ...s, drive_minutes_from_prev: 0 }));
+      }
+      const coords = geocoded.map((s) => ({ lat: s.lat!, lng: s.lng! }));
+      const [poly, legs] = await Promise.all([
+        getRoutePolyline(coords),
+        getRouteLegs(coords),
+      ]);
+      setPolylinesByGroup(poly ? { single: poly } : {});
+      if (!legs) return currentStops;
+
+      let legIdx = 0;
+      return currentStops.map((stop, i) => {
+        if (i === 0 || stop.lat === null) return { ...stop, drive_minutes_from_prev: 0 };
+        const prevGeocoded = currentStops.slice(0, i).some((s) => s.lat !== null);
+        if (!prevGeocoded) return { ...stop, drive_minutes_from_prev: 0 };
+        const leg = legs[legIdx++];
+        return {
+          ...stop,
+          drive_minutes_from_prev: Math.round((leg?.duration_seconds ?? 0) / 60),
+          drive_distance_miles: Math.round(((leg?.distance_meters ?? 0) / 1609.34) * 100) / 100,
+        };
+      });
     }
 
-    const coords = geocoded.map((s) => ({ lat: s.lat!, lng: s.lng! }));
+    // Multi-crew: one polyline + leg set per crew.
+    const polylines: Record<string, GeoJSON.LineString> = {};
+    const next = [...currentStops];
 
-    const [poly, legs] = await Promise.all([
-      getRoutePolyline(coords),
-      getRouteLegs(coords),
-    ]);
+    // Group by assigned_crew_id, then sort by stop_order
+    const byCrew = new Map<string, StopDraft[]>();
+    for (const stop of currentStops) {
+      const cid = stop.assigned_crew_id;
+      if (!cid || stop.lat === null || stop.lng === null) continue;
+      if (!byCrew.has(cid)) byCrew.set(cid, []);
+      byCrew.get(cid)!.push(stop);
+    }
 
-    setPolyline(poly);
+    await Promise.all(
+      Array.from(byCrew.entries()).map(async ([cid, crewStops]) => {
+        const sorted = [...crewStops].sort((a, b) => a.stop_order - b.stop_order);
+        if (sorted.length < 2) return;
+        const coords = sorted.map((s) => ({ lat: s.lat!, lng: s.lng! }));
+        const [poly, legs] = await Promise.all([
+          getRoutePolyline(coords),
+          getRouteLegs(coords),
+        ]);
+        if (poly) polylines[cid] = poly;
 
-    if (!legs) return currentStops;
+        if (legs) {
+          let legIdx = 0;
+          for (let i = 0; i < sorted.length; i++) {
+            const idx = next.findIndex((s) => s._key === sorted[i]._key);
+            if (idx < 0) continue;
+            if (i === 0) {
+              next[idx] = { ...next[idx], drive_minutes_from_prev: 0 };
+            } else {
+              const leg = legs[legIdx++];
+              next[idx] = {
+                ...next[idx],
+                drive_minutes_from_prev: Math.round((leg?.duration_seconds ?? 0) / 60),
+                drive_distance_miles: Math.round(((leg?.distance_meters ?? 0) / 1609.34) * 100) / 100,
+              };
+            }
+          }
+        }
+      })
+    );
 
-    let legIdx = 0;
-    return currentStops.map((stop, i) => {
-      if (i === 0 || stop.lat === null) return { ...stop, drive_minutes_from_prev: 0 };
-      const prevGeocoded = currentStops.slice(0, i).some((s) => s.lat !== null);
-      if (!prevGeocoded) return { ...stop, drive_minutes_from_prev: 0 };
-      const leg = legs[legIdx++];
-      return {
-        ...stop,
-        drive_minutes_from_prev: Math.round((leg?.duration_seconds ?? 0) / 60),
-        drive_distance_miles: Math.round(((leg?.distance_meters ?? 0) / 1609.34) * 100) / 100,
-      };
-    });
+    setPolylinesByGroup(polylines);
+    return next;
   }, []);
 
-  // Auto-load jobs whenever crew + date are both set and companyId is known
+  // ── Auto-load jobs whenever crews + date change ────────────────────────
   useEffect(() => {
-    if (!selectedCrewId || !selectedDate || !companyId) return;
+    if (selectedCrewIds.length === 0 || !selectedDate || !companyId) {
+      setStops([]);
+      setPolylinesByGroup({});
+      setOptimized(false);
+      setAutoLoaded(false);
+      return;
+    }
 
     let cancelled = false;
     (async () => {
       setLoadingJobs(true);
       setAutoLoaded(false);
+      setOptimized(false);
 
       const { data: jobs } = await supabase
         .from('jobs')
-        .select('id, title, status, scheduled_start, client:clients(id,name,service_address)')
-        .eq('crew_id', selectedCrewId)
+        .select('id, title, status, crew_id, scheduled_start, client:clients(id,name,service_address)')
+        .in('crew_id', selectedCrewIds)
         .eq('scheduled_date', selectedDate)
         .not('status', 'in', '("cancelled","complete")')
         .order('scheduled_start');
 
       if (cancelled) return;
-
       const jobList = (jobs ?? []) as unknown as JobWithClient[];
 
+      const isMulti = selectedCrewIds.length > 1;
+
+      // Geocode in parallel
       const drafted: StopDraft[] = await Promise.all(
         jobList.map(async (job, i) => {
           const address = job.client?.service_address ?? '';
@@ -170,20 +266,24 @@ export default function RouteBuilderPage() {
             drive_distance_miles: 0,
             lat: coords ? coords[1] : null,
             lng: coords ? coords[0] : null,
+            assigned_crew_id: isMulti ? null : selectedCrewIds[0],
           };
         })
       );
 
       if (cancelled) return;
 
-      const withGeometry = await rebuildRouteGeometry(drafted);
+      const withGeometry = await rebuildGeometry(drafted, isMulti);
       if (cancelled) return;
 
       setStops(withGeometry);
 
-      const crew = crews.find((c) => c.id === selectedCrewId);
-      if (crew && selectedDate) {
-        setRouteTitle(`${crew.name} · ${formatDateLabel(selectedDate)}`);
+      // Auto-title (single-crew only)
+      if (!isMulti && selectedCrewIds[0]) {
+        const crew = crewById.get(selectedCrewIds[0]);
+        if (crew) setRouteTitle(`${crew.name} · ${formatDateLabel(selectedDate)}`);
+      } else {
+        setRouteTitle('');
       }
 
       setAutoLoaded(true);
@@ -191,18 +291,19 @@ export default function RouteBuilderPage() {
     })();
 
     return () => { cancelled = true; };
-  }, [selectedCrewId, selectedDate, companyId, supabase, geocodeStop, rebuildRouteGeometry, crews]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCrewIds.join(','), selectedDate, companyId, crewById]);
 
-  async function handleReorder(reordered: StopDraft[]) {
-    const withGeometry = await rebuildRouteGeometry(reordered);
+  // ── Single-crew handlers ───────────────────────────────────────────────
+  async function handleReorderSingle(reordered: StopDraft[]) {
+    const withGeometry = await rebuildGeometry(reordered, false);
     setStops(withGeometry);
   }
 
   function handleRemove(key: string) {
     setStops((prev) => {
       const next = prev.filter((s) => s._key !== key).map((s, i) => ({ ...s, stop_order: i + 1 }));
-      // re-geocode geometry after removal
-      void rebuildRouteGeometry(next).then(setStops);
+      void rebuildGeometry(next, mode === 'multi').then(setStops);
       return next;
     });
     if (selectedStopKey === key) setSelectedStopKey(null);
@@ -214,10 +315,10 @@ export default function RouteBuilderPage() {
     );
   }
 
-  function handleOptimized(reorderedStops: StopDraft[]) {
+  function handleOptimizedSingle(reorderedStops: StopDraft[]) {
     setStops(reorderedStops);
-    setPolyline(null);
-    void handleReorder(reorderedStops);
+    setPolylinesByGroup({});
+    void handleReorderSingle(reorderedStops);
   }
 
   async function handleAddStop(place: PlaceSuggestion) {
@@ -233,16 +334,110 @@ export default function RouteBuilderPage() {
       drive_distance_miles: 0,
       lat: place.lat,
       lng: place.lng,
+      assigned_crew_id: mode === 'single' ? selectedCrewIds[0] ?? null : null,
     };
     const next = [...stops, newStop];
-    const withGeometry = await rebuildRouteGeometry(next);
+    const withGeometry = await rebuildGeometry(next, mode === 'multi');
     setStops(withGeometry);
     toast.success(`Added stop: ${place.shortName}`);
   }
 
-  async function saveRoute(dispatch = false): Promise<string | null> {
-    if (!companyId || !userId || !selectedCrewId || !selectedDate) {
-      toast.error('Please select a crew and date.');
+  // ── Multi-crew optimize ────────────────────────────────────────────────
+  async function handleOptimizeMulti() {
+    const geocodedStops = stops.filter((s) => s.lat !== null && s.lng !== null);
+    if (geocodedStops.length === 0) {
+      toast.error('No geocoded stops to optimize.');
+      return;
+    }
+    if (selectedCrewIds.length < 2) {
+      toast.error('Multi-crew optimize requires 2+ crews.');
+      return;
+    }
+
+    setOptimizingMulti(true);
+
+    // Determine depot location: company office, fallback to centroid, fallback Tri-Cities.
+    const startLocation: [number, number] = officeCoords
+      ?? routeCentroid(geocodedStops.map((s) => [s.lng!, s.lat!]))
+      ?? TRI_CITIES_DEFAULT;
+
+    // VROOM stops: integer ids 0..N-1, mapped back via index.
+    const vroomStops: VroomStop[] = geocodedStops.map((s, i) => ({
+      id: i,
+      location: [s.lng!, s.lat!],
+      service: (s.estimated_duration_minutes ?? 30) * 60,
+    }));
+
+    const crewVehicles = selectedCrewIds.map((id) => ({ crew_id: id }));
+
+    const origDrive = stops.reduce((sum, s) => sum + (s.drive_minutes_from_prev ?? 0), 0);
+
+    const result = await optimizeMultiCrewRoute(vroomStops, crewVehicles, startLocation);
+
+    if (!result) {
+      setOptimizingMulti(false);
+      toast.error('Optimization service unavailable. Try again or save manually.');
+      return;
+    }
+
+    // Build a map of stop._key → assigned crew + per-crew order
+    const assignmentByKey = new Map<string, { crew_id: string; order: number }>();
+    for (const a of result.assignments) {
+      a.stop_ids.forEach((vroomId, position) => {
+        const sourceStop = geocodedStops[vroomId];
+        if (sourceStop) {
+          assignmentByKey.set(sourceStop._key, {
+            crew_id: a.crew_id,
+            order: position + 1,
+          });
+        }
+      });
+    }
+
+    // Apply assignments back to the full stop list
+    const reassigned: StopDraft[] = stops.map((s) => {
+      const a = assignmentByKey.get(s._key);
+      if (a) {
+        return { ...s, assigned_crew_id: a.crew_id, stop_order: a.order };
+      }
+      // Stops with no geocoding or VROOM-unassigned: leave alone, mark unassigned
+      if (s.lat === null || s.lng === null) return { ...s, assigned_crew_id: null };
+      // Geocoded but VROOM didn't fit them in: clear assignment
+      return { ...s, assigned_crew_id: null };
+    });
+
+    const withGeometry = await rebuildGeometry(reassigned, true);
+    setStops(withGeometry);
+    setOptimized(true);
+    setOptimizingMulti(false);
+
+    const newDrive = withGeometry.reduce((sum, s) => sum + (s.drive_minutes_from_prev ?? 0), 0);
+    const saved = Math.max(0, Math.round(origDrive - newDrive));
+
+    const totalCrews = result.assignments.filter((a) => a.stop_ids.length > 0).length;
+    const totalAssigned = result.assignments.reduce((s, a) => s + a.stop_ids.length, 0);
+
+    if (saved > 0) {
+      toast.success(
+        `Routes optimized — ${totalAssigned} stops distributed across ${totalCrews} crew${totalCrews === 1 ? '' : 's'}. Saved ~${formatMinutes(saved)} of drive time.`
+      );
+    } else {
+      toast.success(
+        `Routes optimized — ${totalAssigned} stops distributed across ${totalCrews} crew${totalCrews === 1 ? '' : 's'}.`
+      );
+    }
+
+    if (result.unassigned.length > 0) {
+      toast.warning(
+        `${result.unassigned.length} stop${result.unassigned.length === 1 ? '' : 's'} couldn't fit any crew — left unassigned.`
+      );
+    }
+  }
+
+  // ── Save ───────────────────────────────────────────────────────────────
+  async function saveRoute(dispatch = false): Promise<{ ids: string[]; titles: string[] } | null> {
+    if (!companyId || !userId || selectedCrewIds.length === 0 || !selectedDate) {
+      toast.error('Please select at least one crew and a date.');
       return null;
     }
     if (stops.length === 0) {
@@ -250,6 +445,12 @@ export default function RouteBuilderPage() {
       return null;
     }
 
+    if (mode === 'multi' && !optimized) {
+      toast.error('Click ✨ Optimize Routes before saving the multi-crew distribution.');
+      return null;
+    }
+
+    // Weather check using first geocoded stop
     const firstGeo = stops.find((s) => s.lat !== null && s.lng !== null);
     let weather = weatherInfo;
     if (!weather && firstGeo?.lat && firstGeo?.lng) {
@@ -257,124 +458,232 @@ export default function RouteBuilderPage() {
       setWeatherInfo(weather);
     }
 
-    const totalDrive = stops.reduce((s, st) => s + (st.drive_minutes_from_prev ?? 0), 0);
-    const totalWork = stops.reduce((s, st) => s + (st.estimated_duration_minutes ?? 30), 0);
+    // Build groups: one entry per crew with assigned stops.
+    const groups = new Map<string, StopDraft[]>();
+    for (const cid of selectedCrewIds) groups.set(cid, []);
+    for (const stop of stops) {
+      const cid = stop.assigned_crew_id;
+      if (!cid) continue;
+      if (!groups.has(cid)) groups.set(cid, []);
+      groups.get(cid)!.push(stop);
+    }
 
-    const { data: route, error: routeErr } = await supabase
-      .from('routes')
-      .insert({
-        company_id: companyId,
-        crew_id: selectedCrewId,
-        route_date: selectedDate,
-        title: routeTitle || null,
-        status: dispatch ? 'active' : 'draft',
-        total_drive_minutes: totalDrive,
-        total_job_minutes: totalWork,
-        total_stops: stops.length,
-        weather_checked_at: weather ? new Date().toISOString() : null,
-        weather_summary: weather?.summary ?? null,
-        weather_flag: weather?.flag ?? false,
-        created_by: userId,
-      })
-      .select('id')
-      .single();
+    const createdIds: string[] = [];
+    const createdTitles: string[] = [];
 
-    if (routeErr || !route) {
-      toast.error(routeErr?.message ?? 'Failed to save route.');
+    for (const [cid, crewStops] of groups.entries()) {
+      if (crewStops.length === 0) continue;
+
+      const ordered = [...crewStops].sort((a, b) => a.stop_order - b.stop_order);
+      const crew = crewById.get(cid);
+      const title = mode === 'single'
+        ? (routeTitle || (crew ? `${crew.name} · ${formatDateLabel(selectedDate)}` : null))
+        : (crew ? `${crew.name} · ${formatDateLabel(selectedDate)}` : null);
+
+      const totalDrive = ordered.reduce((s, st) => s + (st.drive_minutes_from_prev ?? 0), 0);
+      const totalWork = ordered.reduce((s, st) => s + (st.estimated_duration_minutes ?? 30), 0);
+
+      const { data: route, error: routeErr } = await supabase
+        .from('routes')
+        .insert({
+          company_id: companyId,
+          crew_id: cid,
+          route_date: selectedDate,
+          title,
+          status: dispatch ? 'active' : 'draft',
+          total_drive_minutes: totalDrive,
+          total_job_minutes: totalWork,
+          total_stops: ordered.length,
+          weather_checked_at: weather ? new Date().toISOString() : null,
+          weather_summary: weather?.summary ?? null,
+          weather_flag: weather?.flag ?? false,
+          optimized_at: optimized ? new Date().toISOString() : null,
+          created_by: userId,
+        })
+        .select('id')
+        .single();
+
+      if (routeErr || !route) {
+        toast.error(routeErr?.message ?? 'Failed to save route.');
+        return null;
+      }
+
+      const stopInserts = ordered.map((s, i) => ({
+        route_id: route.id,
+        job_id: s.job_id,
+        label: s.job_id ? null : s.label,
+        address: s.job_id ? null : s.address,
+        lat: s.job_id ? null : s.lat,
+        lng: s.job_id ? null : s.lng,
+        stop_order: i + 1,
+        estimated_duration_minutes: s.estimated_duration_minutes,
+        drive_minutes_from_prev: Math.round(s.drive_minutes_from_prev),
+        drive_distance_miles: s.drive_distance_miles,
+      }));
+
+      const { error: stopsErr } = await supabase.from('route_stops').insert(stopInserts);
+      if (stopsErr) {
+        toast.error(stopsErr.message);
+        return null;
+      }
+
+      // In multi mode, reflect VROOM's reassignment back onto the source jobs.
+      if (mode === 'multi') {
+        const jobIds = ordered
+          .map((s) => s.job_id)
+          .filter((id): id is string => !!id);
+        if (jobIds.length > 0) {
+          await supabase
+            .from('jobs')
+            .update({ crew_id: cid })
+            .in('id', jobIds);
+        }
+      }
+
+      createdIds.push(route.id);
+      createdTitles.push(title ?? 'Route');
+    }
+
+    if (createdIds.length === 0) {
+      toast.error('No stops were assigned to any crew. Run Optimize first.');
       return null;
     }
 
-    const stopInserts = stops.map((s) => ({
-      route_id: route.id,
-      job_id: s.job_id,
-      label: s.job_id ? null : s.label,
-      address: s.job_id ? null : s.address,
-      lat: s.job_id ? null : s.lat,
-      lng: s.job_id ? null : s.lng,
-      stop_order: s.stop_order,
-      estimated_duration_minutes: s.estimated_duration_minutes,
-      drive_minutes_from_prev: Math.round(s.drive_minutes_from_prev),
-      drive_distance_miles: s.drive_distance_miles,
-    }));
-
-    const { error: stopsErr } = await supabase.from('route_stops').insert(stopInserts);
-    if (stopsErr) {
-      toast.error(stopsErr.message);
-      return null;
-    }
-
-    return route.id;
+    return { ids: createdIds, titles: createdTitles };
   }
 
   async function handleSave() {
     setSaving(true);
-    const routeId = await saveRoute(false);
+    const result = await saveRoute(false);
     setSaving(false);
-    if (routeId) {
-      toast.success('Route saved!');
-      router.push(`/dashboard/routes/${routeId}`);
+    if (result) {
+      toast.success(
+        result.ids.length === 1
+          ? 'Route saved!'
+          : `${result.ids.length} routes saved.`
+      );
+      if (result.ids.length === 1) {
+        router.push(`/dashboard/routes/${result.ids[0]}`);
+      } else {
+        router.push('/dashboard/routes');
+      }
     }
   }
 
   async function handleDispatch() {
     setDispatching(true);
-    const routeId = await saveRoute(true);
-    if (!routeId) { setDispatching(false); return; }
+    const result = await saveRoute(true);
+    if (!result) { setDispatching(false); return; }
 
-    const { data: members } = await supabase
-      .from('crew_members')
-      .select('profile_id')
-      .eq('crew_id', selectedCrewId);
-
-    if (members?.length && companyId) {
-      await supabase.from('notifications').insert(
-        members.map((m: { profile_id: string }) => ({
-          company_id: companyId,
-          profile_id: m.profile_id,
-          title: `Route dispatched: ${routeTitle || 'Today\'s route'}`,
-          body: `${stops.length} stops · ${formatDateLabel(selectedDate)}`,
-          entity_type: 'route',
-          entity_id: routeId,
-        }))
-      );
+    // Notify each crew's members
+    for (let i = 0; i < result.ids.length; i++) {
+      const cid = selectedCrewIds.find((id) => result.titles[i].startsWith(crewById.get(id)?.name ?? '___'));
+      if (!cid || !companyId) continue;
+      const { data: members } = await supabase
+        .from('crew_members')
+        .select('profile_id')
+        .eq('crew_id', cid);
+      if (members?.length) {
+        await supabase.from('notifications').insert(
+          members.map((m: { profile_id: string }) => ({
+            company_id: companyId,
+            profile_id: m.profile_id,
+            title: `Route dispatched: ${result.titles[i]}`,
+            body: `${formatDateLabel(selectedDate)}`,
+            entity_type: 'route',
+            entity_id: result.ids[i],
+          }))
+        );
+      }
     }
 
-    toast.success('Route dispatched to crew!');
     setDispatching(false);
-    router.push(`/dashboard/routes/${routeId}`);
+    toast.success(
+      result.ids.length === 1
+        ? 'Route dispatched!'
+        : `${result.ids.length} routes dispatched to crews.`
+    );
+    if (result.ids.length === 1) {
+      router.push(`/dashboard/routes/${result.ids[0]}`);
+    } else {
+      router.push('/dashboard/routes');
+    }
   }
 
-  const selectedCrew = crews.find((c) => c.id === selectedCrewId);
-  const crewColor = selectedCrew?.color ?? 'var(--orange)';
+  // ── Derived map data ───────────────────────────────────────────────────
+  const singleCrewColor = mode === 'single' && selectedCrewIds[0]
+    ? (crewById.get(selectedCrewIds[0])?.color ?? 'var(--orange)')
+    : 'var(--orange)';
 
   const mapStops: MapStop[] = stops
     .filter((s) => s.lat !== null && s.lng !== null)
-    .map((s) => ({
-      id: s._key,
-      lat: s.lat!,
-      lng: s.lng!,
-      order: s.stop_order,
-      label: s.job_id
-        ? ((s.job?.client as { name: string } | null)?.name ?? s.job?.title ?? 'Stop')
-        : (s.label ?? 'Custom stop'),
-      color: crewColor,
-      isSelected: s._key === selectedStopKey,
-    }));
+    .map((s) => {
+      const crew = s.assigned_crew_id ? crewById.get(s.assigned_crew_id) : null;
+      return {
+        id: s._key,
+        lat: s.lat!,
+        lng: s.lng!,
+        order: s.stop_order,
+        label: s.job_id
+          ? ((s.job?.client as { name: string } | null)?.name ?? s.job?.title ?? 'Stop')
+          : (s.label ?? 'Custom stop'),
+        color: crew?.color ?? UNASSIGNED_COLOR,
+        isSelected: s._key === selectedStopKey,
+        groupId: s.assigned_crew_id ?? null,
+      };
+    });
 
-  // Empty state shown after auto-load returns no jobs
+  const mapPolylines: MapPolyline[] = mode === 'multi'
+    ? Object.entries(polylinesByGroup).map(([cid, geom]) => ({
+        id: cid,
+        color: crewById.get(cid)?.color ?? UNASSIGNED_COLOR,
+        geometry: geom,
+      }))
+    : (polylinesByGroup.single
+        ? [{ id: 'single', color: singleCrewColor, geometry: polylinesByGroup.single }]
+        : []);
+
+  const mapLegend: MapLegendItem[] | undefined = mode === 'multi'
+    ? selectedCrewIds.map((cid) => {
+        const crew = crewById.get(cid);
+        const count = stops.filter((s) => s.assigned_crew_id === cid).length;
+        return {
+          id: cid,
+          label: crew?.name ?? 'Unknown',
+          color: crew?.color ?? UNASSIGNED_COLOR,
+          count,
+        };
+      })
+    : undefined;
+
+  // Stops grouped per crew for the multi-crew list view.
+  const groupedStops = mode === 'multi'
+    ? selectedCrewIds.map((cid) => {
+        const crew = crewById.get(cid);
+        if (!crew) return null;
+        const crewStops = stops
+          .filter((s) => s.assigned_crew_id === cid)
+          .sort((a, b) => a.stop_order - b.stop_order);
+        return { crew, stops: crewStops };
+      }).filter((g): g is { crew: Crew; stops: StopDraft[] } => g !== null)
+    : [];
+
+  const unassignedStops = mode === 'multi'
+    ? stops.filter((s) => !s.assigned_crew_id)
+    : [];
+
+  // Empty state when auto-load returns nothing
   const emptyState = (
     <div className="flex flex-col items-center justify-center py-12 text-center px-6">
       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--orange-soft)] mb-3">
         <MapPin className="h-5 w-5" style={{ color: 'var(--orange)' }} />
       </div>
-      <p className="text-sm font-semibold mb-1">
-        No jobs scheduled
-      </p>
+      <p className="text-sm font-semibold mb-1">No jobs scheduled</p>
       <p className="text-xs text-muted-foreground max-w-[280px] leading-relaxed">
-        {selectedCrew
-          ? <>No jobs for <span className="font-medium text-foreground">{selectedCrew.name}</span> on {formatDateLabel(selectedDate)}.</>
-          : <>No jobs found for {formatDateLabel(selectedDate)}.</>}
-        {' '}Assign jobs in <span className="font-medium text-foreground">Jobs</span> or <span className="font-medium text-foreground">Schedule</span>, or add stops manually below.
+        No jobs found for the selected{' '}
+        {selectedCrewIds.length > 1 ? 'crews' : 'crew'} on {formatDateLabel(selectedDate)}.
+        Assign jobs in <span className="font-medium text-foreground">Jobs</span> or{' '}
+        <span className="font-medium text-foreground">Schedule</span>, or add stops manually.
       </p>
     </div>
   );
@@ -385,78 +694,75 @@ export default function RouteBuilderPage() {
       style={{ height: 'calc(100svh - 3.5rem)' }}
     >
       {/* ─── LEFT PANEL ─── */}
-      <div className="w-[400px] shrink-0 flex flex-col border-r bg-background overflow-hidden">
+      <div className="w-[420px] shrink-0 flex flex-col border-r bg-background overflow-hidden">
 
-        {/* Top: date + crew + title */}
+        {/* Top: date + crew picker + (single) title */}
         <div className="p-4 border-b space-y-3 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="flex-1">
-              <Label className="text-xs mb-1 block">Date</Label>
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="h-8 text-sm"
-              />
-            </div>
-            <div className="flex-1 min-w-0">
-              <Label className="text-xs mb-1 block">Crew</Label>
-              <Select value={selectedCrewId} onValueChange={(v) => setSelectedCrewId(v ?? '')}>
-                <SelectTrigger className="h-8 text-sm w-full" aria-label="Select crew">
-                  {selectedCrew ? (
-                    <span className="flex items-center gap-2 min-w-0">
-                      <span
-                        className="inline-block h-2 w-2 rounded-full shrink-0"
-                        style={{ backgroundColor: selectedCrew.color }}
-                      />
-                      <span className="truncate">{selectedCrew.name}</span>
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">Select crew…</span>
-                  )}
-                </SelectTrigger>
-                <SelectContent>
-                  {crews.length === 0 && (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">No active crews.</div>
-                  )}
-                  {crews.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      <span className="flex items-center gap-2">
-                        <span
-                          className="inline-block h-2 w-2 rounded-full shrink-0"
-                          style={{ backgroundColor: c.color }}
-                        />
-                        {c.name}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
           <div>
-            <Label className="text-xs mb-1 block">Route Title</Label>
+            <Label className="text-xs mb-1 block">Date</Label>
             <Input
-              placeholder="e.g. Crew Alpha · Mon May 8"
-              value={routeTitle}
-              onChange={(e) => setRouteTitle(e.target.value)}
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
               className="h-8 text-sm"
             />
           </div>
+          <div>
+            <Label className="text-xs mb-1.5 block">Crews</Label>
+            <CrewMultiPicker
+              crews={crews}
+              selectedIds={selectedCrewIds}
+              onChange={setSelectedCrewIds}
+              disabled={loadingJobs || optimizingMulti}
+            />
+          </div>
+          {mode === 'single' && (
+            <div>
+              <Label className="text-xs mb-1 block">Route Title</Label>
+              <Input
+                placeholder="e.g. Crew Alpha · Mon May 8"
+                value={routeTitle}
+                onChange={(e) => setRouteTitle(e.target.value)}
+                className="h-8 text-sm"
+              />
+            </div>
+          )}
         </div>
 
         {/* Action bar */}
         <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/20 shrink-0 flex-wrap">
-          <OptimizeButton
-            stops={stops}
-            onOptimized={handleOptimized}
-            disabled={loadingJobs}
-          />
+          {mode === 'single' ? (
+            <OptimizeButton
+              stops={stops}
+              onOptimized={handleOptimizedSingle}
+              disabled={loadingJobs}
+            />
+          ) : (
+            <Button
+              size="sm"
+              onClick={handleOptimizeMulti}
+              disabled={loadingJobs || optimizingMulti || stops.length === 0}
+              style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
+              className="gap-1.5 font-semibold"
+            >
+              {optimizingMulti ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Optimizing routes…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Optimize Routes
+                </>
+              )}
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
             onClick={handleSave}
-            disabled={saving || dispatching || stops.length === 0}
+            disabled={saving || dispatching || stops.length === 0 || (mode === 'multi' && !optimized)}
             className="gap-1.5"
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
@@ -465,7 +771,7 @@ export default function RouteBuilderPage() {
           <Button
             size="sm"
             onClick={handleDispatch}
-            disabled={saving || dispatching || stops.length === 0}
+            disabled={saving || dispatching || stops.length === 0 || (mode === 'multi' && !optimized)}
             className="gap-1.5"
             style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
           >
@@ -475,11 +781,9 @@ export default function RouteBuilderPage() {
         </div>
 
         {/* Weather banner */}
-        {weatherInfo?.flag && (
-          <WeatherBanner summary={weatherInfo.summary} />
-        )}
+        {weatherInfo?.flag && <WeatherBanner summary={weatherInfo.summary} />}
 
-        {/* Stop list — scrollable */}
+        {/* Stops — single or grouped */}
         <div className="flex-1 overflow-y-auto min-h-0">
           {loadingJobs ? (
             <div className="space-y-2 p-3">
@@ -496,20 +800,54 @@ export default function RouteBuilderPage() {
             </div>
           ) : (
             <>
-              <StopList
-                stops={stops}
-                crewColor={crewColor}
-                selectedStopId={selectedStopKey}
-                onReorder={handleReorder}
-                onRemove={handleRemove}
-                onDurationChange={handleDurationChange}
-                onStopSelect={setSelectedStopKey}
-                emptyState={
-                  selectedCrewId && autoLoaded ? emptyState : undefined
-                }
-              />
-              {selectedCrewId && (
-                <AddStopInput onAdd={handleAddStop} crewColor={crewColor} />
+              {mode === 'single' ? (
+                <>
+                  <StopList
+                    stops={stops}
+                    crewColor={singleCrewColor}
+                    selectedStopId={selectedStopKey}
+                    onReorder={handleReorderSingle}
+                    onRemove={handleRemove}
+                    onDurationChange={handleDurationChange}
+                    onStopSelect={setSelectedStopKey}
+                    emptyState={
+                      selectedCrewIds.length > 0 && autoLoaded ? emptyState : undefined
+                    }
+                  />
+                  {selectedCrewIds.length > 0 && (
+                    <AddStopInput onAdd={handleAddStop} crewColor={singleCrewColor} />
+                  )}
+                </>
+              ) : (
+                <>
+                  {!optimized && stops.length > 0 && (
+                    <div className="px-3 pt-3">
+                      <div
+                        className="rounded-lg border-l-4 bg-[var(--orange-soft)] px-3 py-2 text-xs"
+                        style={{ borderLeftColor: 'var(--orange)' }}
+                      >
+                        <p className="font-semibold" style={{ color: 'var(--orange-deep)' }}>
+                          {stops.length} stop{stops.length === 1 ? '' : 's'} loaded across {selectedCrewIds.length} crews.
+                        </p>
+                        <p className="mt-0.5 text-[var(--orange-deep)]/80">
+                          Click <span className="font-semibold">✨ Optimize Routes</span> to distribute them.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {stops.length === 0 && autoLoaded ? (
+                    emptyState
+                  ) : (
+                    <GroupedStopList
+                      groups={optimized ? groupedStops : []}
+                      unassignedStops={optimized ? unassignedStops : stops}
+                      selectedStopId={selectedStopKey}
+                      onStopSelect={setSelectedStopKey}
+                      onRemove={handleRemove}
+                      onDurationChange={handleDurationChange}
+                    />
+                  )}
+                </>
               )}
             </>
           )}
@@ -523,17 +861,18 @@ export default function RouteBuilderPage() {
       <div className="flex-1 relative">
         <RouteMap
           stops={mapStops}
-          polyline={polyline}
-          crewColor={crewColor}
+          polylines={mapPolylines}
+          crewColor={singleCrewColor}
           selectedStopId={selectedStopKey}
           onStopClick={(id) =>
             setSelectedStopKey((prev) => (prev === id ? null : id))
           }
+          legend={mapLegend}
         />
-        {!selectedCrewId && (
+        {selectedCrewIds.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center bg-muted/60 backdrop-blur-sm pointer-events-none">
             <p className="text-sm font-medium text-foreground bg-background rounded-lg px-4 py-2.5 shadow border">
-              Select a crew to build the route
+              Select one or more crews to build the route
             </p>
           </div>
         )}

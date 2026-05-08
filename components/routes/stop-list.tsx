@@ -33,6 +33,9 @@ export interface StopDraft {
   drive_distance_miles: number;
   lat: number | null;
   lng: number | null;
+  // Multi-crew mode: which crew VROOM (or the user) assigned this stop to.
+  // Null = unassigned (waiting on optimization).
+  assigned_crew_id?: string | null;
 }
 
 interface StopListProps {
