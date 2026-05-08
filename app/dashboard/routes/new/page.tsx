@@ -398,24 +398,55 @@ export default function RouteBuilderPage() {
 
   // ── Multi-crew optimize ────────────────────────────────────────────────
   async function handleOptimizeMulti() {
-    const geocodedStops = stops.filter((s) => s.lat !== null && s.lng !== null);
-    if (geocodedStops.length === 0) {
-      toast.error('No geocoded stops to optimize.');
-      return;
-    }
     if (selectedCrewIds.length < 2) {
       toast.error('Multi-crew optimize requires 2+ crews.');
       return;
     }
 
+    const geocodedStops = stops.filter((s) => s.lat !== null && s.lng !== null);
+    const ungeocoded = stops.filter((s) => s.lat === null || s.lng === null);
+
+    // Pre-flight: log everything so the browser console shows the full picture.
+    // eslint-disable-next-line no-console
+    console.log('[optimize] geocoded stops:', geocodedStops.map((s) => ({
+      key: s._key,
+      job_id: s.job_id,
+      address:
+        (s.job?.client as { service_address?: string } | null | undefined)?.service_address
+        ?? s.address ?? '(no address)',
+      coords: [s.lng, s.lat],
+      duration_min: s.estimated_duration_minutes,
+    })));
+    if (ungeocoded.length > 0) {
+      // eslint-disable-next-line no-console
+      console.warn('[optimize] stops with no coords (will be skipped):',
+        ungeocoded.map((s) => (
+          (s.job?.client as { service_address?: string } | null | undefined)?.service_address
+          ?? s.address ?? '(no address)'
+        )));
+    }
+
+    if (geocodedStops.length === 0) {
+      toast.error(
+        ungeocoded.length > 0
+          ? `0 of ${stops.length} stops have coordinates — Mapbox geocoding may have failed (check NEXT_PUBLIC_MAPBOX_TOKEN). See console for the address list.`
+          : 'No stops to optimize.'
+      );
+      return;
+    }
+
     setOptimizingMulti(true);
 
-    // Determine depot location: company office, fallback to centroid, fallback Tri-Cities.
+    const toastId = toast.loading(`Calling VROOM API… (${geocodedStops.length} stops × ${selectedCrewIds.length} crews)`);
+
+    // Depot: company office > centroid > Tri-Cities default.
     const startLocation: [number, number] = officeCoords
-      ?? routeCentroid(geocodedStops.map((s) => [s.lng!, s.lat!]))
+      ?? routeCentroid(geocodedStops.map((s) => [s.lng!, s.lat!] as [number, number]))
       ?? TRI_CITIES_DEFAULT;
 
-    // VROOM stops: integer ids 0..N-1, mapped back via index.
+    // eslint-disable-next-line no-console
+    console.log('[optimize] depot:', startLocation, officeCoords ? '(company office)' : '(fallback)');
+
     const vroomStops: VroomStop[] = geocodedStops.map((s, i) => ({
       id: i,
       location: [s.lng!, s.lat!],
@@ -426,13 +457,18 @@ export default function RouteBuilderPage() {
 
     const origDrive = stops.reduce((sum, s) => sum + (s.drive_minutes_from_prev ?? 0), 0);
 
-    const result = await optimizeMultiCrewRoute(vroomStops, crewVehicles, startLocation);
+    const outcome = await optimizeMultiCrewRoute(vroomStops, crewVehicles, startLocation);
 
-    if (!result) {
+    if (!outcome.ok) {
       setOptimizingMulti(false);
-      toast.error('Optimization service unavailable. Try again or save manually.');
+      toast.dismiss(toastId);
+      // eslint-disable-next-line no-console
+      console.error('[optimize] failed:', outcome.error, outcome.status ? `(status ${outcome.status})` : '');
+      toast.error(`VROOM optimization failed — ${outcome.error}`);
       return;
     }
+
+    const result = outcome.result;
 
     // Build a map of stop._key → assigned crew + per-crew order
     const assignmentByKey = new Map<string, { crew_id: string; order: number }>();
@@ -454,9 +490,7 @@ export default function RouteBuilderPage() {
       if (a) {
         return { ...s, assigned_crew_id: a.crew_id, stop_order: a.order };
       }
-      // Stops with no geocoding or VROOM-unassigned: leave alone, mark unassigned
       if (s.lat === null || s.lng === null) return { ...s, assigned_crew_id: null };
-      // Geocoded but VROOM didn't fit them in: clear assignment
       return { ...s, assigned_crew_id: null };
     });
 
@@ -464,6 +498,7 @@ export default function RouteBuilderPage() {
     setStops(withGeometry);
     setOptimized(true);
     setOptimizingMulti(false);
+    toast.dismiss(toastId);
 
     const newDrive = withGeometry.reduce((sum, s) => sum + (s.drive_minutes_from_prev ?? 0), 0);
     const saved = Math.max(0, Math.round(origDrive - newDrive));
@@ -471,7 +506,9 @@ export default function RouteBuilderPage() {
     const totalCrews = result.assignments.filter((a) => a.stop_ids.length > 0).length;
     const totalAssigned = result.assignments.reduce((s, a) => s + a.stop_ids.length, 0);
 
-    if (saved > 0) {
+    if (totalAssigned === 0) {
+      toast.warning('VROOM returned no assignments. Check console for the response — usually means the depot is too far from the stops.');
+    } else if (saved > 0) {
       toast.success(
         `Routes optimized — ${totalAssigned} stops distributed across ${totalCrews} crew${totalCrews === 1 ? '' : 's'}. Saved ~${formatMinutes(saved)} of drive time.`
       );

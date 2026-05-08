@@ -47,15 +47,14 @@ export function DraggableJobCard({
 
   const crew = job.crew as { id: string; name: string; color?: string } | undefined;
   const crewColor = crew?.color ?? null;
+  // When the job has no crew, paint it gray so it's visibly "unassigned"
+  // both in the new Unassigned lane and in the No-date-set panel.
+  const tintColor = crewColor ?? '#94A3B8';
 
   const cardStyle: React.CSSProperties = {
     ...(style ?? {}),
-    ...(crewColor
-      ? {
-          borderLeft: `4px solid ${crewColor}`,
-          backgroundColor: tintFromHex(crewColor, 0.08),
-        }
-      : {}),
+    borderLeft: `4px solid ${tintColor}`,
+    backgroundColor: tintFromHex(tintColor, 0.08),
   };
 
   return (
@@ -75,10 +74,10 @@ export function DraggableJobCard({
         {...attributes}
         className="cursor-grab active:cursor-grabbing"
       >
-        {crewColor && !compact && (
+        {!compact && (
           <span
             className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full"
-            style={{ backgroundColor: crewColor }}
+            style={{ backgroundColor: tintColor }}
             aria-hidden
           />
         )}

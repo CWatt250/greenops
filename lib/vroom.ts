@@ -5,6 +5,27 @@ export interface VroomStop {
 }
 
 const VROOM_URL = 'https://router.project-osrm.org/vroom';
+const VROOM_TIMEOUT_MS = 12_000;
+
+/**
+ * Fetch with a timeout. Throws an Error('VROOM timed out') if the request
+ * doesn't complete within VROOM_TIMEOUT_MS so callers can surface a clear
+ * message instead of waiting indefinitely.
+ */
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), VROOM_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if ((err as { name?: string }).name === 'AbortError') {
+      throw new Error('VROOM timed out after 12s — try again or build manually.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export async function optimizeRoute(
   stops: VroomStop[],
@@ -29,7 +50,7 @@ export async function optimizeRoute(
   };
 
   try {
-    const res = await fetch(VROOM_URL, {
+    const res = await fetchWithTimeout(VROOM_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -63,26 +84,51 @@ export interface MultiCrewAssignment {
 
 export interface MultiCrewResult {
   assignments: MultiCrewAssignment[];
-  // Stops VROOM couldn't fit (rare with no constraints, but possible).
   unassigned: number[];
-  // Sum of vehicle durations across all crews (drive + service time).
   total_duration_seconds: number;
 }
+
+export type MultiCrewOptimizationOutcome =
+  | { ok: true; result: MultiCrewResult }
+  | { ok: false; error: string; status?: number };
 
 export async function optimizeMultiCrewRoute(
   stops: VroomStop[],
   crews: CrewVehicle[],
   startLocation: [number, number]
-): Promise<MultiCrewResult | null> {
-  if (crews.length === 0) return null;
+): Promise<MultiCrewOptimizationOutcome> {
+  if (crews.length === 0) {
+    return { ok: false, error: 'No crews selected.' };
+  }
   if (stops.length === 0) {
-    return { assignments: [], unassigned: [], total_duration_seconds: 0 };
+    return {
+      ok: true,
+      result: { assignments: [], unassigned: [], total_duration_seconds: 0 },
+    };
+  }
+
+  // Validate every stop has finite coords. VROOM rejects NaN/null.
+  for (const s of stops) {
+    const [lng, lat] = s.location ?? [];
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+      return {
+        ok: false,
+        error: `Stop ${s.id} has invalid coordinates ([${lng}, ${lat}]). All stops must be geocoded before optimizing.`,
+      };
+    }
+  }
+  const [depotLng, depotLat] = startLocation;
+  if (!Number.isFinite(depotLng) || !Number.isFinite(depotLat)) {
+    return {
+      ok: false,
+      error: `Depot location is invalid ([${depotLng}, ${depotLat}]). Add a company address in Settings or geocode the route centroid.`,
+    };
   }
 
   // VROOM requires integer vehicle ids. We use 1..N and remember the mapping
   // back to crew_ids in the order we sent them.
   const payload = {
-    vehicles: crews.map((c, i) => ({
+    vehicles: crews.map((_, i) => ({
       id: i + 1,
       start: startLocation,
       end: startLocation,
@@ -95,14 +141,34 @@ export async function optimizeMultiCrewRoute(
     })),
   };
 
+  if (typeof window !== 'undefined') {
+    // eslint-disable-next-line no-console
+    console.log('[VROOM] payload', JSON.parse(JSON.stringify(payload)));
+  }
+
   try {
-    const res = await fetch(VROOM_URL, {
+    const res = await fetchWithTimeout(VROOM_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error(`VROOM returned ${res.status}`);
+
+    if (!res.ok) {
+      let bodyText = '';
+      try { bodyText = await res.text(); } catch {}
+      const trimmed = bodyText.length > 200 ? `${bodyText.slice(0, 200)}…` : bodyText;
+      return {
+        ok: false,
+        status: res.status,
+        error: `VROOM API returned ${res.status} ${res.statusText}${trimmed ? ` — ${trimmed}` : ''}`,
+      };
+    }
+
     const data = await res.json();
+    if (typeof window !== 'undefined') {
+      // eslint-disable-next-line no-console
+      console.log('[VROOM] response', data);
+    }
 
     type VroomStep = { type: string; id?: number };
     type VroomRoute = { vehicle: number; steps: VroomStep[]; duration: number };
@@ -130,12 +196,14 @@ export async function optimizeMultiCrewRoute(
     );
 
     return {
-      assignments,
-      unassigned,
-      total_duration_seconds: totalDuration,
+      ok: true,
+      result: { assignments, unassigned, total_duration_seconds: totalDuration },
     };
-  } catch {
-    return null;
+  } catch (err) {
+    return {
+      ok: false,
+      error: (err as Error).message ?? 'Unknown error calling VROOM.',
+    };
   }
 }
 

@@ -34,16 +34,22 @@ function isToday(date: Date): boolean {
   return toDateStr(date) === toDateStr(new Date());
 }
 
-function cellKey(crewId: string, dateStr: string) {
-  return `cell::${crewId}::${dateStr}`;
+// Sentinel used in cell keys for the "Unassigned" lane (jobs with a date
+// but no crew_id). String constant so it's distinct from any real crew uuid.
+const UNASSIGNED_LANE_ID = '__unassigned__';
+const UNASSIGNED_COLOR = '#94A3B8';
+
+function cellKey(crewId: string | null, dateStr: string) {
+  return `cell::${crewId ?? UNASSIGNED_LANE_ID}::${dateStr}`;
 }
 
-function parseCellKey(key: string): { crewId: string; dateStr: string } | null {
+function parseCellKey(key: string): { crewId: string | null; dateStr: string } | null {
   if (!key.startsWith('cell::')) return null;
   const rest = key.slice('cell::'.length);
   const lastSep = rest.lastIndexOf('::');
+  const rawCrew = rest.slice(0, lastSep);
   return {
-    crewId: rest.slice(0, lastSep),
+    crewId: rawCrew === UNASSIGNED_LANE_ID ? null : rawCrew,
     dateStr: rest.slice(lastSep + 2),
   };
 }
@@ -60,14 +66,23 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
   const weekDates = getWeekDates(weekStart);
 
   // Build local job state: key -> jobs[]
-  // Key format: "cell::crewId::YYYY-MM-DD" or "unscheduled"
+  // Key format:
+  //   "cell::<crewId>::YYYY-MM-DD"            (assigned + scheduled)
+  //   "cell::__unassigned__::YYYY-MM-DD"      (scheduled but no crew yet)
+  //   "unscheduled"                            (no date set at all)
   const [jobMap, setJobMap] = useState<Map<string, Job[]>>(() => {
     const map = new Map<string, Job[]>();
     map.set('unscheduled', unassignedInitial);
     for (const job of initialJobs) {
-      if (!job.crew_id || !job.scheduled_date) {
+      if (!job.scheduled_date) {
+        // No date — goes in the top "No date set" panel.
         const prev = map.get('unscheduled') ?? [];
         map.set('unscheduled', [...prev, job]);
+      } else if (!job.crew_id) {
+        // Has a date but no crew — goes in the in-grid Unassigned lane.
+        const key = cellKey(null, job.scheduled_date);
+        const prev = map.get(key) ?? [];
+        map.set(key, [...prev, job]);
       } else {
         const key = cellKey(job.crew_id, job.scheduled_date);
         const prev = map.get(key) ?? [];
@@ -111,16 +126,26 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
     // Optimistic update
     setJobMap((prev) => {
       const next = new Map(prev);
-      // Remove from source
       next.set(fromKey, (next.get(fromKey) ?? []).filter((j) => j.id !== jobId));
-      // Determine new crew/date
       let newCrewId: string | null = null;
       let newDate: string | null = null;
+      let newCrew: Crew | null = null;
       if (toKey !== 'unscheduled') {
         const parsed = parseCellKey(toKey);
-        if (parsed) { newCrewId = parsed.crewId; newDate = parsed.dateStr; }
+        if (parsed) {
+          newCrewId = parsed.crewId;
+          newDate = parsed.dateStr;
+          newCrew = newCrewId ? (crews.find((c) => c.id === newCrewId) ?? null) : null;
+        }
       }
-      const updatedJob: Job = { ...job, crew_id: newCrewId ?? undefined, scheduled_date: newDate ?? undefined };
+      const updatedJob: Job = {
+        ...job,
+        crew_id: newCrewId ?? undefined,
+        crew: newCrew
+          ? ({ id: newCrew.id, name: newCrew.name, color: newCrew.color } as unknown as Crew)
+          : undefined,
+        scheduled_date: newDate ?? undefined,
+      };
       next.set(toKey, [...(next.get(toKey) ?? []), updatedJob]);
       return next;
     });
@@ -133,9 +158,11 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
       const parsed = parseCellKey(toKey);
       if (!parsed) return;
       patch = {
-        crew_id: parsed.crewId,
+        crew_id: parsed.crewId, // null means the Unassigned lane
         scheduled_date: parsed.dateStr,
-        status: job.status === 'unscheduled' ? 'scheduled' : job.status,
+        status: parsed.crewId === null
+          ? (job.status === 'unscheduled' ? 'unscheduled' : job.status)
+          : (job.status === 'unscheduled' ? 'scheduled' : job.status),
       };
     }
 
@@ -167,7 +194,9 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
     if (!found) return;
     const { job, fromKey } = found;
     const targetCrew = newCrewId ? crews.find((c) => c.id === newCrewId) : null;
-    const newKey = newCrewId && job.scheduled_date
+    // Preserve the date when possible. With a date and no crew, land in the
+    // Unassigned lane. With no date, fall back to the No-date panel.
+    const newKey = job.scheduled_date
       ? cellKey(newCrewId, job.scheduled_date as string)
       : 'unscheduled';
     if (newKey === fromKey) return;
@@ -192,10 +221,10 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="space-y-4">
-        {/* Unscheduled lane */}
+        {/* "No date set" panel — jobs without a scheduled_date. */}
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-            Unscheduled ({unscheduledJobs.length})
+            No date set ({unscheduledJobs.length})
           </p>
           <DroppableCell id="unscheduled" className="bg-muted/30 min-h-[60px] flex flex-wrap gap-2 flex-row">
             {unscheduledJobs.map((job) => (
@@ -208,7 +237,7 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
               </div>
             ))}
             {unscheduledJobs.length === 0 && (
-              <p className="text-xs text-muted-foreground italic p-2">Drop here to unschedule</p>
+              <p className="text-xs text-muted-foreground italic p-2">Drop here to clear the date</p>
             )}
           </DroppableCell>
         </div>
@@ -233,6 +262,40 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
                   </span>
                 </div>
               ))}
+            </div>
+
+            {/* Unassigned lane — jobs with a date but no crew_id. */}
+            <div className="grid grid-cols-[140px_repeat(7,1fr)] gap-1 mb-1">
+              <div className="flex items-start gap-2 pt-2 pr-2">
+                <div
+                  className="h-2.5 w-2.5 rounded-full mt-0.5 shrink-0"
+                  style={{ backgroundColor: UNASSIGNED_COLOR }}
+                />
+                <span className="text-xs font-medium leading-tight text-muted-foreground">
+                  Unassigned
+                </span>
+              </div>
+              {weekDates.map((date, dayIdx) => {
+                const dateStr = toDateStr(date);
+                const key = cellKey(null, dateStr);
+                const dayJobs = jobMap.get(key) ?? [];
+                return (
+                  <DroppableCell
+                    key={`u-${dayIdx}`}
+                    id={key}
+                    isToday={isToday(date)}
+                  >
+                    {dayJobs.map((job) => (
+                      <DraggableJobCard
+                        key={job.id}
+                        job={job}
+                        crews={crews}
+                        onCrewChange={(c) => handleInlineCrewChange(job.id, c)}
+                      />
+                    ))}
+                  </DroppableCell>
+                );
+              })}
             </div>
 
             {/* Crew rows */}

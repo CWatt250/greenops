@@ -88,10 +88,11 @@ export function ScheduleMonthGrid({
           const inMonth = isSameMonth(day, monthAnchor);
           const dayJobs = jobsByDate.get(ds) ?? [];
 
-          // Per-crew bucket for dot summary
+          // Per-crew bucket for dot summary; null crew_id = "Unassigned".
           const crewCounts = new Map<string, number>();
+          let unassignedCount = 0;
           for (const j of dayJobs) {
-            if (!j.crew_id) continue;
+            if (!j.crew_id) { unassignedCount += 1; continue; }
             crewCounts.set(j.crew_id, (crewCounts.get(j.crew_id) ?? 0) + 1);
           }
 
@@ -146,6 +147,19 @@ export function ScheduleMonthGrid({
                     </span>
                   );
                 })}
+                {unassignedCount > 0 && (
+                  <span
+                    title={`Unassigned · ${unassignedCount} job${unassignedCount === 1 ? '' : 's'}`}
+                    className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-mono leading-none"
+                    style={{ backgroundColor: '#94A3B822', color: '#475569' }}
+                  >
+                    <span
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ backgroundColor: '#94A3B8' }}
+                    />
+                    {unassignedCount}
+                  </span>
+                )}
               </div>
             </button>
           );

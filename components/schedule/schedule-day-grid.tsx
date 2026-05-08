@@ -23,6 +23,9 @@ const PX_PER_MIN = 1; // 60 minutes = 60px
 const TOTAL_MIN = (DAY_END_HOUR - DAY_START_HOUR) * 60;
 const COLUMN_HEIGHT = TOTAL_MIN * PX_PER_MIN;
 
+const UNASSIGNED_LANE_ID = '__unassigned__';
+const UNASSIGNED_COLOR = '#94A3B8';
+
 interface ScheduleDayGridProps {
   date: Date;
   crews: Crew[];
@@ -51,28 +54,32 @@ function formatHourLabel(h: number): string {
 }
 
 function CrewColumn({
-  crew,
+  laneId,
+  laneName,
+  laneColor,
   jobs,
   date,
 }: {
-  crew: Crew;
+  laneId: string; // either a crew uuid or UNASSIGNED_LANE_ID
+  laneName: string;
+  laneColor: string;
   jobs: Job[];
   date: Date;
 }) {
-  const dropId = `day-col::${crew.id}::${toDateStr(date)}`;
+  const dropId = `day-col::${laneId}::${toDateStr(date)}`;
   const { isOver, setNodeRef } = useDroppable({ id: dropId });
 
   return (
     <div className="flex-1 min-w-0">
       <div
         className="flex items-center gap-2 px-2 py-1.5 mb-1 border-b"
-        style={{ borderBottomColor: crew.color }}
+        style={{ borderBottomColor: laneColor }}
       >
         <span
           className="h-2.5 w-2.5 rounded-full shrink-0"
-          style={{ backgroundColor: crew.color }}
+          style={{ backgroundColor: laneColor }}
         />
-        <span className="text-xs font-semibold truncate">{crew.name}</span>
+        <span className="text-xs font-semibold truncate">{laneName}</span>
         <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
           {jobs.length}
         </span>
@@ -117,30 +124,28 @@ function CrewColumn({
 
 export function ScheduleDayGrid({ date, crews, initialJobs }: ScheduleDayGridProps) {
   const supabase = createClient();
-  const [jobsByCrew, setJobsByCrew] = useState<Map<string, Job[]>>(() => {
+  // Bucket jobs by crew_id, with UNASSIGNED_LANE_ID for null-crew jobs.
+  function bucketize(jobs: Job[], cs: Crew[]): Map<string, Job[]> {
     const map = new Map<string, Job[]>();
-    for (const c of crews) map.set(c.id, []);
-    for (const j of initialJobs) {
-      if (!j.crew_id) continue;
-      const list = map.get(j.crew_id) ?? [];
+    map.set(UNASSIGNED_LANE_ID, []);
+    for (const c of cs) map.set(c.id, []);
+    for (const j of jobs) {
+      const k = j.crew_id ? j.crew_id : UNASSIGNED_LANE_ID;
+      const list = map.get(k) ?? [];
       list.push(j);
-      map.set(j.crew_id, list);
+      map.set(k, list);
     }
     return map;
-  });
+  }
+
+  const [jobsByCrew, setJobsByCrew] = useState<Map<string, Job[]>>(
+    () => bucketize(initialJobs, crews)
+  );
   const [activeJob, setActiveJob] = useState<Job | null>(null);
 
   // Re-sync when initialJobs change (parent re-fetches on date change).
   useEffect(() => {
-    const map = new Map<string, Job[]>();
-    for (const c of crews) map.set(c.id, []);
-    for (const j of initialJobs) {
-      if (!j.crew_id) continue;
-      const list = map.get(j.crew_id) ?? [];
-      list.push(j);
-      map.set(j.crew_id, list);
-    }
-    setJobsByCrew(map);
+    setJobsByCrew(bucketize(initialJobs, crews));
   }, [initialJobs, crews]);
 
   const sensors = useSensors(
@@ -165,28 +170,42 @@ export function ScheduleDayGrid({ date, crews, initialJobs }: ScheduleDayGridPro
     const overId = over.id as string;
     if (!overId.startsWith('day-col::')) return;
 
-    const [, toCrewId, dateStr] = overId.split('::');
+    const [, toLaneId, dateStr] = overId.split('::');
     const found = findJob(active.id as string);
     if (!found) return;
-    if (found.fromCrew === toCrewId && toDateStr(date) === dateStr) return;
+    if (found.fromCrew === toLaneId && toDateStr(date) === dateStr) return;
 
     const { job, fromCrew } = found;
+    const isUnassigned = toLaneId === UNASSIGNED_LANE_ID;
+    const newCrewId: string | null = isUnassigned ? null : toLaneId;
+    const newCrew: Crew | null = isUnassigned
+      ? null
+      : (crews.find((c) => c.id === toLaneId) ?? null);
 
     // Optimistic
     setJobsByCrew((prev) => {
       const next = new Map(prev);
       next.set(fromCrew, (next.get(fromCrew) ?? []).filter((j) => j.id !== job.id));
-      const updated: Job = { ...job, crew_id: toCrewId, scheduled_date: dateStr };
-      next.set(toCrewId, [...(next.get(toCrewId) ?? []), updated]);
+      const updated: Job = {
+        ...job,
+        crew_id: newCrewId ?? undefined,
+        crew: newCrew
+          ? ({ id: newCrew.id, name: newCrew.name, color: newCrew.color } as unknown as Crew)
+          : undefined,
+        scheduled_date: dateStr,
+      };
+      next.set(toLaneId, [...(next.get(toLaneId) ?? []), updated]);
       return next;
     });
 
     const { error } = await supabase
       .from('jobs')
       .update({
-        crew_id: toCrewId,
+        crew_id: newCrewId,
         scheduled_date: dateStr,
-        status: job.status === 'unscheduled' ? 'scheduled' : job.status,
+        status: isUnassigned
+          ? job.status
+          : (job.status === 'unscheduled' ? 'scheduled' : job.status),
         updated_at: new Date().toISOString(),
       })
       .eq('id', job.id);
@@ -195,7 +214,7 @@ export function ScheduleDayGrid({ date, crews, initialJobs }: ScheduleDayGridPro
       // Revert
       setJobsByCrew((prev) => {
         const next = new Map(prev);
-        next.set(toCrewId, (next.get(toCrewId) ?? []).filter((j) => j.id !== job.id));
+        next.set(toLaneId, (next.get(toLaneId) ?? []).filter((j) => j.id !== job.id));
         next.set(fromCrew, [...(next.get(fromCrew) ?? []), job]);
         return next;
       });
@@ -247,12 +266,22 @@ export function ScheduleDayGrid({ date, crews, initialJobs }: ScheduleDayGridPro
             </div>
           </div>
 
-          {/* Crew columns */}
+          {/* Crew columns — Unassigned first, then real crews. */}
           <div className="flex-1 flex gap-2 min-w-0">
+            <CrewColumn
+              key="unassigned"
+              laneId={UNASSIGNED_LANE_ID}
+              laneName="Unassigned"
+              laneColor={UNASSIGNED_COLOR}
+              jobs={jobsByCrew.get(UNASSIGNED_LANE_ID) ?? []}
+              date={date}
+            />
             {crews.map((crew) => (
               <CrewColumn
                 key={crew.id}
-                crew={crew}
+                laneId={crew.id}
+                laneName={crew.name}
+                laneColor={crew.color}
                 jobs={jobsByCrew.get(crew.id) ?? []}
                 date={date}
               />
