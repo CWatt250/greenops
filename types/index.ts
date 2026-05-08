@@ -68,6 +68,8 @@ export interface Service {
   unit: ServiceUnit;
   base_price: number;
   is_active: boolean;
+  /** Per-square-foot pricing override (migration 010). Optional. */
+  per_sqft_rate?: number | null;
   created_at: string;
 }
 

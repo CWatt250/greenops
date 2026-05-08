@@ -9,9 +9,9 @@ import type { Service } from '@/types';
 export default async function NewProposalPage({
   searchParams,
 }: {
-  searchParams: Promise<{ client_id?: string }>;
+  searchParams: Promise<{ client_id?: string; measurement_id?: string }>;
 }) {
-  const { client_id } = await searchParams;
+  const { client_id, measurement_id } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
@@ -36,6 +36,10 @@ export default async function NewProposalPage({
     .eq('is_active', true)
     .order('name');
 
+  // Skip Step 1 (client picker) when both client + measurement are set —
+  // the dispatcher came from the measurement tool and wants Step 2.
+  const startStep: 1 | 2 = client_id && measurement_id ? 2 : 1;
+
   return (
     <div>
       <PageHeader
@@ -48,6 +52,8 @@ export default async function NewProposalPage({
         userId={user.id}
         services={(services ?? []) as Service[]}
         initialClientId={client_id}
+        initialMeasurementId={measurement_id}
+        initialStep={startStep}
       />
     </div>
   );

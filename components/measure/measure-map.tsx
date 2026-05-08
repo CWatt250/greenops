@@ -14,7 +14,9 @@ import {
   isAreaType, isLineType,
   type MeasuredShape, type ShapeType,
 } from '@/lib/measurement';
-import { Layers, Pentagon, Slash, Trash2, HelpCircle } from 'lucide-react';
+import {
+  Layers, Pentagon, Slash, Trash2, HelpCircle, Undo2, Eraser,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ShapeEditPopup } from './shape-edit-popup';
 
@@ -26,6 +28,12 @@ interface MeasureMapProps {
   onShapesChange: (shapes: MeasuredShape[]) => void;
   /** Imperatively focus on a shape (called via ref by the right panel). */
   focusShapeRef?: React.MutableRefObject<((id: string) => void) | null>;
+  /** Imperatively push React shapes back into the Draw layer (for undo/clear). */
+  syncShapesRef?: React.MutableRefObject<(() => void) | null>;
+  /** Wires Undo/Clear All into the toolbar; both fire React-side handlers. */
+  onUndo?: () => void;
+  canUndo?: boolean;
+  onClearAll?: () => void;
 }
 
 /**
@@ -33,7 +41,8 @@ interface MeasureMapProps {
  * Big buttons, labeled controls, and a click-to-edit popup over each shape.
  */
 export default function MeasureMap({
-  center, shapes, onShapesChange, focusShapeRef,
+  center, shapes, onShapesChange, focusShapeRef, syncShapesRef,
+  onUndo, canUndo = false, onClearAll,
 }: MeasureMapProps) {
   const mapRef = useRef<MapRef>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,6 +50,9 @@ export default function MeasureMap({
   const shapesRef = useRef<MeasuredShape[]>(shapes);
   const onShapesRef = useRef(onShapesChange);
   const centerRef = useRef(center);
+  // When true, the next handleChange callback is ignored. Used by the
+  // imperative sync path (undo / clear all) to avoid event echo.
+  const suppressNextChangeRef = useRef(false);
 
   const [styleId, setStyleId] = useState<'satellite' | 'streets'>('satellite');
   const [drawReady, setDrawReady] = useState(false);
@@ -162,6 +174,12 @@ export default function MeasureMap({
     }
 
     function handleChange() {
+      // Suppress event echo when WE just programmatically reset the layer
+      // (e.g. undo / clear-all calling syncShapesNow).
+      if (suppressNextChangeRef.current) {
+        suppressNextChangeRef.current = false;
+        return;
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const fc = (drawRef.current as any).getAll() as GeoJSON.FeatureCollection;
       const next: MeasuredShape[] = [];
@@ -276,6 +294,37 @@ export default function MeasureMap({
       } catch { /* feature gone */ }
     }
   }, [shapes, drawReady]);
+
+  // Imperative sync — used by parent's undo / clear-all to push React state
+  // back into the Draw layer.
+  useEffect(() => {
+    if (!syncShapesRef) return;
+    syncShapesRef.current = () => {
+      const draw = drawRef.current;
+      if (!draw) return;
+      const fc: GeoJSON.FeatureCollection = {
+        type: 'FeatureCollection',
+        features: shapesRef.current.map((s) => ({
+          type: 'Feature',
+          id: s.id,
+          properties: {
+            label: s.label,
+            shapeType: s.type,
+            kind: s.kind,
+            color: SHAPE_TYPE_COLORS[s.type],
+          },
+          geometry: s.geometry,
+        })),
+      };
+      suppressNextChangeRef.current = true;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (draw as any).set(fc);
+      setEditing(null);
+    };
+    return () => {
+      if (syncShapesRef) syncShapesRef.current = null;
+    };
+  }, [syncShapesRef]);
 
   function setMode(mode: 'simple_select' | 'draw_polygon' | 'draw_line_string') {
     if (!drawRef.current) return;
@@ -409,6 +458,14 @@ export default function MeasureMap({
 
       {/* Custom tool panel (top-right) — big, labeled buttons */}
       <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-10">
+        {/* Shape count — live spatial awareness */}
+        <div
+          className="self-end inline-flex items-center gap-1 rounded-full border bg-background/95 backdrop-blur-sm shadow px-2.5 py-1 text-[10px] font-mono tabular-nums text-muted-foreground"
+          aria-live="polite"
+        >
+          {shapes.length} shape{shapes.length === 1 ? '' : 's'} drawn
+        </div>
+
         <div className="rounded-xl border bg-background/95 backdrop-blur-sm shadow-md p-1.5 flex flex-col gap-1">
           <ToolButton
             label="Area"
@@ -428,12 +485,31 @@ export default function MeasureMap({
           />
           <div className="h-px bg-border my-0.5" aria-hidden />
           <ToolButton
+            label="Undo"
+            sublabel=""
+            active={false}
+            disabled={!canUndo}
+            onClick={() => onUndo?.()}
+            icon={<Undo2 className="h-5 w-5" />}
+            title="Undo last change (⌘Z / Ctrl+Z)"
+          />
+          <ToolButton
             label="Delete"
             sublabel=""
             active={false}
             onClick={deleteSelected}
             icon={<Trash2 className="h-5 w-5" />}
             title="Delete selected shape"
+            destructive
+          />
+          <ToolButton
+            label="Clear"
+            sublabel="Wipe all"
+            active={false}
+            disabled={shapes.length === 0}
+            onClick={() => onClearAll?.()}
+            icon={<Eraser className="h-5 w-5" />}
+            title="Clear all shapes — removes every measurement"
             destructive
           />
         </div>
@@ -512,7 +588,7 @@ export default function MeasureMap({
 }
 
 function ToolButton({
-  label, sublabel, active, onClick, icon, title, destructive = false,
+  label, sublabel, active, onClick, icon, title, destructive = false, disabled = false,
 }: {
   label: string;
   sublabel: string;
@@ -521,11 +597,13 @@ function ToolButton({
   icon: React.ReactNode;
   title: string;
   destructive?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       title={title}
       aria-label={title}
       className={cn(
@@ -535,7 +613,8 @@ function ToolButton({
           ? 'bg-[var(--orange)] text-white border-white ring-2 ring-[var(--orange)] shadow'
           : destructive
             ? 'bg-background text-destructive border-transparent hover:bg-destructive/10'
-            : 'bg-background text-foreground border-transparent hover:border-foreground/20 hover:bg-accent/40'
+            : 'bg-background text-foreground border-transparent hover:border-foreground/20 hover:bg-accent/40',
+        disabled && 'opacity-40 cursor-not-allowed pointer-events-none'
       )}
     >
       {icon}

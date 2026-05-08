@@ -6,16 +6,23 @@ import { useRouter } from 'next/navigation';
 import { ShapeList } from './shape-list';
 import { AreaSummary } from './area-summary';
 import { InstructionsBanner } from './instructions-banner';
+import { AddressSearch } from './address-search';
+import {
+  CreateCustomerFromMeasurement, type PrefilledAddress,
+} from './create-customer-from-measurement';
 import { Button } from '@/components/ui/button';
-import { AddStopInput } from '@/components/routes/add-stop-input';
 import { ClientCombobox } from '@/components/clients/client-combobox';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { createClient } from '@/lib/supabase/client';
-import { geocodeAddress, type PlaceSuggestion } from '@/lib/mapbox';
+import {
+  geocodeAddress, geocodeAddressDetailed, type PlaceSuggestion,
+} from '@/lib/mapbox';
 import { totalsByType, type MeasuredShape } from '@/lib/measurement';
 import { staticMapUrlForShapes } from '@/lib/measurement-static-map';
 import { toast } from 'sonner';
 import {
-  ChevronLeft, Loader2, Save, FileDown, ChevronDown, User, Globe,
+  ChevronLeft, Loader2, Save, FileDown, ChevronDown, MapPin, User,
+  Globe, UserPlus, FilePlus,
 } from 'lucide-react';
 import Link from 'next/link';
 import type { Client, PropertyMeasurement } from '@/types';
@@ -28,6 +35,8 @@ const MeasureMap = dynamic(() => import('./measure-map'), {
     </div>
   ),
 });
+
+const HISTORY_LIMIT = 50;
 
 interface Props {
   companyId: string;
@@ -42,6 +51,15 @@ interface Props {
   standalone?: boolean;
 }
 
+type AddressInfo = {
+  service_address: string;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  lat: number | null;
+  lng: number | null;
+} | null;
+
 export function MeasureView({
   companyId,
   userId,
@@ -54,42 +72,106 @@ export function MeasureView({
 }: Props) {
   const router = useRouter();
   const supabase = createClient();
+
   const [center, setCenter] = useState<{ lng: number; lat: number } | null>(null);
-  const [shapes, setShapes] = useState<MeasuredShape[]>(() => {
+  const [shapes, setShapesRaw] = useState<MeasuredShape[]>(() => {
     if (!initial) return [];
     if (Array.isArray(initial.shapes)) return initial.shapes as MeasuredShape[];
     return [];
   });
-  const [searching, setSearching] = useState(!!initialAddress);
-  const [saving, setSaving] = useState(false);
-  const [pdfBusy, setPdfBusy] = useState(false);
-  const [hint, setHint] = useState<string | null>(null);
 
-  // Standalone mode: pick a client at save-time (or save without one).
-  const [selectedClientId, setSelectedClientId] = useState<string>(lockedClientId ?? '');
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [saveMenuOpen, setSaveMenuOpen] = useState(false);
-  const [showClientPicker, setShowClientPicker] = useState(false);
-
-  // Address shown in the PDF — kept in sync with whatever is searched.
-  const [addressLabel, setAddressLabel] = useState(initialAddress ?? '');
-
+  // Undo stack — snapshots of `shapes` *before* each change.
+  const historyRef = useRef<MeasuredShape[][]>([]);
+  const [historyTick, setHistoryTick] = useState(0); // bumps so canUndo re-evaluates
+  const syncShapesRef = useRef<(() => void) | null>(null);
   const focusShapeRef = useRef<((id: string) => void) | null>(null);
 
+  function setShapes(next: MeasuredShape[] | ((prev: MeasuredShape[]) => MeasuredShape[])) {
+    setShapesRaw((prev) => {
+      const resolved = typeof next === 'function' ? (next as (p: MeasuredShape[]) => MeasuredShape[])(prev) : next;
+      // Snapshot the previous state into history.
+      historyRef.current = [...historyRef.current, prev].slice(-HISTORY_LIMIT);
+      setHistoryTick((t) => t + 1);
+      return resolved;
+    });
+  }
+
+  function undo() {
+    if (historyRef.current.length === 0) return;
+    const prev = historyRef.current[historyRef.current.length - 1];
+    historyRef.current = historyRef.current.slice(0, -1);
+    setShapesRaw(prev);
+    setHistoryTick((t) => t + 1);
+    // Push restored state back into the Mapbox Draw layer on the next tick
+    // so it's mounted before we sync.
+    requestAnimationFrame(() => syncShapesRef.current?.());
+  }
+
+  // Address state — source of truth for the status badge + create-customer.
+  const [searching, setSearching] = useState(!!initialAddress);
+  const [addressInfo, setAddressInfo] = useState<AddressInfo>(null);
+
+  // Standalone-only client picking
+  const [selectedClientId, setSelectedClientId] = useState<string>(lockedClientId ?? '');
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  /** When true, the user just typed an address — defaults Save → "Create New". */
+  const [lastEntryWasAddress, setLastEntryWasAddress] = useState(false);
+
+  // Save / PDF / sheet state
+  const [saving, setSaving] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [saveMenuOpen, setSaveMenuOpen] = useState(false);
+  const [showClientPicker, setShowClientPicker] = useState(false);
+  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
+  const [createIntent, setCreateIntent] = useState<'measurement' | 'proposal'>('measurement');
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const [savedMeasurementId, setSavedMeasurementId] = useState<string | null>(initial?.id ?? null);
+
+  // Resolve initialAddress on mount if provided.
   useEffect(() => {
     if (!initialAddress) return;
     let cancelled = false;
     (async () => {
       setSearching(true);
-      const coords = await geocodeAddress(initialAddress);
-      if (!cancelled) {
+      const detailed = await geocodeAddressDetailed(initialAddress);
+      if (cancelled) return;
+      if (detailed) {
+        setCenter({ lng: detailed.lng, lat: detailed.lat });
+        setAddressInfo({
+          service_address: detailed.placeName,
+          city: detailed.city,
+          state: detailed.state,
+          zip: detailed.zip,
+          lat: detailed.lat,
+          lng: detailed.lng,
+        });
+      } else {
+        // Fall back to plain coords
+        const coords = await geocodeAddress(initialAddress);
+        if (cancelled) return;
         if (coords) setCenter({ lng: coords[0], lat: coords[1] });
-        else setHint(`Couldn't geocode "${initialAddress}".`);
-        setSearching(false);
       }
+      setSearching(false);
     })();
     return () => { cancelled = true; };
   }, [initialAddress]);
+
+  // Keyboard shortcut: Ctrl+Z / Cmd+Z = undo.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const isMod = e.metaKey || e.ctrlKey;
+      if (!isMod) return;
+      if (e.key === 'z' || e.key === 'Z') {
+        // Only fire when nothing else has focus that wants Ctrl+Z (input/textarea).
+        const tag = (document.activeElement?.tagName ?? '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea') return;
+        e.preventDefault();
+        undo();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const totals = useMemo(() => totalsByType(shapes), [shapes]);
 
@@ -98,6 +180,8 @@ export function MeasureView({
   }
   function removeShape(id: string) {
     setShapes((prev) => prev.filter((s) => s.id !== id));
+    // The Draw layer holds its own copy; keep them in sync.
+    requestAnimationFrame(() => syncShapesRef.current?.());
   }
   function reorderShapes(next: MeasuredShape[]) {
     setShapes(next);
@@ -105,26 +189,60 @@ export function MeasureView({
   function focusShape(id: string) {
     focusShapeRef.current?.(id);
   }
-  function handlePlace(place: PlaceSuggestion) {
+
+  function handleAddress(place: PlaceSuggestion) {
     setCenter({ lng: place.lng, lat: place.lat });
-    setAddressLabel(place.placeName);
+    setAddressInfo({
+      service_address: place.placeName,
+      city: place.city,
+      state: place.state,
+      zip: place.zip,
+      lat: place.lat,
+      lng: place.lng,
+    });
+    setLastEntryWasAddress(true);
+    // If we'd previously picked a client, clear that signal — the user
+    // restarted at an address.
+    setSelectedClientId('');
+    setSelectedClient(null);
   }
 
+  function handlePickClient(id: string, c: Client) {
+    setSelectedClientId(id);
+    setSelectedClient(c);
+    setLastEntryWasAddress(false);
+    const composed = [c.service_address, c.service_city, c.service_state, c.service_zip]
+      .filter(Boolean).join(', ');
+    setAddressInfo({
+      service_address: c.service_address,
+      city: c.service_city ?? null,
+      state: c.service_state ?? null,
+      zip: c.service_zip ?? null,
+      lat: null,
+      lng: null,
+    });
+    if (composed) {
+      void geocodeAddress(composed).then((coords) => {
+        if (coords) setCenter({ lng: coords[0], lat: coords[1] });
+      });
+    }
+  }
+
+  // ── Persistence helpers ────────────────────────────────────────────────
   async function persistMeasurement(targetClientId: string | null): Promise<string | null> {
     setSaving(true);
-    const payload = {
-      company_id: companyId,
-      client_id: targetClientId,
-      measured_by: userId,
-      total_turf_sqft: totals.turf,
-      total_hardscape_sqft: totals.hardscape,
-      total_bed_sqft: totals.bed,
-      total_other_sqft: totals.other,
-      shapes: shapes,
-    };
     const { data: measurement, error } = await supabase
       .from('property_measurements')
-      .insert(payload)
+      .insert({
+        company_id: companyId,
+        client_id: targetClientId,
+        measured_by: userId,
+        total_turf_sqft: totals.turf,
+        total_hardscape_sqft: totals.hardscape,
+        total_bed_sqft: totals.bed,
+        total_other_sqft: totals.other,
+        shapes,
+      })
       .select('id')
       .single();
     setSaving(false);
@@ -139,15 +257,13 @@ export function MeasureView({
         .update({ primary_measurement_id: measurement.id })
         .eq('id', targetClientId);
     }
+    setSavedMeasurementId(measurement.id);
     return measurement.id;
   }
 
   async function saveLocked() {
     if (!lockedClientId) return;
-    if (shapes.length === 0) {
-      toast.error('Draw at least one shape before saving.');
-      return;
-    }
+    if (shapes.length === 0) { toast.error('Draw at least one shape before saving.'); return; }
     const id = await persistMeasurement(lockedClientId);
     if (!id) return;
     toast.success(`Measurement saved — ${totals.turf.toLocaleString()} sq ft of turf.`);
@@ -156,15 +272,10 @@ export function MeasureView({
   }
 
   async function saveToPickedClient() {
-    if (!selectedClientId) {
-      toast.error('Pick a client first.');
-      return;
-    }
-    if (shapes.length === 0) {
-      toast.error('Draw at least one shape before saving.');
-      return;
-    }
+    if (!selectedClientId) { toast.error('Pick a client first.'); return; }
+    if (shapes.length === 0) { toast.error('Draw at least one shape before saving.'); return; }
     setSaveMenuOpen(false);
+    setShowClientPicker(false);
     const id = await persistMeasurement(selectedClientId);
     if (!id) return;
     toast.success(`Measurement saved to ${selectedClient?.name ?? 'client'}.`);
@@ -173,24 +284,16 @@ export function MeasureView({
   }
 
   async function saveStandalone() {
-    if (shapes.length === 0) {
-      toast.error('Draw at least one shape before saving.');
-      return;
-    }
+    if (shapes.length === 0) { toast.error('Draw at least one shape before saving.'); return; }
     setSaveMenuOpen(false);
     const id = await persistMeasurement(null);
     if (!id) return;
     toast.success('Measurement saved (standalone — no client linked).');
-    // No client to redirect to; stay on the page so dispatcher can keep
-    // measuring or PDF-export. Refresh keeps state crisp.
     router.refresh();
   }
 
   async function downloadPdf() {
-    if (shapes.length === 0) {
-      toast.error('Draw at least one shape first.');
-      return;
-    }
+    if (shapes.length === 0) { toast.error('Draw at least one shape first.'); return; }
     setPdfBusy(true);
     try {
       const [{ pdf }, { MeasurementDocument }, React] = await Promise.all([
@@ -199,11 +302,10 @@ export function MeasureView({
         import('react'),
       ]);
       const staticMapUrl = staticMapUrlForShapes(shapes, center);
-      const clientName =
-        lockedClientName ?? selectedClient?.name ?? null;
+      const clientName = lockedClientName ?? selectedClient?.name ?? null;
       const doc = React.default.createElement(MeasurementDocument, {
         shapes,
-        address: addressLabel || null,
+        address: addressInfo?.service_address ?? null,
         clientName,
         staticMapUrl,
       });
@@ -212,7 +314,8 @@ export function MeasureView({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       const ts = new Date().toISOString().split('T')[0];
-      const slug = (clientName ?? addressLabel ?? 'property').replace(/[^a-z0-9-]+/gi, '_').slice(0, 40);
+      const slug = (clientName ?? addressInfo?.service_address ?? 'property')
+        .replace(/[^a-z0-9-]+/gi, '_').slice(0, 40);
       a.href = url;
       a.download = `Measurement-${slug}-${ts}.pdf`;
       a.click();
@@ -224,13 +327,113 @@ export function MeasureView({
     }
   }
 
+  // ── Generate Proposal ──────────────────────────────────────────────────
+  async function generateProposal() {
+    if (shapes.length === 0) { toast.error('Draw at least one shape first.'); return; }
+
+    // Resolve target client — locked > selected. If neither, prompt to create new.
+    const clientId = lockedClientId ?? selectedClientId ?? null;
+    if (!clientId) {
+      // Open the create-customer sheet pre-set to redirect into the proposal
+      // builder once the customer + measurement land.
+      setCreateIntent('proposal');
+      setShowCreateCustomer(true);
+      return;
+    }
+
+    // Save the measurement first (if it isn't already).
+    let measId = savedMeasurementId;
+    if (!measId) {
+      measId = await persistMeasurement(clientId);
+      if (!measId) return;
+    }
+    router.push(`/dashboard/proposals/new?client_id=${clientId}&measurement_id=${measId}`);
+  }
+
+  // ── Clear All ─────────────────────────────────────────────────────────
+  async function doClearAll() {
+    setShapes([]);
+    requestAnimationFrame(() => syncShapesRef.current?.());
+    setSavedMeasurementId(null);
+    toast.success('All measurements cleared.');
+  }
+
+  // ── Derived ───────────────────────────────────────────────────────────
+  const linkedName = lockedClientName ?? selectedClient?.name ?? null;
+  const badgeAddress = addressInfo?.service_address ?? null;
+  const canUndo = historyRef.current.length > 0;
+  void historyTick; // dependency-bumped for canUndo
+
+  // Default Save action depends on context.
+  const defaultSaveAction: 'existing' | 'new' | 'standalone' = lockedClientId
+    ? 'existing'
+    : selectedClientId
+      ? 'existing'
+      : lastEntryWasAddress
+        ? 'new'
+        : 'standalone';
+
+  const prefilledAddress: PrefilledAddress = {
+    service_address: addressInfo?.service_address ?? '',
+    service_city: addressInfo?.city ?? null,
+    service_state: addressInfo?.state ?? null,
+    service_zip: addressInfo?.zip ?? null,
+    lat: addressInfo?.lat ?? null,
+    lng: addressInfo?.lng ?? null,
+  };
+
   return (
     <div
       className="-m-4 md:-m-6 lg:-m-8 flex overflow-hidden flex-col md:flex-row"
       style={{ height: 'calc(100svh - 3.5rem)' }}
     >
-      {/* MAP */}
+      {/* MAP COLUMN */}
       <div className="flex-1 relative min-h-[300px] flex flex-col">
+        {/* Top bar — primary address search, then "or" + client picker */}
+        <div className="border-b bg-background p-3 space-y-2.5 shrink-0">
+          {!lockedClientId && (
+            <>
+              <AddressSearch
+                onAddress={handleAddress}
+                autoFocus
+                initialValue={initialAddress ?? ''}
+              />
+              {standalone && (
+                <>
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                    <span className="flex-1 h-px bg-border" />
+                    <span className="font-mono">— or —</span>
+                    <span className="flex-1 h-px bg-border" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <div className="flex-1">
+                      <ClientCombobox
+                        value={selectedClientId}
+                        onChange={(id, c) => handlePickClient(id, c)}
+                        placeholder="Pick existing client…"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {/* Status badge */}
+          {badgeAddress && (
+            <div className="inline-flex items-center gap-1.5 text-[11px] rounded-full bg-muted px-2.5 py-1">
+              <MapPin className="h-3 w-3" style={{ color: 'var(--orange)' }} />
+              <span className="font-medium truncate max-w-[280px]">
+                Measuring: {badgeAddress}
+              </span>
+              <span className="text-muted-foreground">
+                {linkedName ? `· Linked to ${linkedName}` : '· No customer linked'}
+              </span>
+            </div>
+          )}
+        </div>
+
         <InstructionsBanner />
         <div className="flex-1 relative">
           {searching && (
@@ -244,6 +447,10 @@ export function MeasureView({
             shapes={shapes}
             onShapesChange={setShapes}
             focusShapeRef={focusShapeRef}
+            syncShapesRef={syncShapesRef}
+            onUndo={undo}
+            canUndo={canUndo}
+            onClearAll={() => setConfirmClearAll(true)}
           />
         </div>
       </div>
@@ -251,7 +458,6 @@ export function MeasureView({
       {/* RIGHT PANEL */}
       <aside className="md:w-[360px] shrink-0 border-l bg-background overflow-y-auto">
         <div className="p-4 space-y-4">
-          {/* Header */}
           <div>
             <Link
               href={backHref}
@@ -262,46 +468,10 @@ export function MeasureView({
             <h1 className="page-title" style={{ fontSize: 22 }}>
               Measure Property
             </h1>
-            {lockedClientName && (
-              <p className="text-xs text-muted-foreground mt-0.5">{lockedClientName}</p>
-            )}
-            {!lockedClientName && selectedClient && (
-              <p className="text-xs text-muted-foreground mt-0.5">{selectedClient.name}</p>
+            {linkedName && (
+              <p className="text-xs text-muted-foreground mt-0.5">{linkedName}</p>
             )}
           </div>
-
-          {/* Address search + (standalone) client picker */}
-          <AddStopInput onAdd={handlePlace} crewColor="var(--orange)" />
-          {hint && (
-            <p className="text-[11px] text-amber-700">{hint}</p>
-          )}
-
-          {standalone && !lockedClientId && (
-            <div className="space-y-1.5">
-              <p className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground">
-                Or pick a client
-              </p>
-              <ClientCombobox
-                value={selectedClientId}
-                onChange={(id, c) => {
-                  setSelectedClientId(id);
-                  setSelectedClient(c);
-                  if (c?.service_address) {
-                    setAddressLabel([
-                      c.service_address, c.service_city, c.service_state, c.service_zip,
-                    ].filter(Boolean).join(', '));
-                    void geocodeAddress(
-                      [c.service_address, c.service_city, c.service_state, c.service_zip]
-                        .filter(Boolean).join(', ')
-                    ).then((coords) => {
-                      if (coords) setCenter({ lng: coords[0], lat: coords[1] });
-                    });
-                  }
-                }}
-                placeholder="Search existing clients…"
-              />
-            </div>
-          )}
 
           {/* Shape list */}
           <ShapeList
@@ -315,7 +485,7 @@ export function MeasureView({
           {/* Totals + pricing */}
           <AreaSummary shapes={shapes} />
 
-          {/* Save row */}
+          {/* Action buttons */}
           <div className="flex flex-col gap-2">
             <Button
               variant="outline"
@@ -356,57 +526,70 @@ export function MeasureView({
                   <ChevronDown className="h-3 w-3 ml-auto opacity-80" />
                 </Button>
                 {saveMenuOpen && (
-                  <div className="absolute right-0 top-full mt-1 z-30 w-64 rounded-lg border bg-popover shadow-xl ring-1 ring-foreground/10 p-1.5">
-                    <button
-                      type="button"
+                  <div className="absolute right-0 top-full mt-1 z-30 w-72 rounded-lg border bg-popover shadow-xl ring-1 ring-foreground/10 p-1.5">
+                    <SaveOption
+                      icon={<User className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />}
+                      title="Save to existing customer"
+                      desc="Links to an existing client record."
+                      highlighted={defaultSaveAction === 'existing'}
                       onClick={() => {
                         setSaveMenuOpen(false);
                         setShowClientPicker(true);
                       }}
-                      className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-accent/60"
-                    >
-                      <User className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-                      <span className="flex-1">
-                        <span className="block text-sm font-semibold">Save to existing client</span>
-                        <span className="block text-[11px] text-muted-foreground">
-                          Links to that client&apos;s record + auto-applies in proposals.
-                        </span>
-                      </span>
-                    </button>
-                    <button
-                      type="button"
+                    />
+                    <SaveOption
+                      icon={<UserPlus className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />}
+                      title="Create new customer from this"
+                      desc="Address + lot size auto-filled. Status starts as Prospect."
+                      highlighted={defaultSaveAction === 'new'}
+                      onClick={() => {
+                        if (!addressInfo?.service_address) {
+                          toast.error('Search an address first so we can pre-fill it.');
+                          return;
+                        }
+                        setSaveMenuOpen(false);
+                        setCreateIntent('measurement');
+                        setShowCreateCustomer(true);
+                      }}
+                    />
+                    <SaveOption
+                      icon={<Globe className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />}
+                      title="Save standalone"
+                      desc="No customer yet — convert later from the standalone list."
+                      highlighted={defaultSaveAction === 'standalone'}
                       onClick={saveStandalone}
-                      className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-accent/60"
-                    >
-                      <Globe className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-                      <span className="flex-1">
-                        <span className="block text-sm font-semibold">Save standalone</span>
-                        <span className="block text-[11px] text-muted-foreground">
-                          For prospect quotes — convert to a client later.
-                        </span>
-                      </span>
-                    </button>
+                    />
                   </div>
                 )}
               </div>
             )}
 
-            {/* Client-picker modal-lite for "Save to existing client" path */}
+            <Button
+              onClick={generateProposal}
+              disabled={shapes.length === 0 || saving}
+              className="w-full gap-1.5 font-semibold"
+              style={{
+                backgroundColor: 'var(--orange-soft)',
+                color: 'var(--orange-deep)',
+                border: '2px solid var(--orange)',
+              }}
+            >
+              <FilePlus className="h-3.5 w-3.5" />
+              Generate Proposal from This Measurement
+            </Button>
+
+            {/* Inline client picker for "Save to existing customer" path */}
             {showClientPicker && (
               <div className="rounded-lg border bg-card p-3 space-y-2">
-                <p className="text-xs font-semibold">Pick the client to save to</p>
+                <p className="text-xs font-semibold">Pick the customer to save to</p>
                 <ClientCombobox
                   value={selectedClientId}
-                  onChange={(id, c) => {
-                    setSelectedClientId(id);
-                    setSelectedClient(c);
-                  }}
+                  onChange={(id, c) => handlePickClient(id, c)}
                   placeholder="Search clients…"
                 />
                 <div className="flex gap-2">
                   <Button
-                    variant="outline"
-                    size="sm"
+                    variant="outline" size="sm"
                     onClick={() => setShowClientPicker(false)}
                     className="flex-1"
                   >
@@ -414,15 +597,12 @@ export function MeasureView({
                   </Button>
                   <Button
                     size="sm"
-                    onClick={() => {
-                      setShowClientPicker(false);
-                      void saveToPickedClient();
-                    }}
+                    onClick={() => void saveToPickedClient()}
                     disabled={!selectedClientId}
                     className="flex-1"
                     style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
                   >
-                    Save to client
+                    Save to customer
                   </Button>
                 </div>
               </div>
@@ -430,6 +610,66 @@ export function MeasureView({
           </div>
         </div>
       </aside>
+
+      {/* Create-customer sheet */}
+      <CreateCustomerFromMeasurement
+        open={showCreateCustomer}
+        onOpenChange={setShowCreateCustomer}
+        companyId={companyId}
+        userId={userId}
+        prefilledAddress={prefilledAddress}
+        shapes={shapes}
+        totalTurfSqft={totals.turf}
+        totalHardscapeSqft={totals.hardscape}
+        totalBedSqft={totals.bed}
+        totalOtherSqft={totals.other}
+        redirectTo={createIntent === 'proposal' ? 'proposal' : 'client'}
+      />
+
+      {/* Clear-all confirm */}
+      <ConfirmDialog
+        open={confirmClearAll}
+        onOpenChange={setConfirmClearAll}
+        title="Clear all measurements?"
+        description="Wipes every shape from the map and panel. This cannot be undone."
+        confirmLabel="Clear All"
+        destructive
+        onConfirm={doClearAll}
+      />
     </div>
+  );
+}
+
+function SaveOption({
+  icon, title, desc, highlighted, onClick,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  highlighted?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        'flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors ' +
+        (highlighted
+          ? 'bg-[var(--orange-soft)]'
+          : 'hover:bg-accent/60')
+      }
+    >
+      {icon}
+      <span className="flex-1 min-w-0">
+        <span
+          className="block text-sm font-semibold"
+          style={highlighted ? { color: 'var(--orange-deep)' } : undefined}
+        >
+          {title}
+        </span>
+        <span className="block text-[11px] text-muted-foreground">{desc}</span>
+      </span>
+    </button>
   );
 }

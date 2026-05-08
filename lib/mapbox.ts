@@ -27,6 +27,43 @@ export interface PlaceSuggestion {
   context: string;
   lng: number;
   lat: number;
+  /** Parsed address parts from the Mapbox `context` array. */
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+}
+
+interface MapboxFeature {
+  id: string;
+  place_name: string;
+  text: string;
+  center: [number, number];
+  context?: Array<{ id: string; text: string; short_code?: string }>;
+}
+
+function parseFeature(f: MapboxFeature): PlaceSuggestion {
+  const ctx = f.context ?? [];
+  // id prefixes: 'place.X' = city, 'region.X' = state, 'postcode.X' = zip
+  const findByPrefix = (prefix: string) =>
+    ctx.find((c) => c.id?.startsWith(prefix));
+  const city = findByPrefix('place')?.text ?? null;
+  const stateEntry = findByPrefix('region');
+  // Prefer the two-letter region code (e.g. 'us-wa' → 'WA'); fall back to text.
+  const state = stateEntry
+    ? (stateEntry.short_code?.split('-').pop()?.toUpperCase() ?? stateEntry.text)
+    : null;
+  const zip = findByPrefix('postcode')?.text ?? null;
+  return {
+    id: f.id,
+    placeName: f.place_name,
+    shortName: f.text,
+    context: ctx.map((c) => c.text).join(', '),
+    lng: f.center[0],
+    lat: f.center[1],
+    city,
+    state,
+    zip,
+  };
 }
 
 export async function searchPlaces(query: string): Promise<PlaceSuggestion[]> {
@@ -38,23 +75,33 @@ export async function searchPlaces(query: string): Promise<PlaceSuggestion[]> {
       `limit=5&proximity=${TRI_CITIES_PROXIMITY}&country=us&types=address,poi&autocomplete=true&access_token=${MAPBOX_TOKEN}`
     );
     const data = await res.json();
-    const features = (data.features ?? []) as Array<{
-      id: string;
-      place_name: string;
-      text: string;
-      center: [number, number];
-      context?: Array<{ text: string }>;
-    }>;
-    return features.map((f) => ({
-      id: f.id,
-      placeName: f.place_name,
-      shortName: f.text,
-      context: (f.context ?? []).map((c) => c.text).join(', '),
-      lng: f.center[0],
-      lat: f.center[1],
-    }));
+    const features = (data.features ?? []) as MapboxFeature[];
+    return features.map(parseFeature);
   } catch {
     return [];
+  }
+}
+
+/**
+ * Geocode a free-form address string and return a parsed PlaceSuggestion.
+ * Used when the user hits Enter / Search without picking a typeahead.
+ */
+export async function geocodeAddressDetailed(
+  address: string
+): Promise<PlaceSuggestion | null> {
+  if (!MAPBOX_TOKEN) return null;
+  try {
+    const encoded = encodeURIComponent(address);
+    const res = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?` +
+      `limit=1&proximity=${TRI_CITIES_PROXIMITY}&country=us&access_token=${MAPBOX_TOKEN}`
+    );
+    const data = await res.json();
+    const f = (data.features ?? [])[0] as MapboxFeature | undefined;
+    if (!f) return null;
+    return parseFeature(f);
+  } catch {
+    return null;
   }
 }
 

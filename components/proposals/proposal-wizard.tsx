@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,10 @@ interface Props {
   userId: string;
   services: Service[];
   initialClientId?: string;
+  /** When set, the wizard prefetches the measurement and pre-applies it. */
+  initialMeasurementId?: string;
+  /** Default 1; pass 2 when the wizard should skip Step 1 (client already set). */
+  initialStep?: 1 | 2 | 3;
 }
 
 interface DraftLineItem extends LineItemDraft {
@@ -64,14 +68,22 @@ function pickByCategory(services: Service[], cats: string[]): Service[] {
   return services.filter((s) => cats.includes(s.category));
 }
 
-export function ProposalWizard({ companyId, userId, services, initialClientId }: Props) {
+export function ProposalWizard({
+  companyId, userId, services, initialClientId, initialMeasurementId,
+  initialStep = 1,
+}: Props) {
   const router = useRouter();
   const supabase = createClient();
 
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(initialStep);
   const [clientId, setClientId] = useState<string>(initialClientId ?? '');
   const [client, setClient] = useState<Client | null>(null);
   const [measurementTurfSqft, setMeasurementTurfSqft] = useState<number>(0);
+  const [measurementHardscapeSqft, setMeasurementHardscapeSqft] = useState<number>(0);
+  const [measurementBedSqft, setMeasurementBedSqft] = useState<number>(0);
+  const [measurementOtherSqft, setMeasurementOtherSqft] = useState<number>(0);
+  const [measurementId, setMeasurementId] = useState<string | null>(initialMeasurementId ?? null);
+  const measurementAppliedRef = useRef(false);
   const [title, setTitle] = useState('');
   const [validUntil, setValidUntil] = useState(() => {
     const d = new Date();
@@ -101,31 +113,38 @@ export function ProposalWizard({ companyId, userId, services, initialClientId }:
   const margin = useMemo(() => profitMargin(items, flags), [items, flags]);
   const marginTone = marginColor(margin);
 
-  // Look up the client's primary measurement so the banner can offer to
-  // apply turf sqft to per-sqft line items.
+  // Resolve which measurement (if any) backs this proposal: explicit URL
+  // param > client.primary_measurement_id. Pull totals so the banner +
+  // smart-suggestions can use them.
   useEffect(() => {
-    if (!client) {
-      setMeasurementTurfSqft(0);
-      return;
-    }
-    const measId = (client as Client & { primary_measurement_id?: string | null }).primary_measurement_id;
+    const measId = initialMeasurementId
+      ?? (client as Client & { primary_measurement_id?: string | null } | null)?.primary_measurement_id
+      ?? null;
     if (!measId) {
       setMeasurementTurfSqft(0);
+      setMeasurementHardscapeSqft(0);
+      setMeasurementBedSqft(0);
+      setMeasurementOtherSqft(0);
+      setMeasurementId(null);
       return;
     }
     let cancelled = false;
     supabase
       .from('property_measurements')
-      .select('total_turf_sqft')
+      .select('id, total_turf_sqft, total_hardscape_sqft, total_bed_sqft, total_other_sqft')
       .eq('id', measId)
       .maybeSingle()
       .then(({ data }) => {
-        if (cancelled) return;
-        setMeasurementTurfSqft(Number(data?.total_turf_sqft ?? 0));
+        if (cancelled || !data) return;
+        setMeasurementId(data.id as string);
+        setMeasurementTurfSqft(Number(data.total_turf_sqft ?? 0));
+        setMeasurementHardscapeSqft(Number(data.total_hardscape_sqft ?? 0));
+        setMeasurementBedSqft(Number(data.total_bed_sqft ?? 0));
+        setMeasurementOtherSqft(Number(data.total_other_sqft ?? 0));
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client]);
+  }, [client, initialMeasurementId]);
 
   // Count per-sqft line items so the banner can show how many would update.
   const perSqftLineCount = useMemo(() => {
@@ -143,6 +162,84 @@ export function ProposalWizard({ companyId, userId, services, initialClientId }:
     }));
     toast.success(`Applied ${measurementTurfSqft.toLocaleString()} sq ft to per-sq-ft services.`);
   }
+
+  // When we landed via /dashboard/proposals/new?client_id=X&measurement_id=Y,
+  // pre-populate Step 2 with smart suggestions, then auto-apply the turf
+  // sqft to per-sqft lines. Runs once when the data is ready.
+  useEffect(() => {
+    if (!initialMeasurementId) return;
+    if (measurementAppliedRef.current) return;
+    if (measurementTurfSqft === 0 && measurementHardscapeSqft === 0
+      && measurementBedSqft === 0 && measurementOtherSqft === 0) {
+      return; // measurement data hasn't arrived yet
+    }
+    measurementAppliedRef.current = true;
+
+    void (async () => {
+      const { suggestServicesFromMeasurement, PRICING } = await import('@/lib/proposal-helpers');
+      const suggestions = suggestServicesFromMeasurement({
+        total_turf_sqft: measurementTurfSqft,
+        total_hardscape_sqft: measurementHardscapeSqft,
+        total_bed_sqft: measurementBedSqft,
+        total_other_sqft: measurementOtherSqft,
+      });
+
+      // For each suggestion, find a matching service in the catalog by
+      // category. If none, skip. (We only seed lines from real services so
+      // the totals computation stays consistent with services.unit.)
+      const additions: DraftLineItem[] = [];
+      for (const sug of suggestions) {
+        const svc = services.find((s) => s.category === sug.category && s.is_active);
+        if (!svc) continue;
+        const useSqftRate = svc.unit === 'per_sqft';
+        const unitPrice = useSqftRate
+          ? Number((svc as Service & { per_sqft_rate?: number | null }).per_sqft_rate
+              ?? sug.defaultRatePerSqft
+              ?? svc.base_price ?? 0)
+          : Number(svc.base_price ?? 0);
+        const quantity = useSqftRate
+          ? (sug.defaultQuantity ?? measurementTurfSqft)
+          : (sug.defaultQuantity ?? 1);
+
+        const freqDiscount = sug.frequency === 'weekly' ? 15
+          : sug.frequency === 'biweekly' ? 10
+          : sug.frequency === 'monthly' ? 5
+          : 0;
+
+        additions.push({
+          _key: makeKey(),
+          service_id: svc.id,
+          description: sug.label,
+          quantity,
+          unit_price: unitPrice,
+          markup_pct: 20,
+          discount_pct: 0,
+          frequency: sug.frequency,
+          frequency_discount_pct: freqDiscount,
+        });
+      }
+
+      if (additions.length > 0) {
+        setItems((prev) => {
+          // Don't double-add if defaults already filled the list.
+          if (prev.length > 0) return prev;
+          return additions;
+        });
+        toast.success(
+          `Pre-loaded ${additions.length} service${additions.length === 1 ? '' : 's'} from the measurement.`
+        );
+      }
+      // PRICING is referenced indirectly via sug.defaultRatePerSqft; ack to keep tree-shake happy
+      void PRICING;
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    initialMeasurementId,
+    measurementTurfSqft,
+    measurementHardscapeSqft,
+    measurementBedSqft,
+    measurementOtherSqft,
+  ]);
 
   // Auto-defaults from property type
   useEffect(() => {
