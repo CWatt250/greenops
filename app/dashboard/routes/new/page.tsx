@@ -480,7 +480,12 @@ export default function RouteBuilderPage() {
 
     const origDrive = stops.reduce((sum, s) => sum + (s.drive_minutes_from_prev ?? 0), 0);
 
-    const outcome = await optimizeMultiCrewRoute(vroomStops, crewVehicles, startLocation);
+    const outcome = await optimizeMultiCrewRoute(
+      vroomStops,
+      crewVehicles,
+      startLocation,
+      { routeDate: selectedDate },
+    );
 
     if (!outcome.ok) {
       setOptimizingMulti(false);
@@ -526,19 +531,36 @@ export default function RouteBuilderPage() {
     const newDrive = withGeometry.reduce((sum, s) => sum + (s.drive_minutes_from_prev ?? 0), 0);
     const saved = Math.max(0, Math.round(origDrive - newDrive));
 
-    const totalCrews = result.assignments.filter((a) => a.stop_ids.length > 0).length;
     const totalAssigned = result.assignments.reduce((s, a) => s + a.stop_ids.length, 0);
+
+    // Build a per-crew breakdown for the toast: "Crew 1: 4 stops · 32m drive".
+    const crewLines = result.assignments
+      .filter((a) => a.stop_ids.length > 0)
+      .map((a) => {
+        const name = crews.find((c) => c.id === a.crew_id)?.name ?? 'Crew';
+        const driveMin = Math.round(a.duration_seconds / 60);
+        return `${name}: ${a.stop_ids.length} stop${a.stop_ids.length === 1 ? '' : 's'} · ${driveMin}m drive`;
+      });
+    // "Saved" = the worst single-crew tour minus the average — i.e. how much
+    // drive time we shed by spreading instead of stacking onto one crew.
+    const durations = result.assignments
+      .filter((a) => a.stop_ids.length > 0)
+      .map((a) => a.duration_seconds);
+    const maxDuration = durations.length > 0 ? Math.max(...durations) : 0;
+    const avgDuration = durations.length > 0
+      ? durations.reduce((s, d) => s + d, 0) / durations.length
+      : 0;
+    const balancedSavedMin = Math.round((maxDuration - avgDuration) / 60);
 
     if (totalAssigned === 0) {
       toast.warning('VROOM returned no assignments. Check console for the response — usually means the depot is too far from the stops.');
-    } else if (saved > 0) {
-      toast.success(
-        `Routes optimized — ${totalAssigned} stops distributed across ${totalCrews} crew${totalCrews === 1 ? '' : 's'}. Saved ~${formatMinutes(saved)} of drive time.`
-      );
     } else {
-      toast.success(
-        `Routes optimized — ${totalAssigned} stops distributed across ${totalCrews} crew${totalCrews === 1 ? '' : 's'}.`
-      );
+      const description = [
+        ...crewLines,
+        ...(balancedSavedMin > 0 ? [`Total saved: ~${balancedSavedMin}m vs unbalanced`] : []),
+        ...(saved > 0 ? [`Drive time vs original: -${formatMinutes(saved)}`] : []),
+      ].join('\n');
+      toast.success('Routes optimized', { description, duration: 6000 });
     }
 
     if (result.unassigned.length > 0) {

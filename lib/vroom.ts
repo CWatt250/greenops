@@ -92,10 +92,36 @@ export type MultiCrewOptimizationOutcome =
   | { ok: true; result: MultiCrewResult }
   | { ok: false; error: string; status?: number };
 
+export interface MultiCrewOptions {
+  /** Route date as YYYY-MM-DD. Drives the per-vehicle workday window
+   *  (08:00–17:00 local) so VROOM can't pile every stop onto one truck. */
+  routeDate?: string;
+  /** Workday start hour (24h, default 8). */
+  dayStartHour?: number;
+  /** Workday end hour (24h, default 17). */
+  dayEndHour?: number;
+}
+
+function dayWindowEpochSeconds(
+  routeDate: string | undefined,
+  startHour: number,
+  endHour: number,
+): [number, number] {
+  // Build an ISO timestamp at the requested local hour. We intentionally
+  // construct with no timezone so the user's local zone applies — VROOM
+  // doesn't care about the absolute calendar, only the relative window
+  // length. Using local epoch values keeps log-debugging human-readable.
+  const date = routeDate ?? new Date().toISOString().slice(0, 10);
+  const startMs = new Date(`${date}T${String(startHour).padStart(2, '0')}:00:00`).getTime();
+  const endMs = new Date(`${date}T${String(endHour).padStart(2, '0')}:00:00`).getTime();
+  return [Math.floor(startMs / 1000), Math.floor(endMs / 1000)];
+}
+
 export async function optimizeMultiCrewRoute(
   stops: VroomStop[],
   crews: CrewVehicle[],
-  startLocation: [number, number]
+  startLocation: [number, number],
+  options: MultiCrewOptions = {},
 ): Promise<MultiCrewOptimizationOutcome> {
   if (crews.length === 0) {
     return { ok: false, error: 'No crews selected.' };
@@ -125,21 +151,97 @@ export async function optimizeMultiCrewRoute(
     };
   }
 
-  // VROOM/ORS requires integer vehicle ids. We use 1..N and remember the mapping
-  // back to crew_ids in the order we sent them.
-  const payload = {
-    vehicles: crews.map((_, i) => ({
-      id: i + 1,
-      start: startLocation,
-      end: startLocation,
-      profile: VROOM_PROFILE,
-    })),
-    jobs: stops.map((s) => ({
-      id: s.id,
-      location: s.location,
-      service: s.service,
-    })),
+  // Single-crew path: skip balancing. With one vehicle there's nothing to
+  // distribute, and tight capacity caps just risk leaving stops unassigned.
+  if (crews.length === 1) {
+    return runOrs(
+      crews,
+      buildPayload(stops, crews, startLocation, undefined, undefined, options),
+    );
+  }
+
+  // Multi-crew: cap each vehicle's job count to share the workload roughly
+  // evenly, force a workday time window so the solver can't fit everything
+  // into one truck's tour, and explicitly tell VROOM not to minimize the
+  // vehicle count (its default behavior — which is exactly what was
+  // dumping every stop onto Crew 1 before).
+  const stopsPerCrew = Math.ceil(stops.length / crews.length) + 1;
+  const timeWindow = dayWindowEpochSeconds(
+    options.routeDate,
+    options.dayStartHour ?? 8,
+    options.dayEndHour ?? 17,
+  );
+
+  let outcome = await runOrs(
+    crews,
+    buildPayload(stops, crews, startLocation, stopsPerCrew, timeWindow, options),
+  );
+
+  // If anything is unassigned, retry once with a looser capacity cap. This
+  // covers the case where two stops are geographically far apart and one
+  // bucket fills up before the other can absorb a shared boundary stop.
+  if (
+    outcome.ok
+    && outcome.result.unassigned.length > 0
+    && stopsPerCrew < stops.length
+  ) {
+    const looserCap = Math.min(stops.length, stopsPerCrew + 2);
+    const retry = await runOrs(
+      crews,
+      buildPayload(stops, crews, startLocation, looserCap, timeWindow, options),
+    );
+    if (retry.ok && retry.result.unassigned.length < outcome.result.unassigned.length) {
+      outcome = retry;
+    }
+  }
+
+  return outcome;
+}
+
+function buildPayload(
+  stops: VroomStop[],
+  crews: CrewVehicle[],
+  startLocation: [number, number],
+  capacity: number | undefined,
+  timeWindow: [number, number] | undefined,
+  options: MultiCrewOptions,
+) {
+  void options; // reserved for future flags
+  return {
+    vehicles: crews.map((_, i) => {
+      const v: Record<string, unknown> = {
+        id: i + 1,
+        start: startLocation,
+        end: startLocation,
+        profile: VROOM_PROFILE,
+      };
+      if (typeof capacity === 'number') v.capacity = [capacity];
+      if (timeWindow) v.time_window = timeWindow;
+      return v;
+    }),
+    jobs: stops.map((s) => {
+      const j: Record<string, unknown> = {
+        id: s.id,
+        location: s.location,
+        service: s.service,
+      };
+      if (typeof capacity === 'number') j.delivery = [1];
+      return j;
+    }),
+    options: {
+      // Keep geometry off — we draw polylines via Mapbox separately, and
+      // including ORS geometry inflates the response payload.
+      g: false,
+      // Explicit: do NOT collapse work onto one truck.
+      minimize_vehicles: false,
+    },
   };
+}
+
+async function runOrs(
+  crews: CrewVehicle[],
+  payload: ReturnType<typeof buildPayload>,
+): Promise<MultiCrewOptimizationOutcome> {
 
   if (typeof window !== 'undefined') {
     // eslint-disable-next-line no-console
