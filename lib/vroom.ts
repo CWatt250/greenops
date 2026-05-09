@@ -4,22 +4,22 @@ export interface VroomStop {
   service: number; // seconds
 }
 
-const VROOM_URL = 'https://router.project-osrm.org/vroom';
-const VROOM_TIMEOUT_MS = 12_000;
+// Calls our internal proxy at /api/optimize-route, which forwards to
+// OpenRouteService's optimization endpoint. The ORS API key stays
+// server-side. The payload format is identical to VROOM (vehicles + jobs);
+// the only ORS-specific tweak is the vehicle `profile` value.
+const PROXY_URL = '/api/optimize-route';
+const VROOM_PROFILE = 'driving-car';
+const PROXY_TIMEOUT_MS = 20_000;
 
-/**
- * Fetch with a timeout. Throws an Error('VROOM timed out') if the request
- * doesn't complete within VROOM_TIMEOUT_MS so callers can surface a clear
- * message instead of waiting indefinitely.
- */
 async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), VROOM_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), PROXY_TIMEOUT_MS);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (err) {
     if ((err as { name?: string }).name === 'AbortError') {
-      throw new Error('VROOM timed out after 12s — try again or build manually.');
+      throw new Error('Optimization timed out — try again or build the route manually.');
     }
     throw err;
   } finally {
@@ -39,7 +39,7 @@ export async function optimizeRoute(
         id: 1,
         start: startLocation,
         end: startLocation,
-        profile: 'driving',
+        profile: VROOM_PROFILE,
       },
     ],
     jobs: stops.map((s) => ({
@@ -50,16 +50,16 @@ export async function optimizeRoute(
   };
 
   try {
-    const res = await fetchWithTimeout(VROOM_URL, {
+    const res = await fetchWithTimeout(PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
-    if (!res.ok) throw new Error(`VROOM returned ${res.status}`);
-    const data = await res.json();
+    const json = await res.json();
+    if (!res.ok || !json?.ok) return null;
 
-    const jobSteps = (data.routes?.[0]?.steps ?? []).filter(
+    const jobSteps = (json.result?.routes?.[0]?.steps ?? []).filter(
       (s: { type: string }) => s.type === 'job'
     );
     return jobSteps.map((s: { id: number }) => s.id);
@@ -107,7 +107,7 @@ export async function optimizeMultiCrewRoute(
     };
   }
 
-  // Validate every stop has finite coords. VROOM rejects NaN/null.
+  // Validate every stop has finite coords. ORS rejects NaN/null.
   for (const s of stops) {
     const [lng, lat] = s.location ?? [];
     if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
@@ -125,14 +125,14 @@ export async function optimizeMultiCrewRoute(
     };
   }
 
-  // VROOM requires integer vehicle ids. We use 1..N and remember the mapping
+  // VROOM/ORS requires integer vehicle ids. We use 1..N and remember the mapping
   // back to crew_ids in the order we sent them.
   const payload = {
     vehicles: crews.map((_, i) => ({
       id: i + 1,
       start: startLocation,
       end: startLocation,
-      profile: 'driving',
+      profile: VROOM_PROFILE,
     })),
     jobs: stops.map((s) => ({
       id: s.id,
@@ -143,37 +143,35 @@ export async function optimizeMultiCrewRoute(
 
   if (typeof window !== 'undefined') {
     // eslint-disable-next-line no-console
-    console.log('[VROOM] payload', JSON.parse(JSON.stringify(payload)));
+    console.log('[ORS optimize] payload', JSON.parse(JSON.stringify(payload)));
   }
 
   try {
-    const res = await fetchWithTimeout(VROOM_URL, {
+    const res = await fetchWithTimeout(PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
-    if (!res.ok) {
-      let bodyText = '';
-      try { bodyText = await res.text(); } catch {}
-      const trimmed = bodyText.length > 200 ? `${bodyText.slice(0, 200)}…` : bodyText;
-      return {
-        ok: false,
-        status: res.status,
-        error: `VROOM API returned ${res.status} ${res.statusText}${trimmed ? ` — ${trimmed}` : ''}`,
-      };
+    const json = await res.json().catch(() => null) as
+      | { ok?: boolean; result?: unknown; error?: string; status?: number }
+      | null;
+
+    if (!res.ok || !json?.ok) {
+      const msg = json?.error ?? `Optimization HTTP ${res.status}`;
+      return { ok: false, status: json?.status ?? res.status, error: msg };
     }
 
-    const data = await res.json();
+    const data = json.result as {
+      routes?: Array<{ vehicle: number; steps: Array<{ type: string; id?: number }>; duration: number }>;
+      unassigned?: Array<{ id: number }>;
+    };
     if (typeof window !== 'undefined') {
       // eslint-disable-next-line no-console
-      console.log('[VROOM] response', data);
+      console.log('[ORS optimize] response', data);
     }
 
-    type VroomStep = { type: string; id?: number };
-    type VroomRoute = { vehicle: number; steps: VroomStep[]; duration: number };
-
-    const routes = (data.routes ?? []) as VroomRoute[];
+    const routes = data.routes ?? [];
     const assignments: MultiCrewAssignment[] = crews.map((c) => ({
       crew_id: c.crew_id,
       stop_ids: [],
@@ -191,9 +189,7 @@ export async function optimizeMultiCrewRoute(
       totalDuration += r.duration;
     }
 
-    const unassigned = ((data.unassigned ?? []) as Array<{ id: number }>).map(
-      (u) => u.id
-    );
+    const unassigned = (data.unassigned ?? []).map((u) => u.id);
 
     return {
       ok: true,
@@ -202,7 +198,7 @@ export async function optimizeMultiCrewRoute(
   } catch (err) {
     return {
       ok: false,
-      error: (err as Error).message ?? 'Unknown error calling VROOM.',
+      error: (err as Error).message ?? 'Unknown error calling optimization proxy.',
     };
   }
 }

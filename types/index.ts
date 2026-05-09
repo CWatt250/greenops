@@ -77,6 +77,10 @@ export interface Client {
   preferred_crew_id?: string;
   status: ClientStatus;
   primary_measurement_id?: string | null;
+  /** Cached service-address coordinates (migration 020). Used by the route
+   *  builder to skip live geocoding when the address rarely changes. */
+  latitude?: number | null;
+  longitude?: number | null;
   created_at: string;
   updated_at: string;
 }

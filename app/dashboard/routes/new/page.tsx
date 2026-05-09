@@ -35,7 +35,13 @@ type JobWithClient = {
   status: string;
   crew_id: string | null;
   scheduled_start?: string | null;
-  client: { id: string; name: string; service_address: string } | null;
+  client: {
+    id: string;
+    name: string;
+    service_address: string;
+    latitude?: number | null;
+    longitude?: number | null;
+  } | null;
 };
 
 function toDateStr(d: Date) {
@@ -238,7 +244,7 @@ export default function RouteBuilderPage() {
 
       // Pull jobs assigned to the selected crews + jobs that are unassigned.
       // .in() doesn't match nulls, so we issue both queries in parallel and merge.
-      const baseSelect = 'id, title, status, crew_id, scheduled_start, client:clients(id,name,service_address)';
+      const baseSelect = 'id, title, status, crew_id, scheduled_start, client:clients(id,name,service_address,latitude,longitude)';
       const [assignedRes, unassignedRes] = await Promise.all([
         supabase
           .from('jobs')
@@ -276,8 +282,25 @@ export default function RouteBuilderPage() {
 
       const drafted: StopDraft[] = await Promise.all(
         jobList.map(async (job, i) => {
-          const address = job.client?.service_address ?? '';
-          const coords = address ? await geocodeStop(address) : null;
+          // Prefer stored client lat/lng (set by import / measurement / address
+          // autocomplete). Fall back to live Mapbox geocoding only when the
+          // client row has no cached coordinates yet.
+          const storedLat = job.client?.latitude;
+          const storedLng = job.client?.longitude;
+          const hasStored =
+            typeof storedLat === 'number' && typeof storedLng === 'number'
+            && Number.isFinite(storedLat) && Number.isFinite(storedLng);
+          let lat: number | null = hasStored ? storedLat as number : null;
+          let lng: number | null = hasStored ? storedLng as number : null;
+          if (!hasStored) {
+            const address = job.client?.service_address ?? '';
+            const coords = address ? await geocodeStop(address) : null;
+            if (coords) {
+              lng = coords[0];
+              lat = coords[1];
+            }
+          }
+
           // Multi-crew: pre-populate with the job's existing crew assignment
           // so each crew's currently-assigned jobs render in their colour
           // immediately, without waiting on Optimize. Single mode stays as
@@ -295,8 +318,8 @@ export default function RouteBuilderPage() {
             estimated_duration_minutes: 30,
             drive_minutes_from_prev: 0,
             drive_distance_miles: 0,
-            lat: coords ? coords[1] : null,
-            lng: coords ? coords[0] : null,
+            lat,
+            lng,
             assigned_crew_id: initialCrew,
           };
         })
