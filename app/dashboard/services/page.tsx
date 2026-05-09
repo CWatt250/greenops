@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
@@ -16,7 +16,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Plus, Wrench, Scissors, Leaf, Droplets, Snowflake, TreePine, Zap, Package, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search, Wrench, Scissors, Leaf, Droplets, Snowflake, TreePine, Zap, Package, Pencil, Trash2 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -27,17 +27,26 @@ import type { Service, ServiceCategory } from '@/types';
 const categoryConfig: Record<ServiceCategory, { label: string; icon: React.ReactNode }> = {
   mowing:        { label: 'Mowing',        icon: <Scissors className="h-5 w-5" /> },
   edging:        { label: 'Edging',        icon: <Leaf className="h-5 w-5" /> },
+  cleanup:       { label: 'Cleanup',       icon: <Package className="h-5 w-5" /> },
   fertilization: { label: 'Fertilization', icon: <Leaf className="h-5 w-5" /> },
   aeration:      { label: 'Aeration',      icon: <Droplets className="h-5 w-5" /> },
   overseeding:   { label: 'Overseeding',   icon: <Leaf className="h-5 w-5" /> },
   mulch:         { label: 'Mulch',         icon: <Package className="h-5 w-5" /> },
-  cleanup:       { label: 'Cleanup',       icon: <Package className="h-5 w-5" /> },
   tree:          { label: 'Tree',          icon: <TreePine className="h-5 w-5" /> },
   sprinkler:     { label: 'Sprinkler',     icon: <Droplets className="h-5 w-5" /> },
   snow:          { label: 'Snow',          icon: <Snowflake className="h-5 w-5" /> },
   holiday:       { label: 'Holiday',       icon: <Zap className="h-5 w-5" /> },
   other:         { label: 'Other',         icon: <Wrench className="h-5 w-5" /> },
 };
+
+// Visual section order across the page. Object key order isn't a contract,
+// so define it explicitly.
+const SECTION_ORDER: ServiceCategory[] = [
+  'mowing', 'edging', 'cleanup', 'fertilization', 'aeration', 'overseeding',
+  'mulch', 'tree', 'sprinkler', 'snow', 'holiday', 'other',
+];
+
+type SortMode = 'alpha' | 'recent' | 'used';
 
 const serviceSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -64,11 +73,13 @@ const unitLabel: Record<string, string> = {
 export default function ServicesPage() {
   const supabase = createClient();
   const [services, setServices] = useState<Service[]>([]);
+  const [usageById, setUsageById] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Service | null>(null);
-  const [categoryFilter, setCategoryFilter] = useState<ServiceCategory | 'all'>('all');
+  const [search, setSearch] = useState('');
+  const [sortMode, setSortMode] = useState<SortMode>('alpha');
   const [serverError, setServerError] = useState<string | null>(null);
 
   const {
@@ -84,8 +95,23 @@ export default function ServicesPage() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase.from('services').select('*').order('name');
-    setServices((data ?? []) as Service[]);
+    const [svcRes, jobLineRes, invLineRes] = await Promise.all([
+      supabase.from('services').select('*').order('name'),
+      supabase.from('job_line_items').select('service_id'),
+      supabase.from('invoice_line_items').select('service_id'),
+    ]);
+
+    setServices((svcRes.data ?? []) as Service[]);
+
+    const counts: Record<string, number> = {};
+    for (const row of (jobLineRes.data ?? []) as { service_id: string | null }[]) {
+      if (row.service_id) counts[row.service_id] = (counts[row.service_id] ?? 0) + 1;
+    }
+    for (const row of (invLineRes.data ?? []) as { service_id: string | null }[]) {
+      if (row.service_id) counts[row.service_id] = (counts[row.service_id] ?? 0) + 1;
+    }
+    setUsageById(counts);
+
     setLoading(false);
   }
 
@@ -164,10 +190,115 @@ export default function ServicesPage() {
     setServices((prev) => prev.filter((s) => s.id !== service.id));
   }
 
-  const categories = ['all', ...Object.keys(categoryConfig)] as const;
-  const filtered = categoryFilter === 'all'
-    ? services
-    : services.filter((s) => s.category === categoryFilter);
+  const trimmedSearch = search.trim().toLowerCase();
+  const isSearching = trimmedSearch.length > 0;
+
+  const visible = useMemo(() => {
+    const filtered = isSearching
+      ? services.filter((s) => {
+          const haystack = `${s.name} ${s.description ?? ''}`.toLowerCase();
+          return haystack.includes(trimmedSearch);
+        })
+      : services;
+
+    const sorter = (a: Service, b: Service) => {
+      if (sortMode === 'recent') {
+        return (b.created_at ?? '').localeCompare(a.created_at ?? '');
+      }
+      if (sortMode === 'used') {
+        const ua = usageById[a.id] ?? 0;
+        const ub = usageById[b.id] ?? 0;
+        if (ub !== ua) return ub - ua;
+        return a.name.localeCompare(b.name);
+      }
+      return a.name.localeCompare(b.name);
+    };
+
+    return [...filtered].sort(sorter);
+  }, [services, trimmedSearch, isSearching, sortMode, usageById]);
+
+  // Group by category for non-search view; preserve sort within each section.
+  const grouped: { category: ServiceCategory; items: Service[] }[] = useMemo(() => {
+    const buckets = new Map<ServiceCategory, Service[]>();
+    for (const svc of visible) {
+      const cat = svc.category;
+      if (!buckets.has(cat)) buckets.set(cat, []);
+      buckets.get(cat)!.push(svc);
+    }
+    return SECTION_ORDER
+      .filter((c) => buckets.has(c))
+      .map((c) => ({ category: c, items: buckets.get(c)! }));
+  }, [visible]);
+
+  function renderCard(service: Service) {
+    const cat = categoryConfig[service.category];
+    const usage = usageById[service.id] ?? 0;
+    return (
+      <div
+        key={service.id}
+        className={cn(
+          'group rounded-xl border bg-card p-5 flex flex-col gap-3 transition-all',
+          !service.is_active && 'opacity-50 grayscale'
+        )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div
+            className="flex h-10 w-10 items-center justify-center rounded-lg shrink-0"
+            style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
+          >
+            {cat?.icon}
+          </div>
+          <div className="flex items-center gap-1">
+            <Switch
+              checked={service.is_active}
+              onCheckedChange={() => toggleActive(service)}
+              aria-label={service.is_active ? 'Deactivate service' : 'Activate service'}
+              title={service.is_active ? 'Active — appears in proposals & invoices' : 'Inactive — hidden from pickers'}
+            />
+          </div>
+        </div>
+        <div>
+          <h3 className="font-semibold text-sm">{service.name}</h3>
+          {service.description && (
+            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+              {service.description}
+            </p>
+          )}
+        </div>
+        <div className="mt-auto flex items-center justify-between">
+          <span className="text-xs text-muted-foreground capitalize">
+            {unitLabel[service.unit] ?? service.unit}
+          </span>
+          <span className="font-bold text-sm" style={{ color: 'var(--orange)' }}>
+            {formatCurrency(service.base_price)}
+          </span>
+        </div>
+        {sortMode === 'used' && usage > 0 && (
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground -mt-1">
+            Used {usage}×
+          </p>
+        )}
+        <div className="flex gap-1 pt-1 border-t -mx-5 px-5 -mb-2 pb-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex-1 gap-1 text-xs h-8"
+            onClick={() => openEdit(service)}
+          >
+            <Pencil className="h-3 w-3" /> Edit
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex-1 gap-1 text-xs h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={() => setConfirmDelete(service)}
+          >
+            <Trash2 className="h-3 w-3" /> Delete
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -182,41 +313,45 @@ export default function ServicesPage() {
 
       <PageIntro
         id="services"
-        title="Your service catalog"
-        description="Set base prices once and they auto-fill into proposals, invoices, and per-square-foot pricing."
+        title="Service Catalog"
+        description="Everything TLC offers and what you charge. Click any card to set its price or edit details — those prices auto-fill in proposals and invoices."
         steps={[
-          'Add Service: name, category, base price, and unit (flat / per sq ft / per hour).',
-          'Categories are filterable tabs — group similar offerings to keep the list scannable.',
-          'Anywhere a service is referenced, your latest price is used.',
+          'Click any service to set its price.',
+          'Toggle services on/off as offerings change.',
+          'Use search to quickly find a specific service.',
         ]}
       />
 
-      {/* Category tabs */}
-      <div className="flex gap-2 flex-wrap mb-6 overflow-x-auto">
-        {categories.map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setCategoryFilter(cat as ServiceCategory | 'all')}
-            className={cn(
-              'rounded-full px-4 py-1.5 text-sm font-medium whitespace-nowrap transition-colors',
-              categoryFilter === cat
-                ? 'text-white'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            )}
-            style={
-              categoryFilter === cat
-                ? { backgroundColor: 'var(--orange)' }
-                : {}
-            }
-          >
-            {cat === 'all' ? 'All' : categoryConfig[cat as ServiceCategory]?.label ?? cat}
-          </button>
-        ))}
+      {/* Search + sort */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="search"
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder='Search services… (e.g., "mowing", "snow")'
+            className="pl-9"
+            aria-label="Search services"
+          />
+        </div>
+        <Select value={sortMode} onValueChange={(v) => setSortMode((v ?? 'alpha') as SortMode)}>
+          <SelectTrigger className="sm:w-52" aria-label="Sort services">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="alpha">Alphabetical (A–Z)</SelectItem>
+            <SelectItem value="recent">Recently added</SelectItem>
+            <SelectItem value="used">Most used</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {loading ? (
         <div className="text-sm text-muted-foreground text-center py-16">Loading…</div>
-      ) : filtered.length === 0 ? (
+      ) : services.length === 0 ? (
         <EmptyState
           icon={Wrench}
           title="No services yet"
@@ -227,70 +362,34 @@ export default function ServicesPage() {
             onClick: () => window.open('https://tlclandscapemanagement.com/learn', '_blank'),
           }}
         />
-      ) : (
+      ) : visible.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-16">
+          No services match <strong>&ldquo;{search}&rdquo;</strong>.
+        </p>
+      ) : isSearching ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filtered.map((service) => {
-            const cat = categoryConfig[service.category];
-            return (
-              <div
-                key={service.id}
-                className={cn(
-                  'group rounded-xl border bg-card p-5 flex flex-col gap-3 transition-opacity',
-                  !service.is_active && 'opacity-60'
-                )}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div
-                    className="flex h-10 w-10 items-center justify-center rounded-lg shrink-0"
-                    style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
-                  >
-                    {cat?.icon}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Switch
-                      checked={service.is_active}
-                      onCheckedChange={() => toggleActive(service)}
-                      aria-label="Toggle active"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-sm">{service.name}</h3>
-                  {service.description && (
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                      {service.description}
-                    </p>
-                  )}
-                </div>
-                <div className="mt-auto flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground capitalize">
-                    {unitLabel[service.unit] ?? service.unit}
-                  </span>
-                  <span className="font-bold text-sm" style={{ color: 'var(--orange)' }}>
-                    {formatCurrency(service.base_price)}
-                  </span>
-                </div>
-                <div className="flex gap-1 pt-1 border-t -mx-5 px-5 -mb-2 pb-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1 gap-1 text-xs h-8"
-                    onClick={() => openEdit(service)}
-                  >
-                    <Pencil className="h-3 w-3" /> Edit
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1 gap-1 text-xs h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={() => setConfirmDelete(service)}
-                  >
-                    <Trash2 className="h-3 w-3" /> Delete
-                  </Button>
-                </div>
+          {visible.map(renderCard)}
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {grouped.map(({ category, items }) => (
+            <section key={category}>
+              <div className="flex items-center gap-3 mb-3">
+                <h2
+                  className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground shrink-0"
+                >
+                  {categoryConfig[category]?.label ?? category}
+                </h2>
+                <div className="h-px flex-1 bg-border" />
+                <span className="text-[10px] text-muted-foreground tabular-nums">
+                  {items.length}
+                </span>
               </div>
-            );
-          })}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {items.map(renderCard)}
+              </div>
+            </section>
+          ))}
         </div>
       )}
 
