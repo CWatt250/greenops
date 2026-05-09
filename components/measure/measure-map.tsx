@@ -92,6 +92,26 @@ export default function MeasureMap({
     };
   }, [focusShapeRef]);
 
+  // Auto-fly to a freshly-set address. The initialViewState handles the very
+  // first mount; this effect picks up every subsequent center change (typed
+  // address, suggestion click, Search button, client picker) and animates
+  // the camera to zoom 19 — close enough to see individual lawns/driveways
+  // but wide enough to keep the property in context.
+  useEffect(() => {
+    if (!center) return;
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    map.flyTo({
+      center: [center.lng, center.lat],
+      zoom: 19,
+      pitch: 0,
+      bearing: 0,
+      speed: 1.2,
+      essential: true,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [center?.lng, center?.lat]);
+
   const handleMapLoad = useCallback(async () => {
     const map = mapRef.current?.getMap();
     if (!map) return;

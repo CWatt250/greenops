@@ -384,106 +384,105 @@ export function MeasureView({
 
   return (
     <div
-      className="-m-4 md:-m-6 lg:-m-8 flex overflow-hidden flex-col md:flex-row"
+      className="-m-4 md:-m-6 lg:-m-8 flex flex-col overflow-hidden"
       style={{ height: 'calc(100svh - 3.5rem)' }}
     >
-      {/* MAP COLUMN */}
-      <div className="flex-1 relative min-h-[300px] flex flex-col">
-        {/* Top bar — primary address search, then "or" + client picker */}
-        <div className="border-b bg-background p-3 space-y-2.5 shrink-0">
+      {/* HOW TO MEASURE — first thing on the page so first-time users see it. */}
+      <InstructionsBanner />
+
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+        {/* MAP COLUMN */}
+        <div className="flex-1 relative min-h-[300px] flex flex-col">
+          {/* Top bar — primary address search only. */}
           {!lockedClientId && (
-            <>
+            <div className="border-b bg-background p-3 space-y-2.5 shrink-0">
               <AddressSearch
                 onAddress={handleAddress}
                 autoFocus
                 initialValue={initialAddress ?? ''}
               />
-              {standalone && (
-                <>
-                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                    <span className="flex-1 h-px bg-border" />
-                    <span className="font-mono">— or —</span>
-                    <span className="flex-1 h-px bg-border" />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <div className="flex-1">
-                      <ClientCombobox
-                        value={selectedClientId}
-                        onChange={(id, c) => handlePickClient(id, c)}
-                        placeholder="Pick existing client…"
-                      />
-                    </div>
-                  </div>
-                </>
+              {/* Status badge */}
+              {badgeAddress && (
+                <div className="inline-flex items-center gap-1.5 text-[11px] rounded-full bg-muted px-2.5 py-1">
+                  <MapPin className="h-3 w-3" style={{ color: 'var(--orange)' }} />
+                  <span className="font-medium truncate max-w-[280px]">
+                    Measuring: {badgeAddress}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {linkedName ? `· Linked to ${linkedName}` : '· No customer linked'}
+                  </span>
+                </div>
               )}
-            </>
-          )}
-
-          {/* Status badge */}
-          {badgeAddress && (
-            <div className="inline-flex items-center gap-1.5 text-[11px] rounded-full bg-muted px-2.5 py-1">
-              <MapPin className="h-3 w-3" style={{ color: 'var(--orange)' }} />
-              <span className="font-medium truncate max-w-[280px]">
-                Measuring: {badgeAddress}
-              </span>
-              <span className="text-muted-foreground">
-                {linkedName ? `· Linked to ${linkedName}` : '· No customer linked'}
-              </span>
             </div>
           )}
-        </div>
 
-        <InstructionsBanner />
-        <div className="flex-1 relative">
-          {searching && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur-sm border shadow px-3 py-1.5 text-xs">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Locating address…
-            </div>
-          )}
-          <MeasureMap
-            center={center}
-            shapes={shapes}
-            onShapesChange={setShapes}
-            focusShapeRef={focusShapeRef}
-            syncShapesRef={syncShapesRef}
-            onUndo={undo}
-            canUndo={canUndo}
-            onClearAll={() => setConfirmClearAll(true)}
-          />
-        </div>
-      </div>
-
-      {/* RIGHT PANEL */}
-      <aside className="md:w-[360px] shrink-0 border-l bg-background overflow-y-auto">
-        <div className="p-4 space-y-4">
-          <div>
-            <Link
-              href={backHref}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-2"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" /> Back
-            </Link>
-            <h1 className="page-title" style={{ fontSize: 22 }}>
-              Measure Property
-            </h1>
-            {linkedName && (
-              <p className="text-xs text-muted-foreground mt-0.5">{linkedName}</p>
+          <div className="flex-1 relative">
+            {searching && (
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur-sm border shadow px-3 py-1.5 text-xs">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Locating address…
+              </div>
             )}
+            <MeasureMap
+              center={center}
+              shapes={shapes}
+              onShapesChange={setShapes}
+              focusShapeRef={focusShapeRef}
+              syncShapesRef={syncShapesRef}
+              onUndo={undo}
+              canUndo={canUndo}
+              onClearAll={() => setConfirmClearAll(true)}
+            />
           </div>
+        </div>
 
-          {/* Shape list */}
-          <ShapeList
-            shapes={shapes}
-            onUpdate={updateShape}
-            onRemove={removeShape}
-            onReorder={reorderShapes}
-            onFocus={focusShape}
-          />
+        {/* RIGHT PANEL */}
+        <aside className="md:w-[360px] shrink-0 border-l bg-background overflow-y-auto">
+          <div className="p-4 space-y-4">
+            <div>
+              <Link
+                href={backHref}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-2"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" /> Back
+              </Link>
+              <h1 className="page-title" style={{ fontSize: 22 }}>
+                Measure Property
+              </h1>
+              {linkedName && (
+                <p className="text-xs text-muted-foreground mt-0.5">{linkedName}</p>
+              )}
+            </div>
 
-          {/* Totals + pricing */}
-          <AreaSummary shapes={shapes} />
+            {/* Or-pick-a-client — small inline picker for the existing-client path. */}
+            {standalone && !lockedClientId && (
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="flex-1 h-px bg-border" />
+                  <span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">
+                    or pick a client
+                  </span>
+                  <span className="flex-1 h-px bg-border" />
+                </div>
+                <ClientCombobox
+                  value={selectedClientId}
+                  onChange={(id, c) => handlePickClient(id, c)}
+                  placeholder="Pick existing client…"
+                />
+              </div>
+            )}
+
+            {/* Shape list */}
+            <ShapeList
+              shapes={shapes}
+              onUpdate={updateShape}
+              onRemove={removeShape}
+              onReorder={reorderShapes}
+              onFocus={focusShape}
+            />
+
+            {/* Totals + pricing */}
+            <AreaSummary shapes={shapes} />
 
           {/* Action buttons */}
           <div className="flex flex-col gap-2">
@@ -610,6 +609,7 @@ export function MeasureView({
           </div>
         </div>
       </aside>
+      </div>
 
       {/* Create-customer sheet */}
       <CreateCustomerFromMeasurement
