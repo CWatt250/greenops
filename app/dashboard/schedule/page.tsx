@@ -9,6 +9,7 @@ import { ScheduleDayGrid } from '@/components/schedule/schedule-day-grid';
 import { ScheduleMonthGrid } from '@/components/schedule/schedule-month-grid';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
+import { HowScheduleWorks } from '@/components/help/how-page-works';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, CalendarDays, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -202,6 +203,7 @@ function SchedulePageInner() {
   return (
     <div>
       <PageHeader title="Schedule" description="Drag jobs onto crew slots to schedule">
+        <HowScheduleWorks />
         <Link
           href="/dashboard/jobs/new"
           className={buttonVariants()}

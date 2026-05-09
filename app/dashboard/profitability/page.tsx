@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
+import { HowProfitabilityWorks } from '@/components/help/how-page-works';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { fmtUsd } from '@/lib/job-costing';
 import { cn } from '@/lib/utils';
@@ -129,7 +130,9 @@ export default async function ProfitabilityPage() {
         title="Profitability"
         eyebrow="Where the money is"
         description="Margin, profit, and which crews/clients/services pay the bills."
-      />
+      >
+        <HowProfitabilityWorks />
+      </PageHeader>
 
       <PageIntro
         id="profitability"

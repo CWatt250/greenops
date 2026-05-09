@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
+import { HowRoutesWorks } from '@/components/help/how-page-works';
 import { buttonVariants } from '@/components/ui/button';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -118,6 +119,7 @@ export default function RoutesPage() {
   return (
     <div>
       <PageHeader title="Routes" description="Daily route management and optimization">
+        <HowRoutesWorks />
         <Link
           href="/dashboard/routes/new"
           className={buttonVariants()}

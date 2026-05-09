@@ -6,6 +6,7 @@ import { Plus, Pencil, Trash2, Loader2, ClipboardList } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
+import { HowFormsWorks } from '@/components/help/how-page-works';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { FormBuilder } from '@/components/forms/form-builder';
@@ -116,6 +117,7 @@ export default function FormsPage() {
         eyebrow="Build it once, fill it forever"
         description="Custom checklists, inspections, waivers, and sign-offs."
       >
+        <HowFormsWorks />
         {!editing && !creating && (
           <Button
             onClick={() => setCreating(true)}

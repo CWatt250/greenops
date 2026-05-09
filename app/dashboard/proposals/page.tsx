@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
+import { HowProposalsWorks } from '@/components/help/how-page-works';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Plus, FileText } from 'lucide-react';
@@ -63,6 +64,7 @@ export default function ProposalsPage() {
         eyebrow="Build it, send it, win it"
         description="Estimates and proposals — annual contracts and one-off bids."
       >
+        <HowProposalsWorks />
         <Link
           href="/dashboard/proposals/new"
           className={buttonVariants()}

@@ -60,6 +60,10 @@ export interface Profile {
   welcome_tour_completed?: boolean;
   /** Help-banner ids the user has dismissed (migration 018). */
   dismissed_help_banners?: string[];
+  /** Crew invitation tracking (migration 022). */
+  invited_at?: string | null;
+  last_signin_at?: string | null;
+  temp_password?: string | null;
   created_at: string;
 }
 

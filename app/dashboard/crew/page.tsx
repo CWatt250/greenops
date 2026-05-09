@@ -4,10 +4,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
+import { HowDispatchWorks } from '@/components/help/how-dispatch-works';
+import { SendAppToWorker } from '@/components/dispatch/send-app-to-worker';
+import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
-import { MapPin, Clock, CheckCircle2, AlertCircle, Timer } from 'lucide-react';
+import { MapPin, Clock, CheckCircle2, AlertCircle, Timer, Smartphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Job, Crew, ClockEvent } from '@/types';
 
@@ -29,6 +32,7 @@ export default function DispatchPage() {
   const [crewData, setCrewData] = useState<CrewWithJobs[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [sendOpen, setSendOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     const today = toDateStr(new Date());
@@ -109,12 +113,24 @@ export default function DispatchPage() {
       <PageHeader
         title="Dispatch"
         description={`Live crew status · refreshed ${lastRefresh.toLocaleTimeString()}`}
-      />
+      >
+        <HowDispatchWorks />
+        <Button
+          onClick={() => setSendOpen(true)}
+          className="gap-1.5 text-white"
+          style={{ backgroundColor: 'var(--orange)' }}
+        >
+          <Smartphone className="h-4 w-4" />
+          Send App to Worker
+        </Button>
+      </PageHeader>
+
+      <SendAppToWorker open={sendOpen} onOpenChange={setSendOpen} />
 
       <PageIntro
         id="dispatch"
         title="Live crew status"
-        description="Real-time view of who's clocked in, what's in progress, and which jobs still need attention. Refreshes every 30 seconds."
+        description="Real-time view of who's clocked in, what's in progress, and which jobs still need attention."
         steps={[
           'Each card shows a crew, their members on the clock, and today\'s jobs.',
           'Job status badges update automatically as crews tap Start / Complete.',

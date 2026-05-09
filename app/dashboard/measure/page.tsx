@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { MeasureView } from '@/components/measure/measure-view';
 import { PageIntro } from '@/components/help/page-intro';
+import { HowMeasureWorks } from '@/components/help/how-page-works';
 
 export default async function StandaloneMeasurePage({
   searchParams,
@@ -30,6 +31,9 @@ export default async function StandaloneMeasurePage({
 
   return (
     <>
+      <div className="flex items-center justify-end mb-2">
+        <HowMeasureWorks />
+      </div>
       <PageIntro
         id="measure"
         title="Measure any property"
