@@ -7,7 +7,7 @@ interface Props {
   jobsToday: number;
   crewsActive: number;
   city?: string | null;
-  weather?: { tempF: number; condition: string } | null;
+  weather?: { temp: number; unitSymbol: '°F' | '°C'; condition: string } | null;
 }
 
 function greetingForHour(h: number): string {
@@ -43,9 +43,9 @@ export function HeroGreeting({ firstName, jobsToday, crewsActive, city, weather 
   const eyebrow = now ? formatEyebrow(now) : '\u00a0';
 
   const weatherSegment = weather && city
-    ? ` · ${weather.tempF}°F & ${weather.condition.toLowerCase()} in ${city}`
+    ? ` · ${weather.temp}${weather.unitSymbol} & ${weather.condition.toLowerCase()} in ${city}`
     : weather
-      ? ` · ${weather.tempF}°F & ${weather.condition.toLowerCase()}`
+      ? ` · ${weather.temp}${weather.unitSymbol} & ${weather.condition.toLowerCase()}`
       : '';
 
   return (

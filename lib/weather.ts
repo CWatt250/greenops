@@ -2,6 +2,8 @@ const OWM_KEY = process.env.NEXT_PUBLIC_OWM_KEY ?? '';
 
 const BAD_CONDITIONS = ['Rain', 'Snow', 'Thunderstorm', 'Drizzle'];
 
+export type WeatherUnits = 'imperial' | 'metric';
+
 export interface WeatherResult {
   summary: string;
   flag: boolean;
@@ -12,8 +14,10 @@ export interface DashboardWeatherDay {
   date: string;
   /** Three-letter day abbreviation, e.g. "Thu". */
   dayLabel: string;
-  /** Hi temperature in °F (rounded). */
-  highF: number;
+  /** Hi temperature, rounded, in whichever unit was requested. */
+  high: number;
+  /** "°F" or "°C" — convenience for the UI so it doesn't need to know units. */
+  unitSymbol: '°F' | '°C';
   /** Short condition label, e.g. "Sunny", "40% rain", "Cloudy". */
   condition: string;
   /** OWM weather "main" value: Clear, Clouds, Rain, Snow, Thunderstorm, ... */
@@ -28,15 +32,20 @@ export interface DashboardWeatherResult {
   /** Today's snapshot used for the hero greeting. Falls back to the first
    *  forecast slot when "today" isn't in the response window. */
   today: {
-    tempF: number;
+    temp: number;
+    unitSymbol: '°F' | '°C';
     condition: string;
     main: string;
   } | null;
-  /** Today + next 2 days. Always 3 entries when ok=true. */
+  /** Variable length depending on the company's weather_forecast_days
+   *  preference (3, 5, or 7 entries). */
   forecast: DashboardWeatherDay[];
   /** True when a real OWM key was used; false for the fallback path so the
    *  UI can show a "sample weather" notice. */
   ok: boolean;
+  /** Human-readable label for the location: company.weather_location_label,
+   *  city, or "OpenWeatherMap" as a generic fallback. */
+  locationLabel: string;
 }
 
 export async function getWeatherForRoute(
@@ -53,8 +62,7 @@ export async function getWeatherForRoute(
     if (!res.ok) return { summary: 'Weather unavailable', flag: false };
 
     const data = await res.json();
-    // Find the forecast entry closest to 09:00 on the route date
-    const target = `${date} 09:00:00`;
+    void date; // reserved — we currently pick the first slot regardless
     const forecast = (data.list ?? []).find(
       (f: { dt_txt: string }) =>
         f.dt_txt.startsWith(date)
@@ -81,51 +89,125 @@ function localDateStr(d: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function fallbackWeather(): DashboardWeatherResult {
-  const out: DashboardWeatherDay[] = [];
+function unitSymbolFor(units: WeatherUnits): '°F' | '°C' {
+  return units === 'metric' ? '°C' : '°F';
+}
+
+function describeCondition(main: string, pop: number, badWeather: boolean): string {
+  if (badWeather && pop > 0) return `${Math.round(pop * 100)}% ${main.toLowerCase()}`;
+  if (main === 'Clear') return 'Sunny';
+  if (main === 'Clouds') return 'Cloudy';
+  return main;
+}
+
+function fallbackWeather(
+  days: number,
+  units: WeatherUnits,
+  locationLabel: string,
+): DashboardWeatherResult {
   const sample = [
-    { highF: 68, condition: 'Sunny',     main: 'Clear',  pop: 0,    badWeather: false },
-    { highF: 62, condition: '40% rain',  main: 'Rain',   pop: 0.4,  badWeather: true },
-    { highF: 71, condition: 'Clear',     main: 'Clear',  pop: 0,    badWeather: false },
+    { high: 68, condition: 'Sunny',     main: 'Clear',  pop: 0,    badWeather: false },
+    { high: 62, condition: '40% rain',  main: 'Rain',   pop: 0.4,  badWeather: true },
+    { high: 71, condition: 'Clear',     main: 'Clear',  pop: 0,    badWeather: false },
+    { high: 74, condition: 'Sunny',     main: 'Clear',  pop: 0,    badWeather: false },
+    { high: 65, condition: 'Cloudy',    main: 'Clouds', pop: 0.1,  badWeather: false },
+    { high: 60, condition: '20% rain',  main: 'Rain',   pop: 0.2,  badWeather: true },
+    { high: 70, condition: 'Sunny',     main: 'Clear',  pop: 0,    badWeather: false },
   ];
-  for (let i = 0; i < 3; i++) {
+  const symbol = unitSymbolFor(units);
+  // Convert sample °F to °C when metric requested.
+  const adjust = (f: number) => units === 'metric' ? Math.round((f - 32) * 5 / 9) : f;
+  const out: DashboardWeatherDay[] = [];
+  for (let i = 0; i < days && i < sample.length; i++) {
     const d = new Date();
     d.setDate(d.getDate() + i);
+    const s = sample[i];
     out.push({
       date: localDateStr(d),
       dayLabel: DAY_LABELS[d.getDay()],
-      ...sample[i],
+      high: adjust(s.high),
+      unitSymbol: symbol,
+      condition: s.condition,
+      main: s.main,
+      pop: s.pop,
+      badWeather: s.badWeather,
     });
   }
   return {
-    today: { tempF: out[0].highF, condition: out[0].condition, main: out[0].main },
+    today: out[0]
+      ? { temp: out[0].high, unitSymbol: symbol, condition: out[0].condition, main: out[0].main }
+      : null,
     forecast: out,
     ok: false,
+    locationLabel,
   };
 }
 
+interface ForecastQueryByCoords { lat: number; lng: number }
+interface ForecastQueryByCity { city: string; state?: string | null; country?: string }
+type ForecastQuery = ForecastQueryByCoords | ForecastQueryByCity;
+
+interface DashboardWeatherOptions {
+  /** 3, 5, or 7. Defaults to 3. 7 requires a OneCall-enabled key; we
+   *  gracefully fall back to 5 days from /forecast otherwise. */
+  days?: number;
+  /** 'imperial' (°F + mph) or 'metric' (°C + m/s). Defaults to 'imperial'. */
+  units?: WeatherUnits;
+  /** Human label shown in the widget subtitle. Falls back sensibly. */
+  locationLabel?: string;
+}
+
+function clampDays(n: number | undefined): 3 | 5 | 7 {
+  if (n === 5) return 5;
+  if (n === 7) return 7;
+  return 3;
+}
+
 /**
- * Fetch a 3-day forecast plus a current-day snapshot for the dashboard hero.
- * Buckets the OWM /forecast 3-hour entries by local date and picks the
- * highest temp + worst condition per day.
+ * Fetch a multi-day forecast plus today's snapshot for the dashboard.
+ *
+ * Strategy:
+ *  - 3 or 5 days → use the free 5-day /forecast endpoint, bucket by date.
+ *  - 7 days → try OneCall 3.0 first (requires a OneCall-enabled key);
+ *    on 401/404 fall back to /forecast capped at 5.
+ *  - Any error → sample data with the requested length so the UI still
+ *    renders something coherent.
  */
 export async function getDashboardWeather(
-  query: { lat: number; lng: number } | { city: string; state?: string | null; country?: string },
+  query: ForecastQuery,
+  options: DashboardWeatherOptions = {},
 ): Promise<DashboardWeatherResult> {
-  if (!OWM_KEY || OWM_KEY === 'placeholder') return fallbackWeather();
+  const days = clampDays(options.days);
+  const units: WeatherUnits = options.units ?? 'imperial';
+  const symbol = unitSymbolFor(units);
+  const locationLabel = options.locationLabel
+    ?? ('city' in query ? [query.city, query.state].filter(Boolean).join(', ') : 'OpenWeatherMap');
 
-  let url = '';
-  if ('lat' in query) {
-    url = `https://api.openweathermap.org/data/2.5/forecast?lat=${query.lat}&lon=${query.lng}&appid=${OWM_KEY}&units=imperial&cnt=40`;
-  } else {
-    const country = query.country ?? 'US';
-    const q = [query.city, query.state, country].filter(Boolean).join(',');
-    url = `https://api.openweathermap.org/data/2.5/forecast?q=${encodeURIComponent(q)}&appid=${OWM_KEY}&units=imperial&cnt=40`;
+  if (!OWM_KEY || OWM_KEY === 'placeholder') {
+    return fallbackWeather(days, units, locationLabel);
   }
+
+  // ── 7-day path: try OneCall, fall back to /forecast for shortfall. ─────
+  if (days === 7 && 'lat' in query) {
+    const oc = await tryOneCall(query, units, locationLabel);
+    if (oc) return oc;
+  }
+  if (days === 7 && 'city' in query) {
+    // OneCall requires lat/lng — geocode via OWM's /weather endpoint to
+    // resolve the city to coords, then retry.
+    const coords = await geocodeViaOwm(query);
+    if (coords) {
+      const oc = await tryOneCall(coords, units, locationLabel);
+      if (oc) return oc;
+    }
+  }
+
+  // ── 3 / 5 day path (or 7-day fallback) via free /forecast endpoint. ─────
+  const url = forecastUrl(query, units);
 
   try {
     const res = await fetch(url, { next: { revalidate: 1800 } });
-    if (!res.ok) return fallbackWeather();
+    if (!res.ok) return fallbackWeather(days, units, locationLabel);
     const data = await res.json() as {
       list?: Array<{
         dt_txt: string;
@@ -135,10 +217,10 @@ export async function getDashboardWeather(
       }>;
     };
     const list = data.list ?? [];
-    if (list.length === 0) return fallbackWeather();
+    if (list.length === 0) return fallbackWeather(days, units, locationLabel);
 
     // Group by local YYYY-MM-DD (OWM dt_txt is UTC; treat the date prefix as
-    // local — it's close enough for a 3-day glance).
+    // local — close enough for a 3–7 day glance).
     const buckets = new Map<string, typeof list>();
     for (const slot of list) {
       const dateKey = slot.dt_txt.slice(0, 10);
@@ -148,18 +230,18 @@ export async function getDashboardWeather(
     }
 
     const todayStr = localDateStr(new Date());
-    const days: DashboardWeatherDay[] = [];
+    const out: DashboardWeatherDay[] = [];
 
-    // Walk forward up to 5 days from today to collect the first 3 with data.
-    for (let offset = 0; offset < 5 && days.length < 3; offset++) {
+    // /forecast caps at 5 days; if the user wanted 7 we just return what we have.
+    const lookAhead = Math.max(days, 5);
+    for (let offset = 0; offset < lookAhead && out.length < days; offset++) {
       const d = new Date();
       d.setDate(d.getDate() + offset);
       const dateKey = localDateStr(d);
       const slots = buckets.get(dateKey);
       if (!slots || slots.length === 0) continue;
 
-      const highF = Math.round(Math.max(...slots.map((s) => s.main.temp)));
-      // Pick the worst weather of the day (rain > snow > thunder > clouds > clear).
+      const high = Math.round(Math.max(...slots.map((s) => s.main.temp)));
       const ranking = (m: string) =>
         m === 'Thunderstorm' ? 4 : m === 'Snow' ? 3 : m === 'Rain' || m === 'Drizzle' ? 2 : m === 'Clouds' ? 1 : 0;
       const worst = slots.reduce((acc, s) =>
@@ -169,33 +251,113 @@ export async function getDashboardWeather(
       const pop = Math.max(...slots.map((s) => s.pop ?? 0));
       const badWeather = BAD_CONDITIONS.includes(main);
 
-      let condition: string;
-      if (badWeather && pop > 0) condition = `${Math.round(pop * 100)}% ${main.toLowerCase()}`;
-      else if (main === 'Clear') condition = 'Sunny';
-      else if (main === 'Clouds') condition = 'Cloudy';
-      else condition = main;
-
-      days.push({
+      out.push({
         date: dateKey,
         dayLabel: DAY_LABELS[d.getDay()],
-        highF,
-        condition,
+        high,
+        unitSymbol: symbol,
+        condition: describeCondition(main, pop, badWeather),
         main,
         pop,
         badWeather,
       });
     }
 
-    if (days.length === 0) return fallbackWeather();
+    if (out.length === 0) return fallbackWeather(days, units, locationLabel);
 
-    const todayDay = days.find((d) => d.date === todayStr) ?? days[0];
+    const todayDay = out.find((d) => d.date === todayStr) ?? out[0];
 
     return {
-      today: { tempF: todayDay.highF, condition: todayDay.condition, main: todayDay.main },
-      forecast: days,
+      today: { temp: todayDay.high, unitSymbol: symbol, condition: todayDay.condition, main: todayDay.main },
+      forecast: out,
       ok: true,
+      locationLabel,
     };
   } catch {
-    return fallbackWeather();
+    return fallbackWeather(days, units, locationLabel);
+  }
+}
+
+function forecastUrl(query: ForecastQuery, units: WeatherUnits): string {
+  const base = 'https://api.openweathermap.org/data/2.5/forecast';
+  if ('lat' in query) {
+    return `${base}?lat=${query.lat}&lon=${query.lng}&appid=${OWM_KEY}&units=${units}&cnt=40`;
+  }
+  const country = query.country ?? 'US';
+  const q = [query.city, query.state, country].filter(Boolean).join(',');
+  return `${base}?q=${encodeURIComponent(q)}&appid=${OWM_KEY}&units=${units}&cnt=40`;
+}
+
+async function geocodeViaOwm(
+  query: ForecastQueryByCity,
+): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const country = query.country ?? 'US';
+    const q = [query.city, query.state, country].filter(Boolean).join(',');
+    const res = await fetch(
+      `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(q)}&appid=${OWM_KEY}`,
+      { next: { revalidate: 86_400 } },
+    );
+    if (!res.ok) return null;
+    const data = await res.json() as { coord?: { lat: number; lon: number } };
+    if (!data.coord) return null;
+    return { lat: data.coord.lat, lng: data.coord.lon };
+  } catch {
+    return null;
+  }
+}
+
+async function tryOneCall(
+  query: ForecastQueryByCoords,
+  units: WeatherUnits,
+  locationLabel: string,
+): Promise<DashboardWeatherResult | null> {
+  const symbol = unitSymbolFor(units);
+  try {
+    const url =
+      `https://api.openweathermap.org/data/3.0/onecall?lat=${query.lat}&lon=${query.lng}` +
+      `&exclude=current,minutely,hourly,alerts&units=${units}&appid=${OWM_KEY}`;
+    const res = await fetch(url, { next: { revalidate: 1800 } });
+    if (!res.ok) return null;
+    const data = await res.json() as {
+      daily?: Array<{
+        dt: number;
+        temp: { max: number };
+        weather: Array<{ main: string; description: string }>;
+        pop?: number;
+      }>;
+    };
+    const daily = (data.daily ?? []).slice(0, 7);
+    if (daily.length === 0) return null;
+
+    const out: DashboardWeatherDay[] = daily.map((d) => {
+      const date = new Date(d.dt * 1000);
+      const dateKey = localDateStr(date);
+      const main = d.weather[0]?.main ?? 'Clear';
+      const pop = d.pop ?? 0;
+      const badWeather = BAD_CONDITIONS.includes(main);
+      return {
+        date: dateKey,
+        dayLabel: DAY_LABELS[date.getDay()],
+        high: Math.round(d.temp.max),
+        unitSymbol: symbol,
+        condition: describeCondition(main, pop, badWeather),
+        main,
+        pop,
+        badWeather,
+      };
+    });
+
+    const today = out[0];
+    return {
+      today: today
+        ? { temp: today.high, unitSymbol: symbol, condition: today.condition, main: today.main }
+        : null,
+      forecast: out,
+      ok: true,
+      locationLabel,
+    };
+  } catch {
+    return null;
   }
 }

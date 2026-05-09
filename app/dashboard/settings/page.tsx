@@ -9,6 +9,7 @@ import { PortalBannerForm } from '@/components/settings/portal-banner-form';
 import { NoteTemplatesManager } from '@/components/settings/note-templates-manager';
 import { OverheadForm } from '@/components/settings/overhead-form';
 import { CompanyInfoForm } from '@/components/settings/company-info-form';
+import { WeatherSettingsForm } from '@/components/settings/weather-settings-form';
 import type { Company } from '@/types';
 
 interface ProfileWithCompany {
@@ -38,10 +39,10 @@ export default async function SettingsPage() {
       <PageIntro
         id="settings"
         title="Account, company, and team"
-        description="Update your profile, configure company-wide defaults like overhead percentage, and invite teammates from here."
+        description="Update your profile, configure company-wide defaults like overhead percentage, and tune what shows on the dashboard."
         steps={[
-          'Your account info is editable up top.',
           'Company defaults — like overhead % — flow through to costing and profitability.',
+          'Weather Watch is fully configurable: pick a location, forecast length, and °F vs °C.',
           'Invite owners, dispatchers, or crew with the Team section.',
         ]}
       />
@@ -88,6 +89,17 @@ export default async function SettingsPage() {
                 companyId={c.id}
                 initialOverheadPct={Number(c.overhead_pct ?? 15)}
               />
+            </CardContent>
+          </Card>
+        )}
+
+        {c && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Weather Watch</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <WeatherSettingsForm company={c} />
             </CardContent>
           </Card>
         )}

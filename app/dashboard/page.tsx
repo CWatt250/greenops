@@ -55,7 +55,18 @@ export default async function DashboardPage() {
   if (profile?.role === 'customer') redirect('/portal');
 
   const companyId = (profile as { company_id?: string } | null)?.company_id;
-  const company = (profile as { company?: { id: string; name: string; city?: string | null; state?: string | null } | null } | null)?.company;
+  const company = (profile as { company?: {
+    id: string;
+    name: string;
+    city?: string | null;
+    state?: string | null;
+    weather_location_label?: string | null;
+    weather_latitude?: number | null;
+    weather_longitude?: number | null;
+    weather_forecast_days?: number | null;
+    weather_units?: 'imperial' | 'metric' | null;
+    weather_show_on_dashboard?: boolean | null;
+  } | null } | null)?.company;
 
   const fullName = (profile as { full_name?: string } | null)?.full_name ?? '';
   const firstName = fullName.split(' ')[0] || (user.email?.split('@')[0] ?? 'there');
@@ -270,16 +281,34 @@ export default async function DashboardPage() {
     .map(({ _ts, ...rest }) => rest); // eslint-disable-line @typescript-eslint/no-unused-vars
 
   // ── Weather ───────────────────────────────────────────────────────────────
-  const weather = company?.city
-    ? await getDashboardWeather({
-        city: company.city,
-        state: company.state ?? undefined,
-      })
-    : await getDashboardWeather({ lat: 46.2087, lng: -119.1734 });
+  const weatherEnabled = company?.weather_show_on_dashboard !== false; // default true
+  const weatherDays = company?.weather_forecast_days ?? 3;
+  const weatherUnits = company?.weather_units ?? 'imperial';
+  const weatherLat = company?.weather_latitude;
+  const weatherLng = company?.weather_longitude;
+  const weatherLabel = company?.weather_location_label
+    ?? (company?.city ? [company.city, company.state].filter(Boolean).join(', ') : undefined);
 
-  // Count of tomorrow/3-day jobs falling on rainy days, grouped by date.
+  const weather = weatherEnabled
+    ? (typeof weatherLat === 'number' && typeof weatherLng === 'number'
+        ? await getDashboardWeather(
+            { lat: Number(weatherLat), lng: Number(weatherLng) },
+            { days: weatherDays, units: weatherUnits, locationLabel: weatherLabel },
+          )
+        : company?.city
+          ? await getDashboardWeather(
+              { city: company.city, state: company.state ?? undefined },
+              { days: weatherDays, units: weatherUnits, locationLabel: weatherLabel },
+            )
+          : await getDashboardWeather(
+              { lat: 46.2087, lng: -119.1734 },
+              { days: weatherDays, units: weatherUnits, locationLabel: weatherLabel ?? 'Tri-Cities, WA' },
+            ))
+    : null;
+
+  // Count jobs falling on rainy days inside the forecast window.
   const futureJobsByDate: Record<string, number> = {};
-  if (weather.forecast.length > 0) {
+  if (weather && weather.forecast.length > 0) {
     const dates = weather.forecast.map((d) => d.date);
     const { data: futureJobs } = await supabase
       .from('jobs')
@@ -299,8 +328,8 @@ export default async function DashboardPage() {
           jobsToday={todayCount}
           crewsActive={crewsTotal}
           city={company?.city ?? null}
-          weather={weather.today
-            ? { tempF: weather.today.tempF, condition: weather.today.condition }
+          weather={weather?.today
+            ? { temp: weather.today.temp, unitSymbol: weather.today.unitSymbol, condition: weather.today.condition }
             : null}
         />
         <div className="flex items-center gap-2 shrink-0">
@@ -368,11 +397,14 @@ export default async function DashboardPage() {
         </div>
         <div className="flex flex-col gap-4">
           <PortalInboxCard items={inboxItems} />
-          <WeatherWatch
-            forecast={weather.forecast}
-            affectedJobsByDate={futureJobsByDate}
-            ok={weather.ok}
-          />
+          {weather && (
+            <WeatherWatch
+              forecast={weather.forecast}
+              affectedJobsByDate={futureJobsByDate}
+              ok={weather.ok}
+              locationLabel={weather.locationLabel}
+            />
+          )}
         </div>
       </div>
 

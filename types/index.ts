@@ -39,6 +39,13 @@ export interface Company {
   portal_banner_cta_url?: string | null;
   portal_banner_expires_at?: string | null;
   portal_banner_enabled?: boolean | null;
+  /** Weather Watch preferences (migration 021). */
+  weather_location_label?: string | null;
+  weather_latitude?: number | null;
+  weather_longitude?: number | null;
+  weather_forecast_days?: number | null;
+  weather_units?: 'imperial' | 'metric' | null;
+  weather_show_on_dashboard?: boolean | null;
   created_at: string;
 }
 
