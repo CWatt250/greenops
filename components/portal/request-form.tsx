@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { PhotoAttachInput, type AttachedPhoto } from '@/components/portal/photo-attach-input';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -38,6 +39,7 @@ export function RequestForm({ clientId, companyId, portalUserId, services }: Pro
   const [description, setDescription] = useState('');
   const [preferredDate, setPreferredDate] = useState('');
   const [preferredTime, setPreferredTime] = useState('');
+  const [photos, setPhotos] = useState<AttachedPhoto[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -59,6 +61,7 @@ export function RequestForm({ clientId, companyId, portalUserId, services }: Pro
         description: description.trim() || null,
         preferred_date: preferredDate || null,
         preferred_time: preferredTime || null,
+        photo_urls: photos.length > 0 ? photos.map((p) => p.url) : null,
       })
       .select('id')
       .single();
@@ -171,6 +174,12 @@ export function RequestForm({ clientId, companyId, portalUserId, services }: Pro
               className="rounded-xl bg-white border-gray-200 resize-none"
             />
           </div>
+
+          <PhotoAttachInput
+            pathPrefix={`${companyId}/portal/requests`}
+            photos={photos}
+            onChange={setPhotos}
+          />
 
           <div className="grid grid-cols-2 gap-3">
             <div>

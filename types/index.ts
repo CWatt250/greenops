@@ -153,6 +153,9 @@ export interface Job {
   signature_url?: string | null;
   signed_by_name?: string | null;
   signed_at?: string | null;
+  /** Customer-facing notes shown on the portal (migration 027).
+   *  `notes` stays crew-internal. */
+  customer_notes?: string | null;
   created_at: string;
   updated_at: string;
   client?: Client;
@@ -266,6 +269,8 @@ export interface ServiceRequest {
   description?: string | null;
   preferred_date?: string | null;
   preferred_time?: string | null;
+  /** Customer-uploaded photos (migration 028). */
+  photo_urls?: string[] | null;
   status: ServiceRequestStatus;
   admin_notes?: string | null;
   resolved_at?: string | null;

@@ -26,6 +26,7 @@ const jobSchema = z.object({
   scheduled_start: z.string().optional(),
   scheduled_end: z.string().optional(),
   notes: z.string().optional(),
+  customer_notes: z.string().optional(),
 });
 
 type JobFormData = z.infer<typeof jobSchema>;
@@ -72,6 +73,7 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
       scheduled_start: initialData?.scheduled_start?.slice(0, 5) ?? '',
       scheduled_end: initialData?.scheduled_end?.slice(0, 5) ?? '',
       notes: initialData?.notes ?? '',
+      customer_notes: initialData?.customer_notes ?? '',
     },
   });
 
@@ -88,6 +90,7 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
       scheduled_start: data.scheduled_start || null,
       scheduled_end: data.scheduled_end || null,
       notes: data.notes || null,
+      customer_notes: data.customer_notes || null,
       is_recurring: !!rrule,
       recurrence_rule: rrule ?? null,
     };
@@ -231,7 +234,7 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
       {/* --- Notes --- */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label htmlFor="notes">Notes</Label>
+          <Label htmlFor="notes">Internal notes <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">crew only</span></Label>
           <NoteTemplatePicker
             onApply={(body) => {
               const current = (getValues('notes') ?? '').trim();
@@ -244,8 +247,21 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
           id="notes"
           rows={3}
           className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-          placeholder="Access instructions, special requirements…"
+          placeholder="Access instructions, special requirements, gate codes — never shown to the customer."
           {...register('notes')}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="customer-notes">
+          Customer-visible notes <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">portal</span>
+        </Label>
+        <textarea
+          id="customer-notes"
+          rows={2}
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+          placeholder="Optional — appears on the customer's portal job card. Leave blank to show nothing."
+          {...register('customer_notes')}
         />
       </div>
 

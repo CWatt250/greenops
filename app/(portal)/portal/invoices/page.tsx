@@ -1,49 +1,72 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { InvoiceCard } from '@/components/portal/invoice-card';
+import { LiveIndicator } from '@/components/shared/live-indicator';
+import { useLiveData } from '@/lib/hooks/use-live-data';
 import { Loader2 } from 'lucide-react';
 import type { Invoice } from '@/types';
 
 export default function PortalInvoicesPage() {
   const supabase = createClient();
+  const [clientId, setClientId] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function load() {
+    let cancelled = false;
+    (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data: pu } = await supabase.from('portal_users').select('client_id').eq('id', user.id).single();
-      if (!pu) { setLoading(false); return; }
-
-      const { data } = await supabase
-        .from('invoices')
-        .select('*')
-        .eq('client_id', pu.client_id)
-        .not('status', 'eq', 'draft')
-        .order('issued_date', { ascending: false });
-
-      const now = new Date().toISOString().split('T')[0];
-      const processed = (data ?? []).map((inv) => ({
-        ...inv,
-        status: (inv.status !== 'paid' && inv.status !== 'cancelled' && inv.due_date && inv.due_date < now)
-          ? 'overdue' : inv.status,
-      })) as Invoice[];
-
-      setInvoices(processed);
-      setLoading(false);
-    }
-    load();
+      const { data: pu } = await supabase
+        .from('portal_users')
+        .select('client_id')
+        .eq('id', user.id)
+        .single();
+      if (cancelled) return;
+      setClientId((pu as { client_id?: string } | null)?.client_id ?? null);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const loadInvoices = useCallback(async () => {
+    if (!clientId) return;
+    const { data } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('client_id', clientId)
+      .not('status', 'eq', 'draft')
+      .order('issued_date', { ascending: false });
+
+    const now = new Date().toISOString().split('T')[0];
+    const processed = (data ?? []).map((inv) => ({
+      ...inv,
+      status: (inv.status !== 'paid' && inv.status !== 'cancelled' && inv.due_date && inv.due_date < now)
+        ? 'overdue' : inv.status,
+    })) as Invoice[];
+
+    setInvoices(processed);
+    setLoading(false);
+  }, [clientId, supabase]);
+
+  const { status, updatedAt } = useLiveData({
+    channelKey: clientId ? `portal-invoices-${clientId}` : 'portal-invoices',
+    tables: clientId ? [{ table: 'invoices', filter: `client_id=eq.${clientId}` }] : [],
+    loader: loadInvoices,
+    enabled: !!clientId,
+  });
 
   const outstanding = invoices.filter((i) => i.status !== 'paid' && i.status !== 'cancelled');
   const paid = invoices.filter((i) => i.status === 'paid');
 
   return (
     <div className="px-4 py-5 space-y-5">
-      <h1 className="text-xl font-bold text-gray-900">Invoices</h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-xl font-bold text-gray-900">Invoices</h1>
+        <LiveIndicator status={status} updatedAt={updatedAt} />
+      </div>
 
       {loading ? (
         <div className="flex justify-center py-16">

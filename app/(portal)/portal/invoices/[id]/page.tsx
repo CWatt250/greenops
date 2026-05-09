@@ -5,9 +5,9 @@ import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { InvoicePreview } from '@/components/billing/invoice-preview';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, Download, CreditCard, Loader2 } from 'lucide-react';
+import { ChevronLeft, Download, Loader2, Phone, Mail, MailOpen } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Invoice, InvoiceLineItem, Client } from '@/types';
+import type { Company, Invoice, InvoiceLineItem, Client } from '@/types';
 
 export default function PortalInvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -16,6 +16,7 @@ export default function PortalInvoiceDetailPage() {
 
   const [invoice, setInvoice] = useState<(Invoice & { client: Client | null }) | null>(null);
   const [lineItems, setLineItems] = useState<InvoiceLineItem[]>([]);
+  const [company, setCompany] = useState<Company | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
 
@@ -24,10 +25,17 @@ export default function PortalInvoiceDetailPage() {
       supabase.from('invoices').select('*, client:clients(*)').eq('id', id).single(),
       supabase.from('invoice_line_items').select('*').eq('invoice_id', id).order('sort_order'),
     ]);
-    if (invRes.data) setInvoice(invRes.data as unknown as Invoice & { client: Client | null });
+    if (invRes.data) {
+      const inv = invRes.data as unknown as Invoice & { client: Client | null };
+      setInvoice(inv);
+      // Pull the company once so the Pay-Now fallback panel has phone/email/address.
+      const { data: companyRow } = await supabase
+        .from('companies').select('*').eq('id', inv.company_id).single();
+      if (companyRow) setCompany(companyRow as Company);
+    }
     setLineItems((liRes.data ?? []) as InvoiceLineItem[]);
     setLoading(false);
-  }, [id]);
+  }, [id, supabase]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -84,30 +92,71 @@ export default function PortalInvoiceDetailPage() {
 
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-bold text-gray-900">{invoice.invoice_number}</h1>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={downloadPDF}
-            disabled={downloading}
-            className="gap-1.5 rounded-xl"
-          >
-            {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            PDF
-          </Button>
-          <Button
-            size="sm"
-            disabled
-            className="gap-1.5 rounded-xl opacity-60 cursor-not-allowed"
-            title="Online payments coming soon"
-          >
-            <CreditCard className="h-4 w-4" />
-            Pay Now
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={downloadPDF}
+          disabled={downloading}
+          className="gap-1.5 rounded-xl"
+        >
+          {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          PDF
+        </Button>
       </div>
 
       <InvoicePreview invoice={invoice} lineItems={lineItems} />
+
+      {/* Pay-Now fallback panel — Stripe isn't wired yet, so give the customer
+          something actionable instead of a dead button. */}
+      {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+        <div
+          className="rounded-2xl border bg-white p-4 shadow-sm"
+          style={{ borderColor: 'var(--orange, #F15A24)' }}
+        >
+          <h2 className="text-sm font-semibold text-gray-900 mb-2">💳 How to Pay</h2>
+          <p className="text-xs text-gray-600 mb-3">
+            Online payments coming soon. For now, please pay by:
+          </p>
+          <div className="space-y-2 text-sm">
+            {company?.phone && (
+              <a
+                href={`tel:${company.phone.replace(/[^\d+]/g, '')}`}
+                className="flex items-center gap-2 text-gray-700 hover:text-orange-600"
+              >
+                <Phone className="h-4 w-4 text-gray-400 shrink-0" />
+                {company.phone}
+              </a>
+            )}
+            {company?.email && (
+              <a
+                href={`mailto:${company.email}?subject=${encodeURIComponent(`Invoice ${invoice.invoice_number}`)}`}
+                className="flex items-center gap-2 text-gray-700 hover:text-orange-600 break-all"
+              >
+                <Mail className="h-4 w-4 text-gray-400 shrink-0" />
+                {company.email}
+              </a>
+            )}
+            {(company?.address || company?.city) && (
+              <div className="flex items-start gap-2 text-gray-700">
+                <MailOpen className="h-4 w-4 text-gray-400 shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <p className="font-semibold">{company?.name ?? 'Mail check to:'}</p>
+                  {company?.address && <p>{company.address}</p>}
+                  {(company?.city || company?.state || company?.zip) && (
+                    <p>
+                      {[company?.city, company?.state].filter(Boolean).join(', ')}
+                      {company?.zip ? ` ${company.zip}` : ''}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          <p className="text-[11px] text-gray-500 mt-3 pt-3 border-t">
+            Reference invoice <strong className="text-gray-700">{invoice.invoice_number}</strong> with your payment.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

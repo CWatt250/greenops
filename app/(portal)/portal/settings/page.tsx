@@ -1,11 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Loader2, Phone, Mail, MapPin, Clock, Globe } from 'lucide-react';
+import { Loader2, Phone, Mail, MapPin, Clock, Globe, LogOut, Save } from 'lucide-react';
 import type { Company, PortalUser } from '@/types';
 
 const PREF_LABELS: Array<{
@@ -31,21 +34,32 @@ const DAY_LABELS: Record<string, string> = {
 
 export default function PortalSettingsPage() {
   const supabase = createClient();
+  const router = useRouter();
   const [pu, setPu] = useState<PortalUser | null>(null);
   const [company, setCompany] = useState<Company | null>(null);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  // Editable profile state
+  const [phoneEdit, setPhoneEdit] = useState('');
+  const [phoneSaving, setPhoneSaving] = useState(false);
+  const [emailEdit, setEmailEdit] = useState('');
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [emailPending, setEmailPending] = useState(false);
 
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       setEmail(user.email ?? '');
+      setEmailEdit(user.email ?? '');
       const { data } = await supabase.from('portal_users').select('*').eq('id', user.id).single();
       if (data) {
         const portalUser = data as PortalUser;
         setPu(portalUser);
+        setPhoneEdit(portalUser.phone ?? '');
         if (portalUser.company_id) {
           const { data: cRow } = await supabase
             .from('companies').select('*').eq('id', portalUser.company_id).single();
@@ -73,6 +87,43 @@ export default function PortalSettingsPage() {
     setSaving(false);
   }
 
+  async function savePhone() {
+    if (!pu) return;
+    setPhoneSaving(true);
+    const { error } = await supabase
+      .from('portal_users')
+      .update({ phone: phoneEdit.trim() || null })
+      .eq('id', pu.id);
+    setPhoneSaving(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setPu((prev) => prev ? { ...prev, phone: phoneEdit.trim() || null } : prev);
+    toast.success('Phone updated.');
+  }
+
+  async function saveEmail() {
+    if (!emailEdit.trim() || emailEdit.trim() === email) return;
+    setEmailSaving(true);
+    // Supabase sends a confirmation link to the new address; the email
+    // doesn't actually change until the user clicks it.
+    const { error } = await supabase.auth.updateUser({ email: emailEdit.trim() });
+    setEmailSaving(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setEmailPending(true);
+    toast.success('Verification email sent. Click the link to confirm the change.');
+  }
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    await supabase.auth.signOut();
+    router.push('/login');
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-24">
@@ -90,21 +141,68 @@ export default function PortalSettingsPage() {
         <div className="px-4 py-3 border-b bg-gray-50">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Profile</p>
         </div>
-        <div className="px-4 py-4 space-y-3">
+        <div className="px-4 py-4 space-y-4">
           <div>
-            <p className="text-xs text-gray-500">Name</p>
-            <p className="text-sm font-medium text-gray-800">{pu?.full_name ?? '—'}</p>
+            <Label className="text-xs text-gray-500">Name</Label>
+            <p className="text-sm font-medium text-gray-800 mt-0.5">{pu?.full_name ?? '—'}</p>
           </div>
-          <div>
-            <p className="text-xs text-gray-500">Email</p>
-            <p className="text-sm text-gray-800">{email}</p>
-          </div>
-          {pu?.phone && (
-            <div>
-              <p className="text-xs text-gray-500">Phone</p>
-              <p className="text-sm text-gray-800">{pu.phone}</p>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="ps-phone" className="text-xs text-gray-500">Phone</Label>
+            <div className="flex gap-2">
+              <Input
+                id="ps-phone"
+                type="tel"
+                value={phoneEdit}
+                onChange={(e) => setPhoneEdit(e.target.value)}
+                placeholder="509-555-0123"
+                className="flex-1 h-9 text-sm"
+              />
+              <Button
+                size="sm"
+                onClick={savePhone}
+                disabled={phoneSaving || phoneEdit.trim() === (pu?.phone ?? '')}
+                className="gap-1 text-white"
+                style={{ backgroundColor: 'var(--color-brand-green-raw)' }}
+              >
+                {phoneSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                Save
+              </Button>
             </div>
-          )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="ps-email" className="text-xs text-gray-500">Email</Label>
+            <div className="flex gap-2">
+              <Input
+                id="ps-email"
+                type="email"
+                value={emailEdit}
+                onChange={(e) => setEmailEdit(e.target.value)}
+                className="flex-1 h-9 text-sm"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={saveEmail}
+                disabled={emailSaving || !emailEdit.trim() || emailEdit.trim() === email}
+              >
+                {emailSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Change'}
+              </Button>
+            </div>
+            {emailPending && (
+              <p className="text-[11px] text-amber-600">
+                ✉️ Verification email sent — click the link to confirm. Your old address still works until then.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <Label className="text-xs text-gray-500">Service address</Label>
+            <p className="text-sm text-gray-800 mt-0.5">
+              Contact {company?.name ?? 'us'} to update your service address.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -223,8 +321,21 @@ export default function PortalSettingsPage() {
         </div>
       )}
 
+      {/* Sign out */}
+      <div className="rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden">
+        <button
+          type="button"
+          onClick={handleSignOut}
+          disabled={signingOut}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
+        >
+          {signingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+          {signingOut ? 'Signing out…' : 'Sign out'}
+        </button>
+      </div>
+
       <p className="text-center text-xs text-gray-400">
-        To update your email or cancel your account, contact{' '}
+        To cancel your account, contact{' '}
         {company?.name ?? 'us'} {company?.email ? <>at {company.email}</> : null}.
       </p>
     </div>
