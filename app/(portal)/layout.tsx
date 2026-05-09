@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { Leaf } from 'lucide-react';
 import { PortalNav } from '@/components/portal/portal-nav';
 import { PortalNotificationBell } from '@/components/portal/portal-notification-bell';
-import type { PortalUser } from '@/types';
+import type { Company, PortalUser } from '@/types';
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -36,6 +36,11 @@ export default async function PortalLayout({ children }: { children: React.React
   const pu = portalUser as PortalUser | null;
   const firstName = pu?.full_name?.split(' ')[0] ?? 'there';
 
+  const { data: companyRow } = pu?.company_id
+    ? await supabase.from('companies').select('*').eq('id', pu.company_id).single()
+    : { data: null };
+  const company = companyRow as Company | null;
+
   return (
     <div
       className="min-h-screen flex flex-col"
@@ -47,15 +52,36 @@ export default async function PortalLayout({ children }: { children: React.React
         style={{ backgroundColor: 'var(--color-brand-dark-raw)' }}
       >
         <div className="flex items-center gap-2.5">
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-lg"
-            style={{ backgroundColor: 'var(--color-brand-green-raw)' }}
-          >
-            <Leaf className="h-4 w-4 text-white" />
-          </div>
+          {company?.logo_url ? (
+            <div
+              className="flex h-9 w-9 items-center justify-center rounded-lg overflow-hidden bg-white"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={company.logo_url}
+                alt={`${company.name} logo`}
+                className="h-9 w-9 object-contain"
+              />
+            </div>
+          ) : (
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-lg"
+              style={{ backgroundColor: 'var(--orange)' }}
+            >
+              <Leaf className="h-4 w-4 text-white" />
+            </div>
+          )}
           <div>
-            <p className="text-sm font-bold text-white leading-none">TLC Landscape</p>
-            <p className="text-[11px] text-white/50 leading-tight">Customer Portal</p>
+            <p className="text-sm font-bold text-white leading-none">
+              {company?.name ?? 'Customer Portal'}
+            </p>
+            {company?.tagline ? (
+              <p className="text-[11px] leading-tight" style={{ color: 'var(--orange)' }}>
+                {company.tagline}
+              </p>
+            ) : (
+              <p className="text-[11px] text-white/50 leading-tight">Customer Portal</p>
+            )}
           </div>
         </div>
         {pu && <PortalNotificationBell portalUserId={pu.id} />}

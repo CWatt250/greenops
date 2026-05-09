@@ -8,24 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PortalBannerForm } from '@/components/settings/portal-banner-form';
 import { NoteTemplatesManager } from '@/components/settings/note-templates-manager';
 import { OverheadForm } from '@/components/settings/overhead-form';
-
-interface CompanyData {
-  id: string;
-  name: string;
-  phone?: string | null;
-  email?: string | null;
-  portal_banner_message?: string | null;
-  portal_banner_cta_label?: string | null;
-  portal_banner_cta_url?: string | null;
-  portal_banner_expires_at?: string | null;
-  portal_banner_enabled?: boolean | null;
-  overhead_pct?: number | null;
-}
+import { CompanyInfoForm } from '@/components/settings/company-info-form';
+import type { Company } from '@/types';
 
 interface ProfileWithCompany {
   full_name?: string;
   role?: string;
-  company: CompanyData | null;
+  company: Company | null;
 }
 
 export default async function SettingsPage() {
@@ -35,14 +24,7 @@ export default async function SettingsPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select(
-      `full_name, role, company:companies(
-        id, name, phone, email,
-        portal_banner_message, portal_banner_cta_label, portal_banner_cta_url,
-        portal_banner_expires_at, portal_banner_enabled,
-        overhead_pct
-      )`
-    )
+    .select('full_name, role, company:companies(*)')
     .eq('id', user.id)
     .single();
 
@@ -88,17 +70,10 @@ export default async function SettingsPage() {
         {c && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Company</CardTitle>
+              <CardTitle className="text-base">Company information</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div>
-                <p className="text-xs text-muted-foreground">Company Name</p>
-                <p className="text-sm font-medium">{c.name}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Phone</p>
-                <p className="text-sm font-medium">{c.phone ?? '—'}</p>
-              </div>
+            <CardContent>
+              <CompanyInfoForm company={c} />
             </CardContent>
           </Card>
         )}

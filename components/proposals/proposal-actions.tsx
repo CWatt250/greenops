@@ -47,9 +47,10 @@ export function ProposalActions({ proposal, lineItems }: Props) {
   async function downloadPdf() {
     setBusy('pdf');
     try {
-      const [{ pdf }, { ProposalDocument }, React] = await Promise.all([
+      const [{ pdf }, { ProposalDocument }, { fetchOwnCompany, FALLBACK_COMPANY }, React] = await Promise.all([
         import('@react-pdf/renderer'),
         import('@/lib/proposal-pdf'),
+        import('@/lib/company-client'),
         import('react'),
       ]);
 
@@ -74,10 +75,13 @@ export function ProposalActions({ proposal, lineItems }: Props) {
         ? Number(proposal.annual_value)
         : annualValue(drafts, flags);
 
+      const company = (await fetchOwnCompany()) ?? FALLBACK_COMPANY;
+
       const doc = React.default.createElement(ProposalDocument, {
         proposal,
         lineItems,
         annualValue: annual,
+        company,
       });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const blob = await pdf(doc as any).toBlob();

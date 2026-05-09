@@ -296,18 +296,21 @@ export function MeasureView({
     if (shapes.length === 0) { toast.error('Draw at least one shape first.'); return; }
     setPdfBusy(true);
     try {
-      const [{ pdf }, { MeasurementDocument }, React] = await Promise.all([
+      const [{ pdf }, { MeasurementDocument }, { fetchOwnCompany, FALLBACK_COMPANY }, React] = await Promise.all([
         import('@react-pdf/renderer'),
         import('@/lib/measurement-pdf'),
+        import('@/lib/company-client'),
         import('react'),
       ]);
       const staticMapUrl = staticMapUrlForShapes(shapes, center);
       const clientName = lockedClientName ?? selectedClient?.name ?? null;
+      const company = (await fetchOwnCompany()) ?? FALLBACK_COMPANY;
       const doc = React.default.createElement(MeasurementDocument, {
         shapes,
         address: addressInfo?.service_address ?? null,
         clientName,
         staticMapUrl,
+        company,
       });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const blob = await pdf(doc as any).toBlob();

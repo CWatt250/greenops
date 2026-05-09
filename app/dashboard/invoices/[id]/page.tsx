@@ -147,9 +147,11 @@ export default function InvoiceDetailPage() {
     try {
       const { pdf } = await import('@react-pdf/renderer');
       const { InvoiceDocument } = await import('@/lib/invoice-pdf');
+      const { fetchOwnCompany, FALLBACK_COMPANY } = await import('@/lib/company-client');
       const React = (await import('react')).default;
+      const company = (await fetchOwnCompany()) ?? FALLBACK_COMPANY;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const doc = React.createElement(InvoiceDocument as any, { invoice, lineItems, payments }) as any;
+      const doc = React.createElement(InvoiceDocument as any, { invoice, lineItems, payments, company }) as any;
       const blob = await pdf(doc).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -157,7 +159,7 @@ export default function InvoiceDetailPage() {
       a.download = `${invoice.invoice_number}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
+    } catch {
       toast.error('PDF generation failed.');
     }
     setActioning(null);

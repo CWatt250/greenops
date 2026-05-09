@@ -1,13 +1,11 @@
 import React from 'react';
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
-import type { Estimate, EstimateLineItem } from '@/types';
+import type { Company, Estimate, EstimateLineItem } from '@/types';
 import { FREQUENCY_LABELS } from '@/lib/proposal-pricing';
+import { CompanyHeader, CompanyFooter } from '@/lib/pdf-branding';
 
 const styles = StyleSheet.create({
-  page: { padding: 48, fontFamily: 'Helvetica', fontSize: 10, color: '#0B0B0B' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 32 },
-  brandName: { fontSize: 22, fontFamily: 'Helvetica-Bold', color: '#0B0B0B', textTransform: 'uppercase', letterSpacing: 1 },
-  brandSub: { fontSize: 9, color: '#F15A24', fontFamily: 'Helvetica-Oblique', marginTop: 2 },
+  page: { paddingTop: 36, paddingHorizontal: 36, paddingBottom: 60, fontFamily: 'Helvetica', fontSize: 10, color: '#0B0B0B' },
   proposalTitle: { fontSize: 26, fontFamily: 'Helvetica-Bold', color: '#F15A24', textAlign: 'right', textTransform: 'uppercase', letterSpacing: 1 },
   proposalMeta: { fontSize: 9, color: '#444', textAlign: 'right', marginTop: 6 },
   sectionLabel: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#888', textTransform: 'uppercase', marginBottom: 4, letterSpacing: 0.6 },
@@ -27,7 +25,6 @@ const styles = StyleSheet.create({
   signatureLine: { marginTop: 28, flexDirection: 'row', justifyContent: 'space-between' },
   sigBlock: { flex: 1, marginRight: 12 },
   sigUnderline: { borderBottomWidth: 0.7, borderBottomColor: '#0B0B0B', marginTop: 24, marginBottom: 4 },
-  footer: { position: 'absolute', bottom: 32, left: 48, right: 48, textAlign: 'center', fontSize: 8, color: '#999' },
 });
 
 function fmt(n: number) {
@@ -37,14 +34,14 @@ function fmt(n: number) {
 interface Props {
   proposal: Estimate & { client?: { name: string; service_address?: string | null } | null };
   lineItems: EstimateLineItem[];
-  companyName?: string;
+  company: Company;
   annualValue?: number;
 }
 
 export function ProposalDocument({
   proposal,
   lineItems,
-  companyName = 'TLC Landscape Management',
+  company,
   annualValue,
 }: Props) {
   const perVisitLines = lineItems.filter((li) => li.billing_mode !== 'per_month');
@@ -60,25 +57,22 @@ export function ProposalDocument({
   return (
     <Document>
       <Page size="LETTER" style={styles.page}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.brandName}>TLC</Text>
-            <Text style={styles.brandSub}>by Watt Systems</Text>
-            <Text style={{ fontSize: 9, color: '#666', marginTop: 6 }}>{companyName}</Text>
-          </View>
-          <View>
-            <Text style={styles.proposalTitle}>Proposal</Text>
-            <Text style={styles.proposalMeta}>
-              Date: {new Date(proposal.created_at).toLocaleDateString()}
-            </Text>
-            {proposal.valid_until && (
+        <CompanyHeader
+          company={company}
+          right={
+            <View>
+              <Text style={styles.proposalTitle}>Proposal</Text>
               <Text style={styles.proposalMeta}>
-                Valid through: {new Date(proposal.valid_until).toLocaleDateString()}
+                Date: {new Date(proposal.created_at).toLocaleDateString()}
               </Text>
-            )}
-          </View>
-        </View>
+              {proposal.valid_until && (
+                <Text style={styles.proposalMeta}>
+                  Valid through: {new Date(proposal.valid_until).toLocaleDateString()}
+                </Text>
+              )}
+            </View>
+          }
+        />
 
         {/* Client + meta */}
         <View style={styles.row}>
@@ -203,9 +197,7 @@ export function ProposalDocument({
           </View>
         </View>
 
-        <Text style={styles.footer}>
-          {companyName} · Built with the TLC Management Platform
-        </Text>
+        <CompanyFooter company={company} />
       </Page>
     </Document>
   );

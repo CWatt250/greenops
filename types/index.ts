@@ -33,6 +33,12 @@ export interface Company {
   business_hours?: Record<string, string> | null;
   /** Job-costing overhead % (migration 014). */
   overhead_pct?: number | null;
+  /** Portal banner config (migration 012). */
+  portal_banner_message?: string | null;
+  portal_banner_cta_label?: string | null;
+  portal_banner_cta_url?: string | null;
+  portal_banner_expires_at?: string | null;
+  portal_banner_enabled?: boolean | null;
   created_at: string;
 }
 

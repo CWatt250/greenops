@@ -37,10 +37,17 @@ export default function PortalInvoiceDetailPage() {
     try {
       const { pdf } = await import('@react-pdf/renderer');
       const { InvoiceDocument } = await import('@/lib/invoice-pdf');
+      const { FALLBACK_COMPANY } = await import('@/lib/company-client');
       const React = (await import('react')).default;
+      // Portal users can read their own company via the invoice's company_id.
+      const { data: companyRow } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', invoice.company_id)
+        .single();
+      const company = companyRow ?? FALLBACK_COMPANY;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const doc = React.createElement(InvoiceDocument as any, { invoice, lineItems, payments: [] }) as any;
+      const doc = React.createElement(InvoiceDocument as any, { invoice, lineItems, payments: [], company }) as any;
       const blob = await pdf(doc).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
