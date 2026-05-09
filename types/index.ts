@@ -352,6 +352,50 @@ export interface ServicePreset {
 
 export type JobCostCategory = 'material' | 'equipment' | 'other';
 
+export type FormFieldType =
+  | 'text' | 'textarea' | 'number' | 'yes_no' | 'radio'
+  | 'multi_select' | 'date' | 'rating' | 'signature';
+
+export type FormTrigger = 'pre_job' | 'post_job' | 'on_demand' | 'customer_signoff';
+
+export interface FormFieldDef {
+  /** Stable id used as the response key. */
+  id: string;
+  type: FormFieldType;
+  label: string;
+  /** Display-only placeholder hint. */
+  placeholder?: string;
+  /** Required to submit. */
+  required?: boolean;
+  /** For radio / multi_select. */
+  choices?: string[];
+}
+
+export interface FormTemplate {
+  id: string;
+  company_id: string;
+  name: string;
+  description?: string | null;
+  trigger: FormTrigger;
+  service_categories?: string[];
+  fields: FormFieldDef[];
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FormSubmission {
+  id: string;
+  company_id: string;
+  template_id?: string | null;
+  job_id?: string | null;
+  client_id?: string | null;
+  submitted_by?: string | null;
+  responses: Record<string, unknown>;
+  signature_url?: string | null;
+  submitted_at: string;
+}
+
 export type ChemicalProductType =
   | 'herbicide' | 'insecticide' | 'fungicide' | 'fertilizer' | 'growth_regulator' | 'other';
 

@@ -9,6 +9,7 @@ import { JobActions } from '@/components/jobs/job-actions';
 import { JobCostingTab } from '@/components/jobs/job-costing-tab';
 import { LogApplicationSheet } from '@/components/chemicals/log-application-sheet';
 import { ChemicalApplicationsList } from '@/components/chemicals/chemical-applications-list';
+import { JobFormsSection } from '@/components/forms/job-forms-section';
 import { Separator } from '@/components/ui/separator';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { rruleToText } from '@/lib/rrule-helpers';
@@ -306,6 +307,22 @@ export default async function JobDetailPage({ params }: Props) {
               </div>
             )}
             <ChemicalApplicationsList jobId={id} showExport={false} />
+          </div>
+        )}
+
+        {/* Forms */}
+        {companyId && userId && (
+          <div className="rounded-xl border bg-card p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <span aria-hidden>📋</span>
+              <h2 className="text-sm font-semibold">Forms</h2>
+            </div>
+            <JobFormsSection
+              jobId={id}
+              clientId={job.client?.id ?? null}
+              companyId={companyId}
+              userId={userId}
+            />
           </div>
         )}
 
