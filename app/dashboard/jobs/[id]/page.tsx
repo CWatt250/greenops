@@ -7,6 +7,8 @@ import { buttonVariants } from '@/components/ui/button';
 import { StatusWorkflow } from '@/components/jobs/status-workflow';
 import { JobActions } from '@/components/jobs/job-actions';
 import { JobCostingTab } from '@/components/jobs/job-costing-tab';
+import { LogApplicationSheet } from '@/components/chemicals/log-application-sheet';
+import { ChemicalApplicationsList } from '@/components/chemicals/chemical-applications-list';
 import { Separator } from '@/components/ui/separator';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { rruleToText } from '@/lib/rrule-helpers';
@@ -82,6 +84,22 @@ export default async function JobDetailPage({ params }: Props) {
   const revenueFallback = invoiceRevenue > 0
     ? invoiceRevenue
     : Number((job.revenue as number | undefined) ?? 0);
+
+  // Active re-entry interval check — flag if any prior chemical application
+  // at this property is still inside its REI window.
+  let activeReiUntil: string | null = null;
+  if (job.client?.id) {
+    const { data: activeRei } = await supabase
+      .from('chemical_applications')
+      .select('reentry_until')
+      .eq('client_id', job.client.id)
+      .gt('reentry_until', new Date().toISOString())
+      .order('reentry_until', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    activeReiUntil = (activeRei as { reentry_until?: string } | null)?.reentry_until ?? null;
+  }
+
   const lineItems = (lineItemsRes.data ?? []) as (JobLineItem & { service: { name: string; category: string } | null })[];
   const activity = (activityRes.data ?? []) as (ActivityLog & { actor: { full_name: string | null } | null })[];
 
@@ -258,6 +276,36 @@ export default async function JobDetailPage({ params }: Props) {
               initialRevenue={revenueFallback}
               overheadPct={overheadPct}
             />
+          </div>
+        )}
+
+        {/* Chemicals */}
+        {companyId && userId && job.client?.id && (
+          <div className="rounded-xl border bg-card p-5">
+            <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span aria-hidden>🧪</span>
+                <h2 className="text-sm font-semibold">Chemicals</h2>
+              </div>
+              <LogApplicationSheet
+                jobId={id}
+                clientId={job.client.id}
+                companyId={companyId}
+                userId={userId}
+                defaultAddress={job.client.service_address}
+              />
+            </div>
+            {activeReiUntil && (
+              <div className="rounded-md bg-amber-100 text-amber-700 px-3 py-2 text-xs mb-3 flex items-start gap-2">
+                <span aria-hidden>⚠️</span>
+                <p>
+                  This property has an active re-entry interval until{' '}
+                  <strong>{new Date(activeReiUntil).toLocaleString()}</strong>.
+                  Crews should not enter until this expires.
+                </p>
+              </div>
+            )}
+            <ChemicalApplicationsList jobId={id} showExport={false} />
           </div>
         )}
 
