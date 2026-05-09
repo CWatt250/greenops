@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import { InviteToPortalButton } from '@/components/clients/invite-to-portal-button';
 import { DeleteClientButton } from '@/components/clients/delete-client-button';
-import { ChemicalApplicationsList } from '@/components/chemicals/chemical-applications-list';
 import { ClientFormSubmissionsList } from '@/components/forms/client-form-submissions-list';
 import type { Client, Job } from '@/types';
 
@@ -100,16 +99,10 @@ export default async function ClientDetailPage({ params }: Props) {
         <TabsList className="mb-6">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="jobs">Jobs ({clientJobs.length})</TabsTrigger>
-          <TabsTrigger value="chemicals">🧪 Chemicals</TabsTrigger>
           <TabsTrigger value="forms">📋 Forms</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
-
-        {/* Chemicals */}
-        <TabsContent value="chemicals">
-          <ChemicalApplicationsList clientId={id} />
-        </TabsContent>
 
         {/* Forms */}
         <TabsContent value="forms">

@@ -7,8 +7,6 @@ import { buttonVariants } from '@/components/ui/button';
 import { StatusWorkflow } from '@/components/jobs/status-workflow';
 import { JobActions } from '@/components/jobs/job-actions';
 import { JobCostingTab } from '@/components/jobs/job-costing-tab';
-import { LogApplicationSheet } from '@/components/chemicals/log-application-sheet';
-import { ChemicalApplicationsList } from '@/components/chemicals/chemical-applications-list';
 import { JobFormsSection } from '@/components/forms/job-forms-section';
 import { Separator } from '@/components/ui/separator';
 import { formatDate, formatCurrency } from '@/lib/utils';
@@ -85,21 +83,6 @@ export default async function JobDetailPage({ params }: Props) {
   const revenueFallback = invoiceRevenue > 0
     ? invoiceRevenue
     : Number((job.revenue as number | undefined) ?? 0);
-
-  // Active re-entry interval check — flag if any prior chemical application
-  // at this property is still inside its REI window.
-  let activeReiUntil: string | null = null;
-  if (job.client?.id) {
-    const { data: activeRei } = await supabase
-      .from('chemical_applications')
-      .select('reentry_until')
-      .eq('client_id', job.client.id)
-      .gt('reentry_until', new Date().toISOString())
-      .order('reentry_until', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    activeReiUntil = (activeRei as { reentry_until?: string } | null)?.reentry_until ?? null;
-  }
 
   const lineItems = (lineItemsRes.data ?? []) as (JobLineItem & { service: { name: string; category: string } | null })[];
   const activity = (activityRes.data ?? []) as (ActivityLog & { actor: { full_name: string | null } | null })[];
@@ -215,6 +198,29 @@ export default async function JobDetailPage({ params }: Props) {
           )}
         </div>
 
+        {/* Costing — second section so the profit signal is immediately visible. */}
+        {companyId && userId && (
+          <div className="rounded-xl border-2 bg-card p-5" style={{ borderColor: 'var(--orange)' }}>
+            <div className="flex items-center gap-2 mb-4">
+              <span aria-hidden className="text-lg">💰</span>
+              <h2 className="text-base font-bold uppercase tracking-wide">Costing</h2>
+            </div>
+            <JobCostingTab
+              jobId={id}
+              companyId={companyId}
+              userId={userId}
+              initialEstimated={{
+                labor_hours: Number(job.estimated_labor_hours ?? 0),
+                labor_cost: Number(job.estimated_labor_cost ?? 0),
+                materials_cost: Number(job.estimated_materials_cost ?? 0),
+                equipment_cost: Number(job.estimated_equipment_cost ?? 0),
+              }}
+              initialRevenue={revenueFallback}
+              overheadPct={overheadPct}
+            />
+          </div>
+        )}
+
         {/* Line items */}
         {lineItems.length > 0 && (
           <div className="rounded-xl border bg-card p-5">
@@ -254,59 +260,6 @@ export default async function JobDetailPage({ params }: Props) {
                 </div>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Costing */}
-        {companyId && userId && (
-          <div className="rounded-xl border bg-card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <span aria-hidden>💰</span>
-              <h2 className="text-sm font-semibold">Costing</h2>
-            </div>
-            <JobCostingTab
-              jobId={id}
-              companyId={companyId}
-              userId={userId}
-              initialEstimated={{
-                labor_hours: Number(job.estimated_labor_hours ?? 0),
-                labor_cost: Number(job.estimated_labor_cost ?? 0),
-                materials_cost: Number(job.estimated_materials_cost ?? 0),
-                equipment_cost: Number(job.estimated_equipment_cost ?? 0),
-              }}
-              initialRevenue={revenueFallback}
-              overheadPct={overheadPct}
-            />
-          </div>
-        )}
-
-        {/* Chemicals */}
-        {companyId && userId && job.client?.id && (
-          <div className="rounded-xl border bg-card p-5">
-            <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-              <div className="flex items-center gap-2">
-                <span aria-hidden>🧪</span>
-                <h2 className="text-sm font-semibold">Chemicals</h2>
-              </div>
-              <LogApplicationSheet
-                jobId={id}
-                clientId={job.client.id}
-                companyId={companyId}
-                userId={userId}
-                defaultAddress={job.client.service_address}
-              />
-            </div>
-            {activeReiUntil && (
-              <div className="rounded-md bg-amber-100 text-amber-700 px-3 py-2 text-xs mb-3 flex items-start gap-2">
-                <span aria-hidden>⚠️</span>
-                <p>
-                  This property has an active re-entry interval until{' '}
-                  <strong>{new Date(activeReiUntil).toLocaleString()}</strong>.
-                  Crews should not enter until this expires.
-                </p>
-              </div>
-            )}
-            <ChemicalApplicationsList jobId={id} showExport={false} />
           </div>
         )}
 

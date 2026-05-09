@@ -396,59 +396,6 @@ export interface FormSubmission {
   submitted_at: string;
 }
 
-export type ChemicalProductType =
-  | 'herbicide' | 'insecticide' | 'fungicide' | 'fertilizer' | 'growth_regulator' | 'other';
-
-export interface ChemicalProduct {
-  id: string;
-  company_id: string;
-  name: string;
-  manufacturer?: string | null;
-  epa_registration_number?: string | null;
-  active_ingredient?: string | null;
-  product_type?: ChemicalProductType | null;
-  default_rate?: number | null;
-  rate_unit?: string | null;
-  reentry_interval_hours?: number | null;
-  sds_url?: string | null;
-  notes?: string | null;
-  is_active: boolean;
-  created_at: string;
-}
-
-export interface ApplicatorLicense {
-  id: string;
-  profile_id: string;
-  license_number: string;
-  license_type?: string | null;
-  state: string;
-  issued_date?: string | null;
-  expiration_date?: string | null;
-  created_at: string;
-}
-
-export interface ChemicalApplication {
-  id: string;
-  company_id: string;
-  job_id?: string | null;
-  client_id: string;
-  product_id: string;
-  applicator_id: string;
-  applied_at: string;
-  target_pest?: string | null;
-  area_treated_sqft?: number | null;
-  amount_applied: number;
-  amount_unit: string;
-  dilution_rate?: string | null;
-  total_solution_gallons?: number | null;
-  weather_temp_f?: number | null;
-  weather_wind_mph?: number | null;
-  weather_conditions?: string | null;
-  site_address?: string | null;
-  reentry_until?: string | null;
-  notes?: string | null;
-  created_at: string;
-}
 
 export interface JobCostEntry {
   id: string;

@@ -11,8 +11,8 @@ import { Label } from '@/components/ui/label';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet';
-import { Plus, UsersRound, ChevronDown, ChevronRight, Pencil, PowerOff } from 'lucide-react';
-import { MemberRateRow } from '@/components/crews/member-rate-row';
+import Link from 'next/link';
+import { Plus, UsersRound, Pencil, PowerOff, ChevronRight } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -36,7 +36,6 @@ export default function CrewsPage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState<CrewWithMembers | null>(null);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [serverError, setServerError] = useState<string | null>(null);
 
   const {
@@ -131,10 +130,6 @@ export default function CrewsPage() {
     setCrews((prev) => prev.filter((c) => c.id !== crew.id));
   }
 
-  function toggleExpand(id: string) {
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
-  }
-
   return (
     <div>
       <PageHeader title="Crews" description="Manage your field teams">
@@ -158,63 +153,42 @@ export default function CrewsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {crews.map((crew) => (
-            <div key={crew.id} className="rounded-xl border bg-card overflow-hidden">
-              <div className="flex items-center gap-2 p-5">
-                <button
-                  onClick={() => toggleExpand(crew.id)}
-                  className="flex flex-1 items-center gap-3 text-left min-w-0"
+            <div key={crew.id} className="rounded-xl border bg-card overflow-hidden flex flex-col">
+              <Link
+                href={`/dashboard/crews/${crew.id}`}
+                className="flex items-center gap-3 p-5 hover:bg-accent/30 transition-colors"
+              >
+                <div
+                  className="h-4 w-4 rounded-full shrink-0"
+                  style={{ backgroundColor: crew.color }}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm truncate">{crew.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {crew.crew_members.length} member{crew.crew_members.length !== 1 ? 's' : ''}
+                    {crew.is_active === false && ' · inactive'}
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </Link>
+              <div className="flex items-center gap-1 px-3 py-2 border-t bg-muted/20">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex-1 gap-1.5 text-xs h-8"
+                  onClick={() => openEdit(crew)}
                 >
-                  <div
-                    className="h-4 w-4 rounded-full shrink-0"
-                    style={{ backgroundColor: crew.color }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm truncate">{crew.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {crew.crew_members.length} member{crew.crew_members.length !== 1 ? 's' : ''}
-                    </p>
-                  </div>
-                  {expanded[crew.id]
-                    ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                    : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                </button>
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0"
-                    onClick={() => openEdit(crew)}
-                    aria-label="Edit crew"
-                    title="Edit crew"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={() => setConfirmDeactivate(crew)}
-                    aria-label="Deactivate crew"
-                    title="Deactivate crew"
-                  >
-                    <PowerOff className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+                  <Pencil className="h-3 w-3" /> Edit
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex-1 gap-1.5 text-xs h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => setConfirmDeactivate(crew)}
+                >
+                  <PowerOff className="h-3 w-3" /> Deactivate
+                </Button>
               </div>
-
-              {expanded[crew.id] && crew.crew_members.length > 0 && (
-                <div className="border-t divide-y">
-                  {crew.crew_members.map((member) => (
-                    <MemberRateRow key={member.id} member={member} />
-                  ))}
-                </div>
-              )}
-
-              {expanded[crew.id] && crew.crew_members.length === 0 && (
-                <div className="border-t px-5 py-4">
-                  <p className="text-xs text-muted-foreground text-center">No members assigned.</p>
-                </div>
-              )}
             </div>
           ))}
         </div>
