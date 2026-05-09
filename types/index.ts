@@ -4,8 +4,10 @@ export type PropertyType = 'residential' | 'commercial' | 'hoa';
 export type ClientStatus = 'active' | 'inactive' | 'prospect' | 'lead';
 export type ServiceCategory =
   | 'mowing' | 'edging' | 'fertilization' | 'aeration'
-  | 'cleanup' | 'tree' | 'sprinkler' | 'snow' | 'holiday' | 'other';
-export type ServiceUnit = 'per_visit' | 'per_sqft' | 'per_hour' | 'flat' | 'per_unit';
+  | 'cleanup' | 'tree' | 'sprinkler' | 'snow' | 'holiday'
+  | 'overseeding' | 'mulch' | 'other';
+export type ServiceUnit =
+  | 'per_visit' | 'per_sqft' | 'per_hour' | 'flat' | 'per_unit' | 'per_yard';
 export type JobStatus =
   | 'unscheduled' | 'scheduled' | 'in_progress' | 'complete' | 'cancelled' | 'issue';
 export type CrewMemberRole = 'lead' | 'member';
@@ -21,6 +23,16 @@ export interface Company {
   city?: string;
   state?: string;
   zip?: string;
+  /** Public marketing site URL — added in migration 017. */
+  website?: string | null;
+  /** One-line marketing tagline used on PDFs and the customer portal. */
+  tagline?: string | null;
+  /** Human-readable list of cities/regions served. */
+  service_area?: string | null;
+  /** Day → "8:00 AM – 4:30 PM" string map for the portal hours block. */
+  business_hours?: Record<string, string> | null;
+  /** Job-costing overhead % (migration 014). */
+  overhead_pct?: number | null;
   created_at: string;
 }
 

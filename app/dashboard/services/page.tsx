@@ -28,6 +28,8 @@ const categoryConfig: Record<ServiceCategory, { label: string; icon: React.React
   edging:        { label: 'Edging',        icon: <Leaf className="h-5 w-5" /> },
   fertilization: { label: 'Fertilization', icon: <Leaf className="h-5 w-5" /> },
   aeration:      { label: 'Aeration',      icon: <Droplets className="h-5 w-5" /> },
+  overseeding:   { label: 'Overseeding',   icon: <Leaf className="h-5 w-5" /> },
+  mulch:         { label: 'Mulch',         icon: <Package className="h-5 w-5" /> },
   cleanup:       { label: 'Cleanup',       icon: <Package className="h-5 w-5" /> },
   tree:          { label: 'Tree',          icon: <TreePine className="h-5 w-5" /> },
   sprinkler:     { label: 'Sprinkler',     icon: <Droplets className="h-5 w-5" /> },
@@ -39,8 +41,11 @@ const categoryConfig: Record<ServiceCategory, { label: string; icon: React.React
 const serviceSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   description: z.string().optional(),
-  category: z.enum(['mowing','edging','fertilization','aeration','cleanup','tree','sprinkler','snow','holiday','other']),
-  unit: z.enum(['per_visit','per_sqft','per_hour','flat','per_unit']),
+  category: z.enum([
+    'mowing','edging','fertilization','aeration','overseeding','mulch',
+    'cleanup','tree','sprinkler','snow','holiday','other',
+  ]),
+  unit: z.enum(['per_visit','per_sqft','per_hour','flat','per_unit','per_yard']),
   base_price: z.number().min(0, 'Price must be 0 or more'),
 });
 
@@ -52,6 +57,7 @@ const unitLabel: Record<string, string> = {
   per_hour: 'Per Hour',
   flat: 'Flat',
   per_unit: 'Per Unit',
+  per_yard: 'Per Yard',
 };
 
 export default function ServicesPage() {
