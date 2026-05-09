@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageIntro } from '@/components/help/page-intro';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
@@ -108,6 +109,17 @@ export default function DispatchPage() {
       <PageHeader
         title="Dispatch"
         description={`Live crew status · refreshed ${lastRefresh.toLocaleTimeString()}`}
+      />
+
+      <PageIntro
+        id="dispatch"
+        title="Live crew status"
+        description="Real-time view of who's clocked in, what's in progress, and which jobs still need attention. Refreshes every 30 seconds."
+        steps={[
+          'Each card shows a crew, their members on the clock, and today\'s jobs.',
+          'Job status badges update automatically as crews tap Start / Complete.',
+          'Click any job to open the detail page, reassign, or change status.',
+        ]}
       />
 
       {/* Summary bar */}

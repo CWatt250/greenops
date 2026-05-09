@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import { JobCard } from '@/components/jobs/job-card';
 import { EmptyState } from '@/components/shared/empty-state';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageIntro } from '@/components/help/page-intro';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Popover, PopoverContent, PopoverTrigger,
@@ -129,6 +130,17 @@ export default function JobsPage() {
         </Link>
       </PageHeader>
 
+      <PageIntro
+        id="jobs"
+        title="Every job in one list"
+        description="Filter by status, search by client or title, and select multiple to bulk-reassign or invoice."
+        steps={[
+          'Use the status pills to narrow to scheduled, in-progress, complete, or issue.',
+          'Tap the checkbox column to multi-select and reveal bulk actions.',
+          'Click a job row to see line items, costing, forms, and the activity log.',
+        ]}
+      />
+
       <div className="flex gap-2 flex-wrap mb-4">
         {statusFilters.map(({ label, value }) => (
           <button
@@ -218,13 +230,17 @@ export default function JobsPage() {
           title={statusFilter === 'all' ? 'No jobs yet' : `No ${statusFilter.replace('_', ' ')} jobs`}
           description={
             statusFilter === 'all'
-              ? 'Create your first job to start scheduling work.'
+              ? 'A job is a unit of work for one client on one date. Create one to drop it onto the schedule and assign a crew.'
               : 'Try a different status filter or create a new job.'
           }
           action={{
-            label: '+ New Job',
+            label: '+ Create your first job',
             onClick: () => router.push('/dashboard/jobs/new'),
           }}
+          secondaryAction={statusFilter === 'all' ? {
+            label: 'Learn more about jobs →',
+            onClick: () => window.open('https://tlclandscapemanagement.com/learn', '_blank'),
+          } : undefined}
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

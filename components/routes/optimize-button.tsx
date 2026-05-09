@@ -116,6 +116,7 @@ export function OptimizeButton({ stops, onOptimized, disabled }: OptimizeButtonP
       }
       variant={state === 'success' ? 'default' : state === 'error' ? 'destructive' : 'default'}
       className="gap-1.5"
+      title="Auto-sequence stops to minimize total drive time (VROOM)"
     >
       {icons[state]}
       {labels[state]}

@@ -43,6 +43,10 @@ export interface Profile {
   phone?: string;
   role: UserRole;
   avatar_url?: string;
+  /** Welcome-tour state (migration 018). */
+  welcome_tour_completed?: boolean;
+  /** Help-banner ids the user has dismissed (migration 018). */
+  dismissed_help_banners?: string[];
   created_at: string;
 }
 

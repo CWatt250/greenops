@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageIntro } from '@/components/help/page-intro';
 import { buttonVariants } from '@/components/ui/button';
 import { BillingScheduleCard } from '@/components/billing/billing-schedule-card';
 import { cn } from '@/lib/utils';
@@ -85,6 +86,17 @@ export default function BillingPage() {
           <Plus className="h-4 w-4 mr-1.5" /> New Invoice
         </Link>
       </PageHeader>
+
+      <PageIntro
+        id="billing"
+        title="Revenue at a glance"
+        description="Outstanding balances, recurring contract schedules, and per-month revenue. Use this page to see the money side of the business."
+        steps={[
+          'The summary cards roll up Outstanding, Paid, and Recurring monthly value.',
+          'Recurring contracts auto-generate invoices on the cadence you set on the proposal.',
+          'For one-off invoices, use + New Invoice or invoice from a completed job.',
+        ]}
+      />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

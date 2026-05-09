@@ -10,10 +10,22 @@ interface EmptyStateProps {
     label: string;
     onClick: () => void;
   };
+  /** Optional secondary text-button below the primary CTA. */
+  secondaryAction?: {
+    label: string;
+    onClick: () => void;
+  };
   className?: string;
 }
 
-export function EmptyState({ icon: Icon, title, description, action, className }: EmptyStateProps) {
+export function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  action,
+  secondaryAction,
+  className,
+}: EmptyStateProps) {
   return (
     <div className={cn('flex flex-col items-center justify-center py-16 px-4 text-center', className)}>
       <div className="rounded-full bg-muted p-4 mb-4">
@@ -26,10 +38,19 @@ export function EmptyState({ icon: Icon, title, description, action, className }
       {action && (
         <Button
           onClick={action.onClick}
-          style={{ backgroundColor: 'var(--color-brand-gold-raw)', color: '#fff' }}
+          style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
         >
           {action.label}
         </Button>
+      )}
+      {secondaryAction && (
+        <button
+          type="button"
+          onClick={secondaryAction.onClick}
+          className="mt-3 text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+        >
+          {secondaryAction.label}
+        </button>
       )}
     </div>
   );

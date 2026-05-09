@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { PortalActivityFeed } from '@/components/portal-admin/portal-activity-feed';
 import { AdminMessageThread } from '@/components/portal-admin/admin-message-thread';
+import { PageIntro } from '@/components/help/page-intro';
 import { ClipboardList, AlertTriangle } from 'lucide-react';
 
 export default async function PortalAdminPage() {
@@ -32,6 +33,17 @@ export default async function PortalAdminPage() {
         <h1 className="text-2xl font-bold">Customer Portal</h1>
         <p className="text-sm text-muted-foreground mt-1">Manage portal users, requests, and messages.</p>
       </div>
+
+      <PageIntro
+        id="portal-inbox"
+        title="What customers are sending in"
+        description="Service requests, complaints, and direct messages from clients who use the customer portal land here. Reply or convert to a job in one click."
+        steps={[
+          'Open Requests are clients asking for new work — convert them to jobs or proposals.',
+          'Complaints are issue reports — assign to a crew, message back, or mark resolved.',
+          'Messages thread is the live chat between you and any portal user.',
+        ]}
+      />
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { AnnounceButton } from '@/components/dashboard/announce-button';
+import { PageIntro } from '@/components/help/page-intro';
 import { Briefcase, Users, AlertTriangle, UsersRound, Plus, MapPin } from 'lucide-react';
 import { formatDate, cn } from '@/lib/utils';
 import type { Job } from '@/types';
@@ -78,6 +79,17 @@ export default async function DashboardPage() {
           <Plus className="h-4 w-4 mr-1.5" /> New Job
         </Link>
       </PageHeader>
+
+      <PageIntro
+        id="dashboard"
+        title="Your daily command center"
+        description="See today's stats, jump to common actions, and post announcements. Click any stat card to drill in."
+        steps={[
+          'Use the 📢 Announce button to send messages to crews or customers.',
+          'Tap a stat card to filter the matching list.',
+          '+ New Job and + New Client live up here for fast entry.',
+        ]}
+      />
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

@@ -8,6 +8,7 @@ import { ScheduleGrid } from '@/components/schedule/schedule-grid';
 import { ScheduleDayGrid } from '@/components/schedule/schedule-day-grid';
 import { ScheduleMonthGrid } from '@/components/schedule/schedule-month-grid';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageIntro } from '@/components/help/page-intro';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, CalendarDays, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -209,6 +210,17 @@ function SchedulePageInner() {
           <Plus className="h-4 w-4 mr-1.5" /> New Job
         </Link>
       </PageHeader>
+
+      <PageIntro
+        id="schedule"
+        title="Drag-and-drop scheduling"
+        description="Drop jobs onto a crew lane to assign them. The Day / Week / Month toggle controls the time horizon."
+        steps={[
+          'Drag a job card from one cell to another to reassign or reschedule.',
+          'Drop into the gray "Unassigned" lane to clear a crew without losing the date.',
+          'Click any job to open it; click + New Job to add to today.',
+        ]}
+      />
 
       {/* Top bar: nav + view toggle + label */}
       <div className="flex items-center gap-2 mb-5 flex-wrap">

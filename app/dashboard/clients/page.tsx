@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { ClientTable } from '@/components/clients/client-table';
 import { EmptyState } from '@/components/shared/empty-state';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageIntro } from '@/components/help/page-intro';
 import { buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, Users, Search } from 'lucide-react';
@@ -63,6 +64,17 @@ export default function ClientsPage() {
         </Link>
       </PageHeader>
 
+      <PageIntro
+        id="clients"
+        title="Your client database"
+        description="Every property you service. Click a client to see jobs, invoices, contact history, and notes in one place."
+        steps={[
+          '+ New Client uses Mapbox address autocomplete — just type the street.',
+          'Search filters by name, address, or phone in real time.',
+          'Click any row to open the client profile and timeline.',
+        ]}
+      />
+
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-5">
         <div className="relative flex-1">
@@ -103,10 +115,14 @@ export default function ClientsPage() {
         <EmptyState
           icon={Users}
           title="No clients yet"
-          description="Add your first client to get started."
+          description="Clients are the properties you service. Add one and you can schedule jobs, send invoices, and track profitability against them."
           action={{
             label: '+ Add your first client',
             onClick: () => router.push('/dashboard/clients/new'),
+          }}
+          secondaryAction={{
+            label: 'Learn more about clients →',
+            onClick: () => window.open('https://tlclandscapemanagement.com/learn', '_blank'),
           }}
         />
       ) : (

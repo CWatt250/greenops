@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageIntro } from '@/components/help/page-intro';
 import { EmptyState } from '@/components/shared/empty-state';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { Button } from '@/components/ui/button';
@@ -179,6 +180,17 @@ export default function ServicesPage() {
         </Button>
       </PageHeader>
 
+      <PageIntro
+        id="services"
+        title="Your service catalog"
+        description="Set base prices once and they auto-fill into proposals, invoices, and per-square-foot pricing."
+        steps={[
+          'Add Service: name, category, base price, and unit (flat / per sq ft / per hour).',
+          'Categories are filterable tabs — group similar offerings to keep the list scannable.',
+          'Anywhere a service is referenced, your latest price is used.',
+        ]}
+      />
+
       {/* Category tabs */}
       <div className="flex gap-2 flex-wrap mb-6 overflow-x-auto">
         {categories.map((cat) => (
@@ -208,8 +220,12 @@ export default function ServicesPage() {
         <EmptyState
           icon={Wrench}
           title="No services yet"
-          description="Add your first service to the catalog."
-          action={{ label: '+ Add Service', onClick: openCreate }}
+          description="Services are the things you sell — mowing, mulching, fertilization, pruning. Set base prices once and they auto-fill into proposals and invoices."
+          action={{ label: '+ Add your first service', onClick: openCreate }}
+          secondaryAction={{
+            label: 'Learn more about the catalog →',
+            onClick: () => window.open('https://tlclandscapemanagement.com/learn', '_blank'),
+          }}
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

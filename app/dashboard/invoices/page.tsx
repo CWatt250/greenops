@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageIntro } from '@/components/help/page-intro';
 import { buttonVariants } from '@/components/ui/button';
 import { InvoiceTable } from '@/components/billing/invoice-table';
 import { cn } from '@/lib/utils';
@@ -81,6 +82,17 @@ export default function InvoicesPage() {
           <Plus className="h-4 w-4 mr-1.5" /> New Invoice
         </Link>
       </PageHeader>
+
+      <PageIntro
+        id="invoices"
+        title="Bill and collect"
+        description="Track outstanding balances, generate PDF invoices for any completed job, and mark payment when it lands."
+        steps={[
+          'Outstanding / Paid / Overdue tiles up top show health at a glance.',
+          'Click + New Invoice to build one from scratch, or use the "Invoice this job" action on any complete job.',
+          'Mark Paid records the payment and stops dunning emails.',
+        ]}
+      />
 
       {/* Summary strip */}
       <div className="grid grid-cols-3 gap-4 mb-6">

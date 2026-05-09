@@ -11,7 +11,7 @@ import {
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 
-type NavItem = { href: string; label: string; icon: React.ElementType };
+type NavItem = { href: string; label: string; icon: React.ElementType; title?: string };
 type NavGroup = { section: string; items: NavItem[] };
 
 const navGroups: NavGroup[] = [
@@ -21,7 +21,7 @@ const navGroups: NavGroup[] = [
       { href: '/dashboard',          label: 'Dashboard', icon: LayoutDashboard },
       { href: '/dashboard/schedule', label: 'Schedule',  icon: CalendarDays },
       { href: '/dashboard/routes',   label: 'Routes',    icon: Route },
-      { href: '/dashboard/crew',     label: 'Dispatch',  icon: RadioTower },
+      { href: '/dashboard/crew',     label: 'Dispatch',  icon: RadioTower, title: 'Live crew status — who is on the clock and on which job' },
     ],
   },
   {
@@ -47,8 +47,8 @@ const navGroups: NavGroup[] = [
     section: 'Insight',
     items: [
       { href: '/dashboard/analytics',    label: 'Analytics',     icon: BarChart2 },
-      { href: '/dashboard/profitability', label: 'Profitability', icon: DollarSign },
-      { href: '/dashboard/portal-admin', label: 'Portal Inbox',  icon: Globe },
+      { href: '/dashboard/profitability', label: 'Profitability', icon: DollarSign, title: 'Cost-vs-revenue per job, client, and crew' },
+      { href: '/dashboard/portal-admin', label: 'Portal Inbox',  icon: Globe, title: 'Customer requests, complaints, and messages from the client portal' },
       { href: '/dashboard/settings',     label: 'Settings',      icon: Settings },
     ],
   },
@@ -64,12 +64,13 @@ export function Sidebar() {
     router.push('/login');
   }
 
-  function NavLink({ href, label, icon: Icon }: NavItem) {
+  function NavLink({ href, label, icon: Icon, title }: NavItem) {
     const isActive = href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(href);
     return (
       <li>
         <Link
           href={href}
+          title={title}
           className={cn(
             'flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] font-semibold transition-colors',
             isActive

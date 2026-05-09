@@ -167,6 +167,7 @@ export function AnnounceButton({ companyId }: Props) {
         variant="outline"
         onClick={() => setOpen(true)}
         className="gap-1.5"
+        title="Send a message to crews or customers"
       >
         <Megaphone className="h-4 w-4" />
         Announce

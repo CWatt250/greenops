@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Plus, Pencil, Trash2, Loader2, ClipboardList } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageIntro } from '@/components/help/page-intro';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { FormBuilder } from '@/components/forms/form-builder';
@@ -124,6 +125,17 @@ export default function FormsPage() {
           </Button>
         )}
       </PageHeader>
+
+      <PageIntro
+        id="forms"
+        title="Custom field forms"
+        description="Build inspections, sign-offs, waivers, and chemical-application logs that crews fill out from the job page."
+        steps={[
+          'Create Form, add fields (text, number, dropdown, signature, photo).',
+          'Once published, attach the form to any job from the Forms section on the job page.',
+          'Submitted forms become PDFs you can attach to invoices or share with clients.',
+        ]}
+      />
 
       {(creating || editing) && companyId && (
         <div className="rounded-xl border bg-card p-4 mb-6">

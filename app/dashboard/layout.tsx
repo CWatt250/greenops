@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { MobileNav } from '@/components/layout/mobile-nav';
 import { NotificationBell } from '@/components/shared/notification-bell';
 import { Button } from '@/components/ui/button';
 import { Menu } from 'lucide-react';
+import { WelcomeTour } from '@/components/help/welcome-tour';
+import { HelpButton } from '@/components/help/help-button';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -49,6 +51,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <main className="flex-1 p-4 md:p-6 lg:p-8">{children}</main>
       </div>
+
+      <Suspense fallback={null}>
+        <WelcomeTour />
+      </Suspense>
+      <HelpButton />
     </div>
   );
 }

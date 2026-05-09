@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageIntro } from '@/components/help/page-intro';
 import { StatCard } from '@/components/analytics/stat-card';
 import { RevenueChart } from '@/components/analytics/revenue-chart';
 import { JobStatusDonut } from '@/components/analytics/job-status-donut';
@@ -156,6 +157,17 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Analytics" description="Revenue, performance, and profitability insights" />
+
+      <PageIntro
+        id="analytics"
+        title="Business at a glance"
+        description="Revenue, completion rates, and trends — month-to-date with last-month comparisons. Hover any sparkline for the day-by-day breakdown."
+        steps={[
+          'The top row shows MTD revenue, jobs completed, average ticket, and customer growth.',
+          'Trend arrows compare to the prior month — green is up, red is down.',
+          'For job-level cost vs. revenue, see Profitability.',
+        ]}
+      />
 
       {/* Row 1: Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

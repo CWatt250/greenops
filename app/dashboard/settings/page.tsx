@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageIntro } from '@/components/help/page-intro';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PortalBannerForm } from '@/components/settings/portal-banner-form';
 import { NoteTemplatesManager } from '@/components/settings/note-templates-manager';
@@ -51,6 +52,17 @@ export default async function SettingsPage() {
   return (
     <div className="max-w-2xl">
       <PageHeader title="Settings" description="Manage your account and company settings" />
+
+      <PageIntro
+        id="settings"
+        title="Account, company, and team"
+        description="Update your profile, configure company-wide defaults like overhead percentage, and invite teammates from here."
+        steps={[
+          'Your account info is editable up top.',
+          'Company defaults — like overhead % — flow through to costing and profitability.',
+          'Invite owners, dispatchers, or crew with the Team section.',
+        ]}
+      />
 
       <div className="space-y-6">
         <Card>

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageIntro } from '@/components/help/page-intro';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Plus, FileText } from 'lucide-react';
@@ -70,6 +71,17 @@ export default function ProposalsPage() {
           <Plus className="h-4 w-4 mr-1.5" /> New Proposal
         </Link>
       </PageHeader>
+
+      <PageIntro
+        id="proposals"
+        title="Estimates that close"
+        description="Build a polished proposal in three steps: pick the client, add line items, send a PDF. Approved proposals can spawn jobs or recurring contracts in one click."
+        steps={[
+          'Click + New Proposal and choose: existing client, brand-new client, or measurement.',
+          'Add line items from your service catalog or write custom ones.',
+          'Send the PDF — when it\'s accepted, convert to job(s) with one button.',
+        ]}
+      />
 
       <div className="flex gap-2 flex-wrap mb-5">
         {STATUS_CHIPS.map(({ label, value }) => (

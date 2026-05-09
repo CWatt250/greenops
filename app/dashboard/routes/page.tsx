@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageIntro } from '@/components/help/page-intro';
 import { buttonVariants } from '@/components/ui/button';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -125,6 +126,17 @@ export default function RoutesPage() {
           <Plus className="h-4 w-4 mr-1.5" /> Build Route
         </Link>
       </PageHeader>
+
+      <PageIntro
+        id="routes"
+        title="Optimized daily routes"
+        description="Build a route per crew per day. The Optimize button sequences stops to minimize drive time using VROOM."
+        steps={[
+          'Click + Build Route, pick a crew + date, then add stops.',
+          'Hit Optimize to auto-order stops by shortest total drive.',
+          'Active routes update live as crews mark stops complete.',
+        ]}
+      />
 
       {/* Date navigation */}
       <div className="flex items-center gap-2 mb-5">

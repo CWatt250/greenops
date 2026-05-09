@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageIntro } from '@/components/help/page-intro';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { fmtUsd } from '@/lib/job-costing';
 import { cn } from '@/lib/utils';
@@ -128,6 +129,17 @@ export default async function ProfitabilityPage() {
         title="Profitability"
         eyebrow="Where the money is"
         description="Margin, profit, and which crews/clients/services pay the bills."
+      />
+
+      <PageIntro
+        id="profitability"
+        title="Job-level cost vs. revenue"
+        description="See actual margin on every completed job — labor, materials, equipment, and overhead all factored in. Sort by lowest margin to spot bleeders."
+        steps={[
+          'Most-profitable lists rank clients, services, and crews by net profit.',
+          'The monthly trend shows revenue vs. cost vs. profit margin.',
+          'Click any row to drill into the underlying jobs.',
+        ]}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

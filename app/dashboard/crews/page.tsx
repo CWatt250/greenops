@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageIntro } from '@/components/help/page-intro';
 import { EmptyState } from '@/components/shared/empty-state';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { Button } from '@/components/ui/button';
@@ -141,6 +142,17 @@ export default function CrewsPage() {
         </Button>
       </PageHeader>
 
+      <PageIntro
+        id="crews"
+        title="Your field teams"
+        description="Crews are color-coded so you can spot them on the schedule and routes at a glance. Click a crew to manage members and pay rates."
+        steps={[
+          '+ New Crew picks a name and color — those colors carry through Schedule and Routes.',
+          'Open a crew to add members, set hourly rates, and label leads.',
+          'Deactivate a crew to hide it from the app while keeping historical jobs intact.',
+        ]}
+      />
+
       {loading ? (
         <div className="text-sm text-muted-foreground text-center py-16">Loading…</div>
       ) : crews.length === 0 ? (
@@ -161,6 +173,7 @@ export default function CrewsPage() {
                 <div
                   className="h-4 w-4 rounded-full shrink-0"
                   style={{ backgroundColor: crew.color }}
+                  title={`Crew color (used on Schedule and Routes): ${crew.color}`}
                 />
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-sm truncate">{crew.name}</p>
