@@ -88,6 +88,10 @@ export interface CrewMember {
   crew_id: string;
   profile_id: string;
   role: CrewMemberRole;
+  /** Hourly billing rate for job-costing (migration 014). */
+  hourly_rate?: number | null;
+  /** Labor burden % on top of hourly rate (taxes, insurance, equipment). */
+  labor_burden_pct?: number | null;
   created_at: string;
   profile?: Profile;
 }
@@ -344,6 +348,21 @@ export interface ServicePreset {
   service_ids: string[];
   is_active: boolean;
   created_at: string;
+}
+
+export type JobCostCategory = 'material' | 'equipment' | 'other';
+
+export interface JobCostEntry {
+  id: string;
+  company_id: string;
+  job_id: string;
+  category: JobCostCategory;
+  description: string;
+  quantity: number;
+  unit_cost: number;
+  total_cost: number;
+  added_by?: string | null;
+  added_at: string;
 }
 
 export interface NoteTemplate {

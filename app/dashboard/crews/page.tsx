@@ -12,6 +12,7 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet';
 import { Plus, UsersRound, ChevronDown, ChevronRight, Pencil, PowerOff } from 'lucide-react';
+import { MemberRateRow } from '@/components/crews/member-rate-row';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -52,7 +53,7 @@ export default function CrewsPage() {
     setLoading(true);
     const { data } = await supabase
       .from('crews')
-      .select('*, crew_members(*, profile:profiles(*))')
+      .select('*, crew_members(*, hourly_rate, labor_burden_pct, profile:profiles(*))')
       .eq('is_active', true)
       .order('name');
     setCrews((data ?? []) as CrewWithMembers[]);
@@ -204,15 +205,7 @@ export default function CrewsPage() {
               {expanded[crew.id] && crew.crew_members.length > 0 && (
                 <div className="border-t divide-y">
                   {crew.crew_members.map((member) => (
-                    <div key={member.id} className="flex items-center gap-3 px-5 py-3">
-                      <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-xs font-semibold shrink-0">
-                        {(member.profile?.full_name ?? '?').charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">{member.profile?.full_name ?? 'Unknown'}</p>
-                        <p className="text-xs text-muted-foreground capitalize">{member.role}</p>
-                      </div>
-                    </div>
+                    <MemberRateRow key={member.id} member={member} />
                   ))}
                 </div>
               )}

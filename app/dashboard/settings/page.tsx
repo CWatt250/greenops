@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PortalBannerForm } from '@/components/settings/portal-banner-form';
 import { NoteTemplatesManager } from '@/components/settings/note-templates-manager';
+import { OverheadForm } from '@/components/settings/overhead-form';
 
 interface CompanyData {
   id: string;
@@ -17,6 +18,7 @@ interface CompanyData {
   portal_banner_cta_url?: string | null;
   portal_banner_expires_at?: string | null;
   portal_banner_enabled?: boolean | null;
+  overhead_pct?: number | null;
 }
 
 interface ProfileWithCompany {
@@ -36,7 +38,8 @@ export default async function SettingsPage() {
       `full_name, role, company:companies(
         id, name, phone, email,
         portal_banner_message, portal_banner_cta_label, portal_banner_cta_url,
-        portal_banner_expires_at, portal_banner_enabled
+        portal_banner_expires_at, portal_banner_enabled,
+        overhead_pct
       )`
     )
     .eq('id', user.id)
@@ -84,6 +87,20 @@ export default async function SettingsPage() {
                 <p className="text-xs text-muted-foreground">Phone</p>
                 <p className="text-sm font-medium">{c.phone ?? '—'}</p>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {c && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Job Costing</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <OverheadForm
+                companyId={c.id}
+                initialOverheadPct={Number(c.overhead_pct ?? 15)}
+              />
             </CardContent>
           </Card>
         )}

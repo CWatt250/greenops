@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { buttonVariants } from '@/components/ui/button';
 import { StatusWorkflow } from '@/components/jobs/status-workflow';
 import { JobActions } from '@/components/jobs/job-actions';
+import { JobCostingTab } from '@/components/jobs/job-costing-tab';
 import { Separator } from '@/components/ui/separator';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { rruleToText } from '@/lib/rrule-helpers';
@@ -47,7 +48,40 @@ export default async function JobDetailPage({ params }: Props) {
   const job = jobRes.data as Job & {
     client: { id: string; name: string; service_address: string; phone?: string } | null;
     crew: { id: string; name: string; color: string } | null;
+    estimated_labor_hours?: number;
+    estimated_labor_cost?: number;
+    estimated_materials_cost?: number;
+    estimated_equipment_cost?: number;
+    revenue?: number;
   };
+
+  // Pull company overhead and any linked invoice's total for revenue.
+  const [{ data: { user } }, invoiceRes] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase
+      .from('invoices')
+      .select('total')
+      .eq('job_id', id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  const userId = user?.id ?? null;
+  const { data: profile } = userId
+    ? await supabase
+        .from('profiles')
+        .select('company_id, company:companies(overhead_pct)')
+        .eq('id', userId)
+        .single()
+    : { data: null };
+  const companyId = (profile as { company_id?: string } | null)?.company_id ?? null;
+  const overheadPct = Number(
+    (profile as { company?: { overhead_pct?: number } | null } | null)?.company?.overhead_pct ?? 15
+  );
+  const invoiceRevenue = Number((invoiceRes.data as { total?: number } | null)?.total ?? 0);
+  const revenueFallback = invoiceRevenue > 0
+    ? invoiceRevenue
+    : Number((job.revenue as number | undefined) ?? 0);
   const lineItems = (lineItemsRes.data ?? []) as (JobLineItem & { service: { name: string; category: string } | null })[];
   const activity = (activityRes.data ?? []) as (ActivityLog & { actor: { full_name: string | null } | null })[];
 
@@ -201,6 +235,29 @@ export default async function JobDetailPage({ params }: Props) {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Costing */}
+        {companyId && userId && (
+          <div className="rounded-xl border bg-card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <span aria-hidden>💰</span>
+              <h2 className="text-sm font-semibold">Costing</h2>
+            </div>
+            <JobCostingTab
+              jobId={id}
+              companyId={companyId}
+              userId={userId}
+              initialEstimated={{
+                labor_hours: Number(job.estimated_labor_hours ?? 0),
+                labor_cost: Number(job.estimated_labor_cost ?? 0),
+                materials_cost: Number(job.estimated_materials_cost ?? 0),
+                equipment_cost: Number(job.estimated_equipment_cost ?? 0),
+              }}
+              initialRevenue={revenueFallback}
+              overheadPct={overheadPct}
+            />
           </div>
         )}
 

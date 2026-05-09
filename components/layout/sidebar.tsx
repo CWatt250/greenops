@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Users, Briefcase, Wrench, UsersRound, Settings, LogOut,
   CalendarDays, RadioTower, Route, FileText, Wallet, BarChart2, Globe,
-  ClipboardCheck, Ruler,
+  ClipboardCheck, Ruler, DollarSign,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -45,9 +45,10 @@ const navGroups: NavGroup[] = [
   {
     section: 'Insight',
     items: [
-      { href: '/dashboard/analytics',    label: 'Analytics',    icon: BarChart2 },
-      { href: '/dashboard/portal-admin', label: 'Portal Inbox', icon: Globe },
-      { href: '/dashboard/settings',     label: 'Settings',     icon: Settings },
+      { href: '/dashboard/analytics',    label: 'Analytics',     icon: BarChart2 },
+      { href: '/dashboard/profitability', label: 'Profitability', icon: DollarSign },
+      { href: '/dashboard/portal-admin', label: 'Portal Inbox',  icon: Globe },
+      { href: '/dashboard/settings',     label: 'Settings',      icon: Settings },
     ],
   },
 ];
