@@ -16,15 +16,23 @@ import { cn, formatCurrency } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   Plus, Trash2, ChevronLeft, ChevronRight, Save, Send, Loader2, Sparkles,
-  Check, MapPin, Phone, Mail,
+  Check, MapPin, Phone, Mail, UserPlus, User as UserIcon, FileText,
+  Calendar as CalendarIcon, X,
 } from 'lucide-react';
 import {
   FREQUENCY_LABELS, FREQUENCY_DISCOUNT_PCT, FREQUENCY_VISITS_PER_YEAR,
-  laborMultiplier, lineTotal, annualValue, profitMargin, marginColor,
+  laborMultiplier, lineTotal, annualValue, monthlyRecurring, perVisitSubtotal,
+  suggestedMonthlyRate, profitMargin, marginColor,
   type LineItemDraft, type PricingFlags,
 } from '@/lib/proposal-pricing';
+import {
+  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
+} from '@/components/ui/sheet';
+import { AddressSearch } from '@/components/measure/address-search';
+import type { PlaceSuggestion } from '@/lib/mapbox';
 import type {
-  Client, Service, LineItemFrequency, PropertyComplexity,
+  Client, Service, LineItemFrequency, PropertyComplexity, BillingMode,
+  ClientStatus, PropertyType,
 } from '@/types';
 
 interface Props {
@@ -61,6 +69,28 @@ function lineFromService(svc: Service): DraftLineItem {
     discount_pct: 0,
     frequency: 'one_time',
     frequency_discount_pct: 0,
+    billing_mode: 'per_visit',
+    monthly_rate: 0,
+    unit: svc.unit?.replace('_', ' ') ?? null,
+    notes: null,
+  };
+}
+
+function lineFromCustom(): DraftLineItem {
+  return {
+    _key: makeKey(),
+    service_id: null,
+    description: '',
+    quantity: 1,
+    unit_price: 0,
+    markup_pct: 20,
+    discount_pct: 0,
+    frequency: 'one_time',
+    frequency_discount_pct: 0,
+    billing_mode: 'per_visit',
+    monthly_rate: 0,
+    unit: 'each',
+    notes: null,
   };
 }
 
@@ -78,6 +108,37 @@ export function ProposalWizard({
   const [step, setStep] = useState<1 | 2 | 3>(initialStep);
   const [clientId, setClientId] = useState<string>(initialClientId ?? '');
   const [client, setClient] = useState<Client | null>(null);
+
+  // Step-1 path picker. Default to "new prospect" — most proposals are for
+  // people who don't exist as customers yet.
+  type Step1Path = 'new' | 'existing' | 'full';
+  const [step1Path, setStep1Path] = useState<Step1Path>('new');
+
+  // Path A — quick prospect inline form
+  const [prospectName, setProspectName] = useState('');
+  const [prospectAddress, setProspectAddress] = useState('');
+  const [prospectAddressInfo, setProspectAddressInfo] = useState<{
+    city: string | null; state: string | null; zip: string | null;
+  } | null>(null);
+  const [prospectPhone, setProspectPhone] = useState('');
+  const [prospectEmail, setProspectEmail] = useState('');
+
+  // Path C — full customer record sheet
+  const [fullSheetOpen, setFullSheetOpen] = useState(false);
+  const [fullName, setFullName] = useState('');
+  const [fullCompanyName, setFullCompanyName] = useState('');
+  const [fullPhone, setFullPhone] = useState('');
+  const [fullEmail, setFullEmail] = useState('');
+  const [fullPropertyType, setFullPropertyType] = useState<PropertyType>('residential');
+  const [fullPreferredContact, setFullPreferredContact] = useState<'phone' | 'email' | 'sms'>('phone');
+  const [fullAddress, setFullAddress] = useState('');
+  const [fullAddressInfo, setFullAddressInfo] = useState<{
+    city: string | null; state: string | null; zip: string | null;
+  } | null>(null);
+  const [fullNotes, setFullNotes] = useState('');
+
+  const [creatingClient, setCreatingClient] = useState(false);
+
   const [measurementTurfSqft, setMeasurementTurfSqft] = useState<number>(0);
   const [measurementHardscapeSqft, setMeasurementHardscapeSqft] = useState<number>(0);
   const [measurementBedSqft, setMeasurementBedSqft] = useState<number>(0);
@@ -103,10 +164,10 @@ export function ProposalWizard({
   const [saving, setSaving] = useState<null | 'draft' | 'send'>(null);
   const [propertyOpen, setPropertyOpen] = useState(false);
 
-  const subtotal = useMemo(
-    () => items.reduce((s, i) => s + lineTotal(i, flags), 0),
-    [items, flags]
-  );
+  // Per-visit subtotal excludes per_month lines. Tax applies here.
+  const subtotal = useMemo(() => perVisitSubtotal(items, flags), [items, flags]);
+  // Monthly recurring is the sum of per_month line totals.
+  const monthlyTotal = useMemo(() => monthlyRecurring(items, flags), [items, flags]);
   const taxAmount = useMemo(() => subtotal * (taxRate / 100), [subtotal, taxRate]);
   const grandTotal = subtotal + taxAmount;
   const annual = useMemo(() => annualValue(items, flags), [items, flags]);
@@ -329,6 +390,125 @@ export function ProposalWizard({
     });
   }
 
+  function setBillingMode(key: string, mode: BillingMode) {
+    setItems((prev) => prev.map((it) => {
+      if (it._key !== key) return it;
+      // When switching Per Visit → Per Month for the first time, auto-suggest
+      // a monthly rate from the visit math.
+      if (mode === 'per_month' && (!it.monthly_rate || it.monthly_rate === 0)) {
+        const suggested = suggestedMonthlyRate(it, flags);
+        return { ...it, billing_mode: 'per_month', monthly_rate: suggested };
+      }
+      return { ...it, billing_mode: mode };
+    }));
+  }
+
+  function addCustomLineItem() {
+    setItems((prev) => [...prev, lineFromCustom()]);
+  }
+
+  // ── Step 1 handlers ─────────────────────────────────────────────────────
+  async function createClientFromForm(payload: {
+    name: string;
+    address: string;
+    addressInfo: { city: string | null; state: string | null; zip: string | null } | null;
+    phone?: string;
+    email?: string;
+    company_name?: string;
+    property_type?: PropertyType;
+    preferred_contact?: 'phone' | 'email' | 'sms';
+    notes?: string;
+    status: ClientStatus;
+  }): Promise<{ id: string; row: Client } | null> {
+    if (!payload.name.trim()) {
+      toast.error('Name is required.');
+      return null;
+    }
+    setCreatingClient(true);
+    const insertPayload = {
+      company_id: companyId,
+      name: payload.name.trim(),
+      company_name: payload.company_name?.trim() || null,
+      phone: payload.phone?.trim() || null,
+      email: payload.email?.trim() || null,
+      preferred_contact: payload.preferred_contact ?? 'phone',
+      property_type: payload.property_type ?? 'residential',
+      service_address: payload.address.trim() || '—',
+      service_city: payload.addressInfo?.city ?? null,
+      service_state: payload.addressInfo?.state ?? null,
+      service_zip: payload.addressInfo?.zip ?? null,
+      billing_same_as_service: true,
+      access_notes: payload.notes?.trim() || null,
+      status: payload.status,
+    };
+    const { data, error } = await supabase
+      .from('clients')
+      .insert(insertPayload)
+      .select('*')
+      .single();
+    setCreatingClient(false);
+
+    if (error || !data) {
+      toast.error(error?.message ?? 'Failed to create client.');
+      return null;
+    }
+    const newClient = data as Client;
+    setClientId(newClient.id);
+    setClient(newClient);
+    return { id: newClient.id, row: newClient };
+  }
+
+  async function handleNewProspect() {
+    const created = await createClientFromForm({
+      name: prospectName,
+      address: prospectAddress,
+      addressInfo: prospectAddressInfo,
+      phone: prospectPhone,
+      email: prospectEmail,
+      status: 'prospect',
+    });
+    if (!created) return;
+    toast.success('Prospect added — fill in the rest later.');
+    setStep(2);
+  }
+
+  async function handleExistingClientContinue() {
+    if (!clientId) {
+      toast.error('Pick a client first.');
+      return;
+    }
+    setStep(2);
+  }
+
+  async function handleFullCustomerSubmit() {
+    const created = await createClientFromForm({
+      name: fullName,
+      company_name: fullCompanyName,
+      address: fullAddress,
+      addressInfo: fullAddressInfo,
+      phone: fullPhone,
+      email: fullEmail,
+      property_type: fullPropertyType,
+      preferred_contact: fullPreferredContact,
+      notes: fullNotes,
+      status: 'active',
+    });
+    if (!created) return;
+    toast.success(`${created.row.name} added as a customer.`);
+    setFullSheetOpen(false);
+    setStep(2);
+  }
+
+  function handleProspectAddress(place: PlaceSuggestion) {
+    setProspectAddress(place.placeName);
+    setProspectAddressInfo({ city: place.city, state: place.state, zip: place.zip });
+  }
+
+  function handleFullAddress(place: PlaceSuggestion) {
+    setFullAddress(place.placeName);
+    setFullAddressInfo({ city: place.city, state: place.state, zip: place.zip });
+  }
+
   async function handleSave(targetStatus: 'draft' | 'sent') {
     if (!clientId) { toast.error('Pick a client first.'); return; }
     if (items.length === 0) { toast.error('Add at least one line item.'); return; }
@@ -362,18 +542,34 @@ export function ProposalWizard({
       return;
     }
 
-    const inserts = items.map((it, i) => ({
-      estimate_id: estimate.id,
-      service_id: it.service_id,
-      description: it.description,
-      quantity: it.quantity,
-      unit_price: it.unit_price,
-      markup_pct: it.markup_pct,
-      discount_pct: it.discount_pct,
-      frequency: it.frequency,
-      frequency_discount_pct: it.frequency_discount_pct,
-      sort_order: i,
-    }));
+    const inserts = items.map((it, i) => {
+      const isCustom = it.service_id === null;
+      const isMonthly = it.billing_mode === 'per_month';
+      // For per_month lines, store qty=1 + unit_price=monthly_rate so the
+      // computed total column equals the monthly amount; markup/discount
+      // already absorbed into monthly_rate via the wizard's UI.
+      const qty = isMonthly ? 1 : it.quantity;
+      const unitPrice = isMonthly ? Number(it.monthly_rate ?? 0) : it.unit_price;
+      const markup = isMonthly ? 0 : it.markup_pct;
+      const discount = isMonthly ? 0 : it.discount_pct;
+      return {
+        estimate_id: estimate.id,
+        service_id: it.service_id,
+        description: it.description,
+        quantity: qty,
+        unit_price: unitPrice,
+        markup_pct: markup,
+        discount_pct: discount,
+        frequency: it.frequency,
+        frequency_discount_pct: it.frequency_discount_pct,
+        billing_mode: it.billing_mode ?? 'per_visit',
+        monthly_rate: isMonthly ? Number(it.monthly_rate ?? 0) : null,
+        is_custom: isCustom,
+        unit: it.unit ?? null,
+        notes: it.notes?.trim() || null,
+        sort_order: i,
+      };
+    });
 
     const { error: linesErr } = await supabase
       .from('estimate_line_items')
@@ -422,60 +618,279 @@ export function ProposalWizard({
         ))}
       </ol>
 
-      {/* STEP 1 — pick client */}
+      {/* STEP 1 — three paths */}
       {step === 1 && (
-        <div className="rounded-xl border bg-card p-6 space-y-5 max-w-xl">
-          <div>
-            <Label className="text-xs mb-1.5 block">Client</Label>
-            <ClientCombobox
-              value={clientId}
-              onChange={(id, c) => {
-                setClientId(id);
-                setClient(c);
-              }}
-            />
-          </div>
+        <div className="space-y-4 max-w-xl">
+          <h2 className="text-base font-semibold">Who's this proposal for?</h2>
 
-          {client && (
-            <div className="rounded-lg bg-muted/40 p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-sm">{client.name}</h3>
-                <span className="text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded-full bg-[var(--orange-soft)] text-[var(--orange-deep)]">
-                  {client.property_type}
-                </span>
+          {/* Path A — New prospect (default highlighted) */}
+          <PathCard
+            active={step1Path === 'new'}
+            onClick={() => setStep1Path('new')}
+            icon={<Sparkles className="h-4 w-4" />}
+            title="New prospect — quick entry"
+            desc="Just a name + address, no full record"
+          >
+            {step1Path === 'new' && (
+              <div className="space-y-3 pt-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="prospect-name" className="text-xs">Name *</Label>
+                  <Input
+                    id="prospect-name"
+                    value={prospectName}
+                    onChange={(e) => setProspectName(e.target.value)}
+                    placeholder="John Smith"
+                    className="h-9 text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Service address</Label>
+                  <AddressSearch
+                    onAddress={handleProspectAddress}
+                    autoFocus={false}
+                    initialValue={prospectAddress}
+                    placeholder="1234 Main St, Kennewick"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="prospect-phone" className="text-xs">Phone</Label>
+                    <Input
+                      id="prospect-phone"
+                      type="tel"
+                      value={prospectPhone}
+                      onChange={(e) => setProspectPhone(e.target.value)}
+                      placeholder="(509) 555-0100"
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="prospect-email" className="text-xs">Email</Label>
+                    <Input
+                      id="prospect-email"
+                      type="email"
+                      value={prospectEmail}
+                      onChange={(e) => setProspectEmail(e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end pt-1">
+                  <Button
+                    onClick={handleNewProspect}
+                    disabled={!prospectName.trim() || creatingClient}
+                    className="gap-1.5"
+                    style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
+                  >
+                    {creatingClient
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <ChevronRight className="h-3.5 w-3.5" />}
+                    Continue to services
+                  </Button>
+                </div>
               </div>
-              <div className="text-xs text-muted-foreground space-y-1">
-                {client.service_address && (
-                  <p className="flex items-center gap-1.5">
-                    <MapPin className="h-3 w-3" /> {client.service_address}
-                  </p>
-                )}
-                {client.phone && (
-                  <p className="flex items-center gap-1.5">
-                    <Phone className="h-3 w-3" /> {client.phone}
-                  </p>
-                )}
-                {client.email && (
-                  <p className="flex items-center gap-1.5">
-                    <Mail className="h-3 w-3" /> {client.email}
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
+            )}
+          </PathCard>
 
-          <div className="flex justify-end">
-            <Button
-              disabled={!clientId}
-              onClick={() => setStep(2)}
-              style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
-              className="gap-1.5"
-            >
-              Continue <ChevronRight className="h-3.5 w-3.5" />
-            </Button>
-          </div>
+          {/* Path B — Existing client */}
+          <PathCard
+            active={step1Path === 'existing'}
+            onClick={() => setStep1Path('existing')}
+            icon={<UserIcon className="h-4 w-4" />}
+            title="Existing client"
+            desc="Pick from your customer list"
+          >
+            {step1Path === 'existing' && (
+              <div className="space-y-3 pt-3">
+                <ClientCombobox
+                  value={clientId}
+                  onChange={(id, c) => {
+                    setClientId(id);
+                    setClient(c);
+                  }}
+                  placeholder="Search clients…"
+                />
+                {client && (
+                  <div className="rounded-lg bg-muted/40 p-3 space-y-1 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-sm">{client.name}</span>
+                      <span className="text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded-full bg-[var(--orange-soft)] text-[var(--orange-deep)]">
+                        {client.property_type}
+                      </span>
+                    </div>
+                    {client.service_address && (
+                      <p className="flex items-center gap-1.5 text-muted-foreground">
+                        <MapPin className="h-3 w-3" /> {client.service_address}
+                      </p>
+                    )}
+                    {client.phone && (
+                      <p className="flex items-center gap-1.5 text-muted-foreground">
+                        <Phone className="h-3 w-3" /> {client.phone}
+                      </p>
+                    )}
+                    {client.email && (
+                      <p className="flex items-center gap-1.5 text-muted-foreground">
+                        <Mail className="h-3 w-3" /> {client.email}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <div className="flex justify-end pt-1">
+                  <Button
+                    onClick={handleExistingClientContinue}
+                    disabled={!clientId}
+                    className="gap-1.5"
+                    style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
+                  >
+                    Continue <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </PathCard>
+
+          {/* Path C — Full customer record */}
+          <PathCard
+            active={step1Path === 'full'}
+            onClick={() => {
+              setStep1Path('full');
+              setFullSheetOpen(true);
+            }}
+            icon={<UserPlus className="h-4 w-4" />}
+            title="Create full customer record + proposal"
+            desc="Save as customer with all details"
+          />
         </div>
       )}
+
+      {/* Slide-out sheet for Path C */}
+      <Sheet
+        open={fullSheetOpen}
+        onOpenChange={(o) => {
+          setFullSheetOpen(o);
+          if (!o && step1Path === 'full' && !clientId) {
+            // User dismissed without saving — fall back to default path.
+            setStep1Path('new');
+          }
+        }}
+      >
+        <SheetContent className="overflow-y-auto sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>New customer</SheetTitle>
+            <SheetDescription>
+              Save as a full customer record. Status starts at <strong>Active</strong>.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="full-name" className="text-xs">Name *</Label>
+              <Input
+                id="full-name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="h-9 text-sm"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="full-company" className="text-xs">Company (optional)</Label>
+              <Input
+                id="full-company"
+                value={fullCompanyName}
+                onChange={(e) => setFullCompanyName(e.target.value)}
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Service address</Label>
+              <AddressSearch
+                onAddress={handleFullAddress}
+                autoFocus={false}
+                initialValue={fullAddress}
+                placeholder="1234 Main St, Kennewick"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="full-phone" className="text-xs">Phone</Label>
+                <Input
+                  id="full-phone"
+                  type="tel"
+                  value={fullPhone}
+                  onChange={(e) => setFullPhone(e.target.value)}
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="full-email" className="text-xs">Email</Label>
+                <Input
+                  id="full-email"
+                  type="email"
+                  value={fullEmail}
+                  onChange={(e) => setFullEmail(e.target.value)}
+                  className="h-9 text-sm"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Property type</Label>
+                <Select
+                  value={fullPropertyType}
+                  onValueChange={(v) => setFullPropertyType((v ?? 'residential') as PropertyType)}
+                >
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="residential">Residential</SelectItem>
+                    <SelectItem value="commercial">Commercial</SelectItem>
+                    <SelectItem value="hoa">HOA</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Preferred contact</Label>
+                <Select
+                  value={fullPreferredContact}
+                  onValueChange={(v) => setFullPreferredContact((v ?? 'phone') as 'phone' | 'email' | 'sms')}
+                >
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="phone">Phone</SelectItem>
+                    <SelectItem value="email">Email</SelectItem>
+                    <SelectItem value="sms">SMS</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="full-notes" className="text-xs">Notes (optional)</Label>
+              <textarea
+                id="full-notes"
+                value={fullNotes}
+                onChange={(e) => setFullNotes(e.target.value)}
+                rows={3}
+                className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="Gate codes, dogs, special access notes…"
+              />
+            </div>
+            <Button
+              onClick={handleFullCustomerSubmit}
+              disabled={creatingClient || !fullName.trim()}
+              className="w-full gap-1.5"
+              style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
+            >
+              {creatingClient
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <ChevronRight className="h-3.5 w-3.5" />}
+              Save customer + Continue
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* STEP 2 — build services */}
       {step === 2 && (
@@ -544,6 +959,17 @@ export function ProposalWizard({
                   </button>
                 ))}
               </div>
+              <div className="border-t p-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={addCustomLineItem}
+                  className="w-full justify-start gap-1.5 border-dashed"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Custom Line Item
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -572,21 +998,37 @@ export function ProposalWizard({
               </div>
               {items.length === 0 ? (
                 <p className="text-xs text-muted-foreground italic px-4 py-8 text-center">
-                  Add services from the catalog or use a quick-add preset.
+                  Add services from the catalog, use a preset, or click <strong>+ Custom Line Item</strong>.
                 </p>
               ) : (
                 <ul className="divide-y">
-                  {items.map((it) => (
+                  {items.map((it) => {
+                    const isCustom = it.service_id === null;
+                    const isMonthly = it.billing_mode === 'per_month';
+                    const suggested = !isMonthly
+                      ? suggestedMonthlyRate(it, flags)
+                      : 0;
+                    return (
                     <li key={it._key} className="p-3 space-y-2">
-                      <div className="flex gap-2">
-                        <Input
-                          value={it.description}
-                          onChange={(e) => updateItem(it._key, { description: e.target.value })}
-                          className="h-8 text-sm font-medium"
-                        />
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Input
+                              value={it.description}
+                              onChange={(e) => updateItem(it._key, { description: e.target.value })}
+                              className="h-8 text-sm font-medium"
+                              placeholder={isCustom ? 'e.g. Trim the rose bushes' : ''}
+                            />
+                            {isCustom && (
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-[var(--orange-soft)] text-[var(--orange-deep)] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
+                                <Sparkles className="h-2.5 w-2.5" /> Custom
+                              </span>
+                            )}
+                          </div>
+                        </div>
                         <Button
                           variant="ghost" size="sm"
-                          className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
                           onClick={() => removeItem(it._key)}
                           aria-label="Remove line item"
                           title="Remove"
@@ -594,43 +1036,9 @@ export function ProposalWizard({
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                        <div>
-                          <Label className="text-[10px] text-muted-foreground uppercase">Qty</Label>
-                          <Input
-                            type="number" min={0} step={0.5}
-                            value={it.quantity}
-                            onChange={(e) => updateItem(it._key, { quantity: parseFloat(e.target.value) || 0 })}
-                            className="h-8 text-xs tabular-nums"
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-[10px] text-muted-foreground uppercase">Unit $</Label>
-                          <Input
-                            type="number" min={0} step={0.01}
-                            value={it.unit_price}
-                            onChange={(e) => updateItem(it._key, { unit_price: parseFloat(e.target.value) || 0 })}
-                            className="h-8 text-xs tabular-nums"
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-[10px] text-muted-foreground uppercase">Markup %</Label>
-                          <Input
-                            type="number" min={0} step={1}
-                            value={it.markup_pct}
-                            onChange={(e) => updateItem(it._key, { markup_pct: parseFloat(e.target.value) || 0 })}
-                            className="h-8 text-xs tabular-nums"
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-[10px] text-muted-foreground uppercase">Disc %</Label>
-                          <Input
-                            type="number" min={0} max={100} step={1}
-                            value={it.discount_pct}
-                            onChange={(e) => updateItem(it._key, { discount_pct: parseFloat(e.target.value) || 0 })}
-                            className="h-8 text-xs tabular-nums"
-                          />
-                        </div>
+
+                      {/* Frequency + Billing-mode toggle row */}
+                      <div className="grid grid-cols-2 gap-2">
                         <div>
                           <Label className="text-[10px] text-muted-foreground uppercase">Frequency</Label>
                           <Select
@@ -649,26 +1057,155 @@ export function ProposalWizard({
                             </SelectContent>
                           </Select>
                         </div>
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground uppercase">Billing</Label>
+                          <div className="inline-flex h-8 w-full rounded-md border bg-background p-0.5">
+                            {(['per_visit', 'per_month'] as BillingMode[]).map((m) => (
+                              <button
+                                key={m}
+                                type="button"
+                                onClick={() => setBillingMode(it._key, m)}
+                                className={cn(
+                                  'flex-1 rounded text-[10px] font-semibold transition-colors capitalize',
+                                  it.billing_mode === m
+                                    ? 'bg-[var(--orange)] text-white'
+                                    : 'text-muted-foreground hover:text-foreground'
+                                )}
+                                title={m === 'per_visit' ? 'Bill per completed visit / service' : 'Bill a fixed monthly rate'}
+                              >
+                                {m === 'per_visit' ? 'Per visit' : 'Per month'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
+
+                      {/* Per-visit fields */}
+                      {!isMonthly && (
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                          <div>
+                            <Label className="text-[10px] text-muted-foreground uppercase">Qty</Label>
+                            <Input
+                              type="number" min={0} step={0.5}
+                              value={it.quantity}
+                              onChange={(e) => updateItem(it._key, { quantity: parseFloat(e.target.value) || 0 })}
+                              className="h-8 text-xs tabular-nums"
+                            />
+                          </div>
+                          {isCustom && (
+                            <div>
+                              <Label className="text-[10px] text-muted-foreground uppercase">Unit</Label>
+                              <Input
+                                value={it.unit ?? ''}
+                                onChange={(e) => updateItem(it._key, { unit: e.target.value })}
+                                placeholder="each, hour, sq ft"
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                          )}
+                          <div>
+                            <Label className="text-[10px] text-muted-foreground uppercase">Unit $</Label>
+                            <Input
+                              type="number" min={0} step={0.01}
+                              value={it.unit_price}
+                              onChange={(e) => updateItem(it._key, { unit_price: parseFloat(e.target.value) || 0 })}
+                              className="h-8 text-xs tabular-nums"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px] text-muted-foreground uppercase">Markup %</Label>
+                            <Input
+                              type="number" min={0} step={1}
+                              value={it.markup_pct}
+                              onChange={(e) => updateItem(it._key, { markup_pct: parseFloat(e.target.value) || 0 })}
+                              className="h-8 text-xs tabular-nums"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px] text-muted-foreground uppercase">Disc %</Label>
+                            <Input
+                              type="number" min={0} max={100} step={1}
+                              value={it.discount_pct}
+                              onChange={(e) => updateItem(it._key, { discount_pct: parseFloat(e.target.value) || 0 })}
+                              className="h-8 text-xs tabular-nums"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Per-month field */}
+                      {isMonthly && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-[10px] text-muted-foreground uppercase">Monthly $</Label>
+                            <Input
+                              type="number" min={0} step={0.01}
+                              value={it.monthly_rate ?? 0}
+                              onChange={(e) => updateItem(it._key, { monthly_rate: parseFloat(e.target.value) || 0 })}
+                              className="h-8 text-xs tabular-nums"
+                            />
+                          </div>
+                          <div className="flex items-end">
+                            <span className="text-[10px] text-muted-foreground italic">
+                              Annual = monthly × 12 = {formatCurrency((Number(it.monthly_rate ?? 0)) * 12)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Notes (optional) — always available, useful for custom lines */}
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground select-none">
+                          {it.notes ? 'Notes (printed on proposal)' : 'Add notes'}
+                        </summary>
+                        <textarea
+                          value={it.notes ?? ''}
+                          onChange={(e) => updateItem(it._key, { notes: e.target.value })}
+                          rows={2}
+                          placeholder="Additional details for this line — prints on the proposal PDF."
+                          className="mt-1.5 w-full rounded-md border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                      </details>
+
                       <div className="flex items-center justify-between text-xs">
                         <div className="flex flex-wrap gap-1.5">
-                          {(it.frequency_discount_pct ?? 0) > 0 && (
+                          {!isMonthly && (it.frequency_discount_pct ?? 0) > 0 && (
                             <span className="inline-flex items-center gap-1 rounded-full bg-green-100 text-green-700 px-2 py-0.5 text-[10px] font-semibold">
                               {FREQUENCY_LABELS[it.frequency]} client save {it.frequency_discount_pct}%
                             </span>
                           )}
-                          {it.frequency !== 'one_time' && (
+                          {!isMonthly && it.frequency !== 'one_time' && (
                             <span className="inline-flex items-center gap-1 rounded-full bg-[var(--orange-soft)] text-[var(--orange-deep)] px-2 py-0.5 text-[10px] font-semibold">
                               ~{FREQUENCY_VISITS_PER_YEAR[it.frequency]}× / year
                             </span>
                           )}
+                          {!isMonthly && suggested > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setBillingMode(it._key, 'per_month')}
+                              className="inline-flex items-center gap-1 rounded-full bg-green-100 text-green-700 px-2 py-0.5 text-[10px] font-semibold hover:bg-green-200 transition-colors"
+                              title="Tap to switch this line to per-month billing"
+                            >
+                              <CalendarIcon className="h-2.5 w-2.5" />
+                              Suggested {formatCurrency(suggested)}/mo
+                            </button>
+                          )}
+                          {isMonthly && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-[var(--orange-soft)] text-[var(--orange-deep)] px-2 py-0.5 text-[10px] font-semibold">
+                              <CalendarIcon className="h-2.5 w-2.5" /> Recurring monthly
+                            </span>
+                          )}
                         </div>
                         <span className="font-semibold tabular-nums">
-                          {formatCurrency(lineTotal(it, flags))} <span className="text-muted-foreground font-normal">/ visit</span>
+                          {formatCurrency(lineTotal(it, flags))}
+                          <span className="text-muted-foreground font-normal">
+                            {' '}/ {isMonthly ? 'month' : 'visit'}
+                          </span>
                         </span>
                       </div>
                     </li>
-                  ))}
+                  );
+                  })}
                 </ul>
               )}
             </div>
@@ -733,10 +1270,18 @@ export function ProposalWizard({
 
             {/* Live totals */}
             <div className="rounded-xl border bg-card p-4 space-y-1 text-sm">
-              <div className="flex justify-between text-muted-foreground">
-                <span>Subtotal (per visit)</span>
-                <span className="tabular-nums">{formatCurrency(subtotal)}</span>
-              </div>
+              {subtotal > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Per-visit subtotal</span>
+                  <span className="tabular-nums">{formatCurrency(subtotal)}</span>
+                </div>
+              )}
+              {monthlyTotal > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Monthly recurring</span>
+                  <span className="tabular-nums">{formatCurrency(monthlyTotal)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-foreground font-semibold">
                 <span>Annual contract value</span>
                 <span className="tabular-nums" style={{ color: 'var(--orange)' }}>
@@ -805,49 +1350,97 @@ export function ProposalWizard({
                 <tr>
                   <th className="text-left px-3 py-2 font-semibold">Service</th>
                   <th className="text-right px-3 py-2 font-semibold w-24">Frequency</th>
+                  <th className="text-right px-3 py-2 font-semibold w-24">Billing</th>
                   <th className="text-right px-3 py-2 font-semibold w-24">Qty × $</th>
-                  <th className="text-right px-3 py-2 font-semibold w-24">Total</th>
+                  <th className="text-right px-3 py-2 font-semibold w-28">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {items.map((it) => (
-                  <tr key={it._key}>
-                    <td className="px-3 py-2">{it.description}</td>
-                    <td className="px-3 py-2 text-right text-muted-foreground">
-                      {FREQUENCY_LABELS[it.frequency]}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                      {it.quantity} × {formatCurrency(it.unit_price)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums font-semibold">
-                      {formatCurrency(lineTotal(it, flags))}
-                    </td>
-                  </tr>
-                ))}
+                {items.map((it) => {
+                  const isCustom = it.service_id === null;
+                  const isMonthly = it.billing_mode === 'per_month';
+                  return (
+                    <tr key={it._key}>
+                      <td className="px-3 py-2">
+                        <span className="inline-flex items-center gap-1.5 flex-wrap">
+                          {it.description}
+                          {isCustom && (
+                            <span className="inline-flex items-center gap-0.5 rounded-full bg-[var(--orange-soft)] text-[var(--orange-deep)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider">
+                              <Sparkles className="h-2.5 w-2.5" /> Custom
+                            </span>
+                          )}
+                        </span>
+                        {it.notes && (
+                          <p className="text-[11px] text-muted-foreground mt-0.5 italic">
+                            {it.notes}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-muted-foreground">
+                        {FREQUENCY_LABELS[it.frequency]}
+                      </td>
+                      <td className="px-3 py-2 text-right text-muted-foreground capitalize">
+                        {isMonthly ? 'Per month' : 'Per visit'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                        {isMonthly
+                          ? `${formatCurrency(Number(it.monthly_rate ?? 0))} / mo`
+                          : `${it.quantity}${it.unit ? ' ' + it.unit : ''} × ${formatCurrency(it.unit_price)}`}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                        {formatCurrency(lineTotal(it, flags))}
+                        <span className="block text-[10px] text-muted-foreground font-normal">
+                          / {isMonthly ? 'month' : 'visit'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
 
             <div className="ml-auto w-full max-w-xs space-y-1 text-sm">
-              <div className="flex justify-between text-muted-foreground">
-                <span>Subtotal (per visit)</span>
-                <span className="tabular-nums">{formatCurrency(subtotal)}</span>
-              </div>
-              <div className="flex items-center justify-between text-muted-foreground gap-2">
-                <span>Tax %</span>
-                <Input
-                  type="number" min={0} step={0.1}
-                  value={taxRate}
-                  onChange={(e) => setTaxRate(parseFloat(e.target.value) || 0)}
-                  className="h-7 w-16 text-xs text-right tabular-nums"
-                />
-              </div>
-              <div
-                className="flex justify-between text-white font-bold rounded-md px-3 py-2 mt-1"
-                style={{ backgroundColor: 'var(--orange)' }}
-              >
-                <span>Total per visit</span>
-                <span className="tabular-nums">{formatCurrency(grandTotal)}</span>
-              </div>
+              {subtotal > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Per-visit subtotal</span>
+                  <span className="tabular-nums">{formatCurrency(subtotal)}</span>
+                </div>
+              )}
+              {monthlyTotal > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Monthly recurring</span>
+                  <span className="tabular-nums">{formatCurrency(monthlyTotal)}</span>
+                </div>
+              )}
+              {subtotal > 0 && (
+                <div className="flex items-center justify-between text-muted-foreground gap-2">
+                  <span>Tax % (per-visit)</span>
+                  <Input
+                    type="number" min={0} step={0.1}
+                    value={taxRate}
+                    onChange={(e) => setTaxRate(parseFloat(e.target.value) || 0)}
+                    className="h-7 w-16 text-xs text-right tabular-nums"
+                  />
+                </div>
+              )}
+              {grandTotal > 0 && (
+                <div
+                  className="flex justify-between text-white font-bold rounded-md px-3 py-2 mt-1"
+                  style={{ backgroundColor: 'var(--orange)' }}
+                >
+                  <span>Total per visit</span>
+                  <span className="tabular-nums">{formatCurrency(grandTotal)}</span>
+                </div>
+              )}
+              {monthlyTotal > 0 && (
+                <div
+                  className="flex justify-between text-white font-bold rounded-md px-3 py-2"
+                  style={{ backgroundColor: 'var(--orange)' }}
+                >
+                  <span>Total per month</span>
+                  <span className="tabular-nums">{formatCurrency(monthlyTotal)}</span>
+                </div>
+              )}
               {annual > 0 && (
                 <div
                   className="flex justify-between font-bold rounded-md px-3 py-2"
@@ -925,6 +1518,50 @@ export function ProposalWizard({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function PathCard({
+  active, onClick, icon, title, desc, children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-xl border bg-card transition-all',
+        active && 'ring-2 ring-[var(--orange)] border-[var(--orange)]'
+      )}
+    >
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          'flex w-full items-start gap-3 p-4 text-left transition-colors',
+          !active && 'hover:bg-accent/40'
+        )}
+      >
+        <span
+          className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
+          style={{
+            backgroundColor: active ? 'var(--orange)' : 'var(--orange-soft)',
+            color: active ? '#fff' : 'var(--orange-deep)',
+          }}
+        >
+          {icon}
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm font-semibold">{title}</span>
+          <span className="block text-[11px] text-muted-foreground mt-0.5">{desc}</span>
+        </span>
+      </button>
+      {children && <div className="px-4 pb-4">{children}</div>}
     </div>
   );
 }

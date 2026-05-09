@@ -45,7 +45,14 @@ export default async function ProposalDetailPage({ params }: Props) {
   };
   const lineItems = (lineItemsRes.data ?? []) as EstimateLineItem[];
 
-  const subtotal = lineItems.reduce((s, li) => s + Number(li.total ?? 0), 0);
+  // Split totals by billing mode so the detail page mirrors the wizard.
+  const perVisitLines = lineItems.filter((li) => li.billing_mode !== 'per_month');
+  const perMonthLines = lineItems.filter((li) => li.billing_mode === 'per_month');
+  const subtotal = perVisitLines.reduce((s, li) => s + Number(li.total ?? 0), 0);
+  const monthlyTotal = perMonthLines.reduce(
+    (s, li) => s + Number(li.monthly_rate ?? li.total ?? 0),
+    0
+  );
   const taxAmount = subtotal * (Number(proposal.tax_rate ?? 0) / 100);
   const grandTotal = subtotal + taxAmount;
 
@@ -125,29 +132,56 @@ export default async function ProposalDetailPage({ params }: Props) {
           <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="text-left px-4 py-2.5 font-semibold">Service</th>
-              <th className="text-right px-4 py-2.5 font-semibold w-28">Frequency</th>
+              <th className="text-right px-4 py-2.5 font-semibold w-24">Frequency</th>
+              <th className="text-right px-4 py-2.5 font-semibold w-24">Billing</th>
               <th className="text-right px-4 py-2.5 font-semibold w-28">Qty × $</th>
               <th className="text-right px-4 py-2.5 font-semibold w-28">Total</th>
             </tr>
           </thead>
           <tbody className="divide-y">
-            {lineItems.map((li) => (
-              <tr key={li.id}>
-                <td className="px-4 py-3">{li.description}</td>
-                <td className="px-4 py-3 text-right text-muted-foreground">
-                  {li.frequency ? FREQUENCY_LABELS[li.frequency] : 'One-time'}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
-                  {Number(li.quantity)} × {formatCurrency(Number(li.unit_price))}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums font-semibold">
-                  {formatCurrency(Number(li.total ?? 0))}
-                </td>
-              </tr>
-            ))}
+            {lineItems.map((li) => {
+              const isMonthly = li.billing_mode === 'per_month';
+              const total = isMonthly
+                ? Number(li.monthly_rate ?? li.total ?? 0)
+                : Number(li.total ?? 0);
+              return (
+                <tr key={li.id}>
+                  <td className="px-4 py-3">
+                    {li.description}
+                    {li.is_custom && (
+                      <span className="ml-1.5 inline-flex items-center rounded-full bg-[var(--orange-soft)] text-[var(--orange-deep)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider align-middle">
+                        Custom
+                      </span>
+                    )}
+                    {li.notes && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5 italic">
+                        {li.notes}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right text-muted-foreground">
+                    {li.frequency ? FREQUENCY_LABELS[li.frequency] : 'One-time'}
+                  </td>
+                  <td className="px-4 py-3 text-right text-muted-foreground capitalize">
+                    {isMonthly ? 'Per month' : 'Per visit'}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                    {isMonthly
+                      ? `${formatCurrency(Number(li.monthly_rate ?? 0))} / mo`
+                      : `${Number(li.quantity)}${li.unit ? ' ' + li.unit : ''} × ${formatCurrency(Number(li.unit_price))}`}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums font-semibold">
+                    {formatCurrency(total)}
+                    <span className="block text-[10px] text-muted-foreground font-normal">
+                      / {isMonthly ? 'month' : 'visit'}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
             {lineItems.length === 0 && (
               <tr>
-                <td colSpan={4} className="text-center px-4 py-6 text-muted-foreground italic">
+                <td colSpan={5} className="text-center px-4 py-6 text-muted-foreground italic">
                   No line items.
                 </td>
               </tr>
@@ -157,23 +191,42 @@ export default async function ProposalDetailPage({ params }: Props) {
       </div>
 
       <div className="ml-auto w-full max-w-xs space-y-1 text-sm">
-        <div className="flex justify-between text-muted-foreground">
-          <span>Subtotal</span>
-          <span className="tabular-nums">{formatCurrency(subtotal)}</span>
-        </div>
-        {Number(proposal.tax_rate ?? 0) > 0 && (
+        {subtotal > 0 && (
+          <div className="flex justify-between text-muted-foreground">
+            <span>Per-visit subtotal</span>
+            <span className="tabular-nums">{formatCurrency(subtotal)}</span>
+          </div>
+        )}
+        {monthlyTotal > 0 && (
+          <div className="flex justify-between text-muted-foreground">
+            <span>Monthly recurring</span>
+            <span className="tabular-nums">{formatCurrency(monthlyTotal)}</span>
+          </div>
+        )}
+        {Number(proposal.tax_rate ?? 0) > 0 && subtotal > 0 && (
           <div className="flex justify-between text-muted-foreground">
             <span>Tax ({Number(proposal.tax_rate)}%)</span>
             <span className="tabular-nums">{formatCurrency(taxAmount)}</span>
           </div>
         )}
-        <div
-          className="flex justify-between text-white font-bold rounded-md px-3 py-2 mt-1"
-          style={{ backgroundColor: 'var(--orange)' }}
-        >
-          <span>Total per visit</span>
-          <span className="tabular-nums">{formatCurrency(grandTotal)}</span>
-        </div>
+        {grandTotal > 0 && (
+          <div
+            className="flex justify-between text-white font-bold rounded-md px-3 py-2 mt-1"
+            style={{ backgroundColor: 'var(--orange)' }}
+          >
+            <span>Total per visit</span>
+            <span className="tabular-nums">{formatCurrency(grandTotal)}</span>
+          </div>
+        )}
+        {monthlyTotal > 0 && (
+          <div
+            className="flex justify-between text-white font-bold rounded-md px-3 py-2"
+            style={{ backgroundColor: 'var(--orange)' }}
+          >
+            <span>Total per month</span>
+            <span className="tabular-nums">{formatCurrency(monthlyTotal)}</span>
+          </div>
+        )}
         {proposal.annual_value && Number(proposal.annual_value) > 0 && (
           <div
             className="flex justify-between font-bold rounded-md px-3 py-2"

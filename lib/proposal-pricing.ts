@@ -1,4 +1,6 @@
-import type { LineItemFrequency, PropertyComplexity } from '@/types';
+import type {
+  BillingMode, LineItemFrequency, PropertyComplexity,
+} from '@/types';
 
 export const FREQUENCY_LABELS: Record<LineItemFrequency, string> = {
   one_time: 'One-time',
@@ -61,11 +63,28 @@ export interface LineItemDraft {
   discount_pct: number;
   frequency: LineItemFrequency;
   frequency_discount_pct: number;
+  // New billing fields (migration 013).
+  billing_mode?: BillingMode;
+  monthly_rate?: number;
+  unit?: string | null;
+  notes?: string | null;
 }
 
-/** Per-visit total after markup, discount, and frequency discount. */
+/**
+ * Cost of one line item *for the unit it's billed in*:
+ *  - per_visit: cost per visit
+ *  - per_month: monthly_rate (markup + discount + frequency discount applied)
+ */
 export function lineTotal(item: LineItemDraft, flags?: PricingFlags): number {
   const labor = flags ? laborMultiplier(flags) : 1;
+  if (item.billing_mode === 'per_month') {
+    // Monthly billing — base is the monthly rate the dispatcher entered.
+    const base = (item.monthly_rate ?? 0) * labor;
+    const afterMarkup = base * (1 + item.markup_pct / 100);
+    const afterDiscount = afterMarkup * (1 - item.discount_pct / 100);
+    return Math.round(afterDiscount * 100) / 100;
+  }
+  // Per-visit / per-service: classic math.
   const base = item.quantity * item.unit_price * labor;
   const afterMarkup = base * (1 + item.markup_pct / 100);
   const afterDiscount = afterMarkup * (1 - item.discount_pct / 100);
@@ -73,14 +92,57 @@ export function lineTotal(item: LineItemDraft, flags?: PricingFlags): number {
   return Math.round(afterFrequency * 100) / 100;
 }
 
-/** Annual contract value across all recurring lines. */
+/** Annual contract value across all recurring lines (both billing modes). */
 export function annualValue(items: LineItemDraft[], flags?: PricingFlags): number {
   let total = 0;
   for (const item of items) {
-    const visits = FREQUENCY_VISITS_PER_YEAR[item.frequency] ?? 1;
-    total += lineTotal(item, flags) * visits;
+    if (item.billing_mode === 'per_month') {
+      total += lineTotal(item, flags) * 12;
+    } else {
+      const visits = FREQUENCY_VISITS_PER_YEAR[item.frequency] ?? 1;
+      total += lineTotal(item, flags) * visits;
+    }
   }
   return Math.round(total * 100) / 100;
+}
+
+/** Sum of monthly recurring revenue across per_month lines. */
+export function monthlyRecurring(items: LineItemDraft[], flags?: PricingFlags): number {
+  let total = 0;
+  for (const item of items) {
+    if (item.billing_mode !== 'per_month') continue;
+    total += lineTotal(item, flags);
+  }
+  return Math.round(total * 100) / 100;
+}
+
+/** Sum of per-visit / per-service totals (excludes per_month lines). */
+export function perVisitSubtotal(items: LineItemDraft[], flags?: PricingFlags): number {
+  let total = 0;
+  for (const item of items) {
+    if (item.billing_mode === 'per_month') continue;
+    total += lineTotal(item, flags);
+  }
+  return Math.round(total * 100) / 100;
+}
+
+/**
+ * When the user toggles a recurring line from Per Visit → Per Month, suggest
+ * an equivalent monthly rate based on the visit math.
+ *   monthly = (per-visit total × visits-per-year) ÷ 12
+ * Returns 0 for one-time / annual / seasonal / unconfigured frequencies
+ * because monthly billing makes no sense there.
+ */
+export function suggestedMonthlyRate(
+  item: LineItemDraft,
+  flags?: PricingFlags
+): number {
+  // Use a synthetic per-visit version to compute its visit cost.
+  const visitCopy: LineItemDraft = { ...item, billing_mode: 'per_visit' };
+  const perVisit = lineTotal(visitCopy, flags);
+  const visits = FREQUENCY_VISITS_PER_YEAR[item.frequency] ?? 0;
+  if (visits <= 1) return 0;
+  return Math.round(((perVisit * visits) / 12) * 100) / 100;
 }
 
 /**

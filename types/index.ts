@@ -290,6 +290,7 @@ export type EstimateStatus = 'draft' | 'sent' | 'accepted' | 'declined' | 'expir
 export type PropertyComplexity = 'simple' | 'moderate' | 'complex';
 export type LineItemFrequency =
   | 'one_time' | 'weekly' | 'biweekly' | 'monthly' | 'seasonal' | 'annual';
+export type BillingMode = 'per_visit' | 'per_month';
 
 export interface Estimate {
   id: string;
@@ -326,6 +327,12 @@ export interface EstimateLineItem {
   // Phase 9 columns (migration 009)
   frequency?: LineItemFrequency | null;
   frequency_discount_pct?: number | null;
+  // Phase 13 columns (migration 013)
+  is_custom?: boolean;
+  billing_mode?: BillingMode | null;
+  monthly_rate?: number | null;
+  unit?: string | null;
+  notes?: string | null;
   created_at: string;
 }
 

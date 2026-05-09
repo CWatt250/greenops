@@ -47,7 +47,13 @@ export function ProposalDocument({
   companyName = 'TLC Landscape Management',
   annualValue,
 }: Props) {
-  const subtotal = lineItems.reduce((s, li) => s + Number(li.total ?? 0), 0);
+  const perVisitLines = lineItems.filter((li) => li.billing_mode !== 'per_month');
+  const perMonthLines = lineItems.filter((li) => li.billing_mode === 'per_month');
+  const subtotal = perVisitLines.reduce((s, li) => s + Number(li.total ?? 0), 0);
+  const monthlyTotal = perMonthLines.reduce(
+    (s, li) => s + Number(li.monthly_rate ?? li.total ?? 0),
+    0
+  );
   const taxAmount = subtotal * (Number(proposal.tax_rate ?? 0) / 100);
   const grandTotal = subtotal + taxAmount;
 
@@ -100,32 +106,49 @@ export function ProposalDocument({
         <View style={styles.tableHeader}>
           <Text style={styles.colDesc}>Service</Text>
           <Text style={styles.colMid}>Frequency</Text>
-          <Text style={styles.colMid}>Qty × Price</Text>
+          <Text style={styles.colMid}>Billing</Text>
           <Text style={styles.colNum}>Total</Text>
         </View>
         {lineItems.map((li) => {
           const freqLabel = li.frequency
             ? FREQUENCY_LABELS[li.frequency]
             : 'One-time';
+          const isMonthly = li.billing_mode === 'per_month';
+          const total = isMonthly
+            ? Number(li.monthly_rate ?? li.total ?? 0)
+            : Number(li.total ?? 0);
           return (
             <View key={li.id} style={styles.tableRow}>
-              <Text style={styles.colDesc}>{li.description}</Text>
+              <Text style={styles.colDesc}>
+                {li.description}
+                {li.is_custom ? ' (Custom)' : ''}
+              </Text>
               <Text style={styles.colMid}>{freqLabel}</Text>
               <Text style={styles.colMid}>
-                {li.quantity} × {fmt(Number(li.unit_price))}
+                {isMonthly ? 'Per month' : 'Per visit'}
               </Text>
-              <Text style={styles.colNum}>{fmt(Number(li.total ?? 0))}</Text>
+              <Text style={styles.colNum}>
+                {fmt(total)}{isMonthly ? ' /mo' : ' /visit'}
+              </Text>
             </View>
           );
         })}
 
         {/* Totals */}
         <View style={styles.totalsBox}>
-          <View style={styles.totalsRow}>
-            <Text style={styles.totalsLabel}>Subtotal</Text>
-            <Text>{fmt(subtotal)}</Text>
-          </View>
-          {Number(proposal.tax_rate ?? 0) > 0 && (
+          {subtotal > 0 && (
+            <View style={styles.totalsRow}>
+              <Text style={styles.totalsLabel}>Per-visit subtotal</Text>
+              <Text>{fmt(subtotal)}</Text>
+            </View>
+          )}
+          {monthlyTotal > 0 && (
+            <View style={styles.totalsRow}>
+              <Text style={styles.totalsLabel}>Monthly recurring</Text>
+              <Text>{fmt(monthlyTotal)}</Text>
+            </View>
+          )}
+          {Number(proposal.tax_rate ?? 0) > 0 && subtotal > 0 && (
             <View style={styles.totalsRow}>
               <Text style={styles.totalsLabel}>
                 Tax ({Number(proposal.tax_rate ?? 0)}%)
@@ -133,10 +156,18 @@ export function ProposalDocument({
               <Text>{fmt(taxAmount)}</Text>
             </View>
           )}
-          <View style={styles.grandTotal}>
-            <Text>Total per visit</Text>
-            <Text>{fmt(grandTotal)}</Text>
-          </View>
+          {grandTotal > 0 && (
+            <View style={styles.grandTotal}>
+              <Text>Total per visit</Text>
+              <Text>{fmt(grandTotal)}</Text>
+            </View>
+          )}
+          {monthlyTotal > 0 && (
+            <View style={styles.grandTotal}>
+              <Text>Total per month</Text>
+              <Text>{fmt(monthlyTotal)}</Text>
+            </View>
+          )}
           {typeof annualValue === 'number' && annualValue > 0 && (
             <View style={styles.annualRow}>
               <Text>Annual contract value</Text>
