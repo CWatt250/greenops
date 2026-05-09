@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { StatusBadge } from '@/components/shared/status-badge';
+import { GPSTracker } from '@/components/crew/gps-tracker';
 import { formatDate } from '@/lib/utils';
 import { MapPin, Clock, ChevronRight, CalendarDays } from 'lucide-react';
 import type { Job } from '@/types';
@@ -104,6 +105,15 @@ export default async function TodayPage() {
 
   return (
     <div className="space-y-5 pb-8">
+      {/* GPS tracker — only active when at least one job is in progress so
+       *  battery isn't drained between stops. */}
+      <GPSTracker
+        profileId={user.id}
+        crewId={crewMember?.crew_id ?? null}
+        companyId={profile.company_id}
+        isActive={inProgress.length > 0}
+      />
+
       {/* Date header */}
       <div className="flex items-center gap-2">
         <CalendarDays className="h-5 w-5 text-muted-foreground" />

@@ -392,7 +392,10 @@ export default async function DashboardPage() {
       {/* Two-column main */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div className="lg:col-span-2 flex flex-col gap-4">
-          <TodaysRunTable jobs={todaysJobs.slice(0, 8)} />
+          <TodaysRunTable
+            initialJobs={todaysJobs.slice(0, 8)}
+            companyId={companyId ?? null}
+          />
           <CrewPerformanceBars rows={perfRows} />
         </div>
         <div className="flex flex-col gap-4">

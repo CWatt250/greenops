@@ -24,7 +24,7 @@ export default async function JobDetailPage({ params }: Props) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const [jobRes, lineItemsRes, activityRes] = await Promise.all([
+  const [jobRes, lineItemsRes, activityRes, photosRes] = await Promise.all([
     supabase
       .from('jobs')
       .select('*, client:clients(id,name,service_address,phone), crew:crews(id,name,color)')
@@ -42,6 +42,11 @@ export default async function JobDetailPage({ params }: Props) {
       .eq('entity_type', 'job')
       .order('created_at', { ascending: false })
       .limit(20),
+    supabase
+      .from('job_photos')
+      .select('id, storage_path, caption, created_at, uploaded_by')
+      .eq('job_id', id)
+      .order('created_at'),
   ]);
 
   if (jobRes.error || !jobRes.data) notFound();
@@ -86,6 +91,13 @@ export default async function JobDetailPage({ params }: Props) {
 
   const lineItems = (lineItemsRes.data ?? []) as (JobLineItem & { service: { name: string; category: string } | null })[];
   const activity = (activityRes.data ?? []) as (ActivityLog & { actor: { full_name: string | null } | null })[];
+
+  type PhotoRow = { id: string; storage_path: string; caption: string | null; created_at: string };
+  const photoRows = (photosRes.data ?? []) as PhotoRow[];
+  const photos = photoRows.map((p) => ({
+    ...p,
+    publicUrl: supabase.storage.from('job-photos').getPublicUrl(p.storage_path).data.publicUrl,
+  }));
 
   const grandTotal = lineItems.reduce((sum, li) => sum + (li.total ?? 0), 0);
 
@@ -260,6 +272,61 @@ export default async function JobDetailPage({ params }: Props) {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Photos + signature (captured at job complete) */}
+        {(photos.length > 0 || job.signature_url) && (
+          <div className="rounded-xl border bg-card p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <span aria-hidden>📸</span>
+              <h2 className="text-sm font-semibold">Completion proof</h2>
+            </div>
+            {photos.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
+                {photos.map((p) => (
+                  <a
+                    key={p.id}
+                    href={p.publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="relative aspect-square rounded-lg overflow-hidden border bg-muted/30 hover:opacity-90 transition-opacity"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={p.publicUrl} alt={p.caption ?? 'Job photo'} className="w-full h-full object-cover" />
+                    {p.caption && (
+                      <span
+                        className="absolute bottom-1 left-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+                        style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
+                      >
+                        {p.caption}
+                      </span>
+                    )}
+                  </a>
+                ))}
+              </div>
+            )}
+            {job.signature_url && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Customer signature
+                  {job.signed_by_name && <> · {job.signed_by_name}</>}
+                  {job.signed_at && (
+                    <span className="text-muted-foreground font-normal">
+                      {' '}· {new Date(job.signed_at).toLocaleString()}
+                    </span>
+                  )}
+                </p>
+                <div className="rounded-lg border bg-white p-3 inline-block">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={job.signature_url}
+                    alt="Customer signature"
+                    className="max-h-32"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
 

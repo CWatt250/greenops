@@ -149,10 +149,29 @@ export interface Job {
   is_recurring: boolean;
   recurrence_rule?: string;
   created_by?: string;
+  /** Customer signature captured at job complete (migration 025). */
+  signature_url?: string | null;
+  signed_by_name?: string | null;
+  signed_at?: string | null;
   created_at: string;
   updated_at: string;
   client?: Client;
   crew?: Crew;
+}
+
+/** Live GPS ping from a crew member during an in-progress job (migration 023). */
+export interface CrewLocation {
+  id: string;
+  company_id: string;
+  profile_id: string;
+  crew_id?: string | null;
+  latitude: number;
+  longitude: number;
+  accuracy_m?: number | null;
+  speed_mps?: number | null;
+  heading?: number | null;
+  recorded_at: string;
+  created_at: string;
 }
 
 export interface JobLineItem {
