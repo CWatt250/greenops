@@ -13,7 +13,7 @@ import { IssueFlagSheet } from '@/components/crew/issue-flag-sheet';
 import { JobFormsSection } from '@/components/forms/job-forms-section';
 import {
   MapPin, Clock, ChevronLeft, Navigation, LogIn, LogOut,
-  CheckSquare, AlertTriangle, FileText, Loader2,
+  CheckSquare, AlertTriangle, FileText, Loader2, Ruler,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Job, JobLineItem, ClockEvent } from '@/types';
@@ -317,6 +317,20 @@ export default function CrewJobDetailPage() {
             </Button>
           )}
         </div>
+
+        {/* Quick-capture: jump into Measure with this client + address
+         *  pre-filled. Useful when a customer asks for a re-measure or
+         *  upsell during the visit. */}
+        {job.client?.service_address && (
+          <Link
+            href={`/dashboard/measure?address=${encodeURIComponent(job.client.service_address)}&client_id=${job.client.id}`}
+            className="flex items-center gap-1.5 text-xs font-medium"
+            style={{ color: 'var(--orange-deep)' }}
+          >
+            <Ruler className="h-3.5 w-3.5" />
+            Measure this property
+          </Link>
+        )}
 
         {job.status !== 'complete' && job.status !== 'issue' && job.status !== 'cancelled' && (
           <button

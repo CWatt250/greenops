@@ -11,6 +11,7 @@ import {
   CreateCustomerFromMeasurement, type PrefilledAddress,
 } from './create-customer-from-measurement';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { ClientCombobox } from '@/components/clients/client-combobox';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { createClient } from '@/lib/supabase/client';
@@ -22,7 +23,7 @@ import { staticMapUrlForShapes } from '@/lib/measurement-static-map';
 import { toast } from 'sonner';
 import {
   ChevronLeft, Loader2, Save, FileDown, ChevronDown, MapPin, User,
-  Globe, UserPlus, FilePlus,
+  Globe, UserPlus, FilePlus, Send,
 } from 'lucide-react';
 import Link from 'next/link';
 import type { Client, PropertyMeasurement } from '@/types';
@@ -45,10 +46,16 @@ interface Props {
   lockedClientId?: string;
   lockedClientName?: string;
   initialAddress?: string;
+  /** Pre-select a client when arriving from a deep link (e.g., crew job
+   *  detail's "Measure" button passes the job's client_id). */
+  initialClientId?: string | null;
   initial?: PropertyMeasurement | null;
   backHref?: string;
   /** When true, shows the standalone "client picker / save standalone" UI. */
   standalone?: boolean;
+  /** Caller's role. Crew sees a "Send to office" outcome instead of
+   *  "Generate Proposal" (they can't set pricing). */
+  role?: 'owner' | 'dispatcher' | 'crew' | 'customer';
 }
 
 type AddressInfo = {
@@ -66,12 +73,15 @@ export function MeasureView({
   lockedClientId,
   lockedClientName,
   initialAddress,
+  initialClientId = null,
   initial,
   backHref = '/dashboard',
   standalone = false,
+  role = 'owner',
 }: Props) {
   const router = useRouter();
   const supabase = createClient();
+  const isCrew = role === 'crew';
 
   const [center, setCenter] = useState<{ lng: number; lat: number } | null>(null);
   const [shapes, setShapesRaw] = useState<MeasuredShape[]>(() => {
@@ -112,7 +122,9 @@ export function MeasureView({
   const [addressInfo, setAddressInfo] = useState<AddressInfo>(null);
 
   // Standalone-only client picking
-  const [selectedClientId, setSelectedClientId] = useState<string>(lockedClientId ?? '');
+  const [selectedClientId, setSelectedClientId] = useState<string>(
+    lockedClientId ?? initialClientId ?? '',
+  );
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   /** When true, the user just typed an address — defaults Save → "Create New". */
   const [lastEntryWasAddress, setLastEntryWasAddress] = useState(false);
@@ -126,6 +138,10 @@ export function MeasureView({
   const [createIntent, setCreateIntent] = useState<'measurement' | 'proposal'>('measurement');
   const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [savedMeasurementId, setSavedMeasurementId] = useState<string | null>(initial?.id ?? null);
+  // Crew "Send to office" flow state
+  const [fieldNote, setFieldNote] = useState('');
+  const [submittingToOffice, setSubmittingToOffice] = useState(false);
+  const [submittedToOffice, setSubmittedToOffice] = useState(false);
 
   // Resolve initialAddress on mount if provided.
   useEffect(() => {
@@ -353,6 +369,63 @@ export function MeasureView({
     router.push(`/dashboard/proposals/new?client_id=${clientId}&measurement_id=${measId}`);
   }
 
+  // ── Crew: Send to office for quote ─────────────────────────────────────
+  // Saves the measurement (linked to current client if known, otherwise
+  // standalone), stamps it with field-suggestion fields, and pings every
+  // owner/dispatcher with an in-app notification so the office can pick
+  // it up and turn it into a real proposal.
+  async function submitToOffice() {
+    if (shapes.length === 0) {
+      toast.error('Draw at least one shape first.');
+      return;
+    }
+    setSubmittingToOffice(true);
+    try {
+      const targetClientId = lockedClientId ?? selectedClientId ?? null;
+      let measId = savedMeasurementId;
+      if (!measId) {
+        measId = await persistMeasurement(targetClientId);
+        if (!measId) return;
+      }
+      const { error: updateErr } = await supabase
+        .from('property_measurements')
+        .update({
+          status: 'submitted',
+          field_note: fieldNote.trim() || null,
+          submitted_by_profile_id: userId,
+          submitted_to_office_at: new Date().toISOString(),
+        })
+        .eq('id', measId);
+      if (updateErr) {
+        toast.error(updateErr.message);
+        return;
+      }
+      // Notify dispatchers + owners.
+      const { data: admins } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('company_id', companyId)
+        .in('role', ['owner', 'dispatcher']);
+      const address = addressInfo?.service_address ?? lockedClientName ?? 'Field measurement';
+      if (admins?.length) {
+        await supabase.from('notifications').insert(
+          admins.map((a: { id: string }) => ({
+            company_id: companyId,
+            profile_id: a.id,
+            title: `Field measurement from ${address}`,
+            body: fieldNote.trim() || 'Crew suggests a quote — review the measurement to follow up.',
+            entity_type: 'property_measurement',
+            entity_id: measId,
+          })),
+        );
+      }
+      setSubmittedToOffice(true);
+      toast.success('Sent to office. Dispatch will follow up with a quote.');
+    } finally {
+      setSubmittingToOffice(false);
+    }
+  }
+
   // ── Clear All ─────────────────────────────────────────────────────────
   async function doClearAll() {
     setShapes([]);
@@ -566,19 +639,60 @@ export function MeasureView({
               </div>
             )}
 
-            <Button
-              onClick={generateProposal}
-              disabled={shapes.length === 0 || saving}
-              className="w-full gap-1.5 font-semibold"
-              style={{
-                backgroundColor: 'var(--orange-soft)',
-                color: 'var(--orange-deep)',
-                border: '2px solid var(--orange)',
-              }}
-            >
-              <FilePlus className="h-3.5 w-3.5" />
-              Generate Proposal from This Measurement
-            </Button>
+            {/* Owner/dispatcher: jump to the proposal builder. Crew:
+             *  capture a field note + send to office for follow-up. */}
+            {!isCrew ? (
+              <Button
+                onClick={generateProposal}
+                disabled={shapes.length === 0 || saving}
+                className="w-full gap-1.5 font-semibold"
+                style={{
+                  backgroundColor: 'var(--orange-soft)',
+                  color: 'var(--orange-deep)',
+                  border: '2px solid var(--orange)',
+                }}
+              >
+                <FilePlus className="h-3.5 w-3.5" />
+                Generate Proposal from This Measurement
+              </Button>
+            ) : submittedToOffice ? (
+              <div
+                className="rounded-lg border px-3 py-2.5 text-xs"
+                style={{
+                  backgroundColor: 'var(--orange-soft)',
+                  borderColor: 'var(--orange)',
+                  color: 'var(--orange-deep)',
+                }}
+              >
+                <p className="font-bold">✅ Sent to office</p>
+                <p className="mt-0.5">Dispatch will follow up with a quote.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="field-note" className="text-xs">
+                  Note for the office (optional)
+                </Label>
+                <textarea
+                  id="field-note"
+                  value={fieldNote}
+                  onChange={(e) => setFieldNote(e.target.value)}
+                  rows={3}
+                  placeholder="e.g., Customer asked about adding aeration; back yard not in original quote."
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <Button
+                  onClick={submitToOffice}
+                  disabled={shapes.length === 0 || submittingToOffice || saving}
+                  className="w-full gap-1.5 font-semibold text-white"
+                  style={{ backgroundColor: 'var(--orange)' }}
+                >
+                  {submittingToOffice
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <Send className="h-3.5 w-3.5" />}
+                  Send to office for quote
+                </Button>
+              </div>
+            )}
 
             {/* Inline client picker for "Save to existing customer" path */}
             {showClientPicker && (

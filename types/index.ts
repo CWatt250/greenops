@@ -492,10 +492,12 @@ export interface NoteTemplate {
   created_at: string;
 }
 
+export type MeasurementStatus = 'draft' | 'submitted' | 'reviewed' | 'quoted' | 'archived';
+
 export interface PropertyMeasurement {
   id: string;
   company_id: string;
-  client_id: string;
+  client_id: string | null;
   measured_by?: string | null;
   total_turf_sqft: number;
   total_hardscape_sqft: number;
@@ -505,6 +507,11 @@ export interface PropertyMeasurement {
   notes?: string | null;
   imagery_source?: string | null;
   measured_at: string;
+  /** Field-suggestion fields (migration 037). */
+  submitted_by_profile_id?: string | null;
+  field_note?: string | null;
+  submitted_to_office_at?: string | null;
+  status?: MeasurementStatus | null;
 }
 
 export interface Invoice {

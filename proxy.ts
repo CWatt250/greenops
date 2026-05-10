@@ -76,7 +76,11 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL('/portal', request.url));
     }
     if (role === 'crew' && (path.startsWith('/dashboard') || path.startsWith('/portal'))) {
-      return NextResponse.redirect(new URL('/today', request.url));
+      // Measure is shared between roles — crew use it for field
+      // suggestions; owner/dispatcher use it to draft proposals. Allow.
+      if (!path.startsWith('/dashboard/measure')) {
+        return NextResponse.redirect(new URL('/today', request.url));
+      }
     }
     if ((role === 'owner' || role === 'dispatcher') && path.startsWith('/portal')) {
       return NextResponse.redirect(new URL('/dashboard', request.url));

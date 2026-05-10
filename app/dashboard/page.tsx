@@ -12,6 +12,7 @@ import { CrewPerformanceBars, type CrewPerformanceRow } from '@/components/dashb
 import { PortalInboxCard, type PortalInboxItem } from '@/components/dashboard/portal-inbox-card';
 import { WeatherWatch } from '@/components/dashboard/weather-watch';
 import { QuickActionsGrid } from '@/components/dashboard/quick-actions-grid';
+import { FieldSuggestionsCard } from '@/components/dashboard/field-suggestions-card';
 import { buttonVariants } from '@/components/ui/button';
 import { Plus, Download } from 'lucide-react';
 import { getDashboardWeather } from '@/lib/weather';
@@ -399,6 +400,7 @@ export default async function DashboardPage() {
           <CrewPerformanceBars rows={perfRows} />
         </div>
         <div className="flex flex-col gap-4">
+          <FieldSuggestionsCard companyId={companyId ?? null} />
           <PortalInboxCard items={inboxItems} />
           {weather && (
             <WeatherWatch

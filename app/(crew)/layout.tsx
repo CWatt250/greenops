@@ -1,7 +1,10 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Image from 'next/image';
+import Link from 'next/link';
+import { Ruler } from 'lucide-react';
 import { NotificationBell } from '@/components/shared/notification-bell';
+import { MobileBottomNav } from '@/components/layout/mobile-bottom-nav';
 
 export default async function CrewLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -49,9 +52,21 @@ export default async function CrewLayout({ children }: { children: React.ReactNo
             )}
           </div>
         </div>
-        <NotificationBell />
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard/measure"
+            aria-label="Measure property"
+            title="Measure property"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full"
+            style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
+          >
+            <Ruler className="h-4 w-4" />
+          </Link>
+          <NotificationBell />
+        </div>
       </header>
-      <main className="flex-1 p-4 max-w-lg mx-auto w-full">{children}</main>
+      <main className="flex-1 p-4 pb-24 max-w-lg mx-auto w-full">{children}</main>
+      <MobileBottomNav role="crew" />
     </div>
   );
 }
