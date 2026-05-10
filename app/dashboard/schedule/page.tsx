@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import { ScheduleGrid } from '@/components/schedule/schedule-grid';
 import { ScheduleDayGrid } from '@/components/schedule/schedule-day-grid';
 import { ScheduleMonthGrid } from '@/components/schedule/schedule-month-grid';
+import { MobileDayView } from '@/components/schedule/mobile-day-view';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
 import { HowScheduleWorks } from '@/components/help/how-page-works';
@@ -224,8 +225,9 @@ function SchedulePageInner() {
         ]}
       />
 
-      {/* Top bar: nav + view toggle + label */}
-      <div className="flex items-center gap-2 mb-5 flex-wrap">
+      {/* Top bar: nav + view toggle + label — desktop only.
+          Mobile uses the sticky header inside <MobileDayView /> below. */}
+      <div className="hidden md:flex items-center gap-2 mb-5 flex-wrap">
         <Button variant="outline" size="icon" onClick={() => step(-1)} aria-label="Previous">
           <ChevronLeft className="h-4 w-4" />
         </Button>
@@ -261,29 +263,45 @@ function SchedulePageInner() {
 
       {loading ? (
         <div className="text-sm text-muted-foreground text-center py-24">Loading schedule…</div>
-      ) : view === 'day' ? (
-        <ScheduleDayGrid
-          key={toDateStr(anchor)}
-          date={anchor}
-          crews={crews}
-          initialJobs={jobs}
-        />
-      ) : view === 'month' ? (
-        <ScheduleMonthGrid
-          key={`${anchor.getFullYear()}-${anchor.getMonth()}`}
-          monthAnchor={anchor}
-          crews={crews}
-          jobs={jobs}
-          onDayClick={(date) => navigate({ view: 'day', date })}
-        />
       ) : (
-        <ScheduleGrid
-          key={toDateStr(getMondayOf(anchor))}
-          weekStart={getMondayOf(anchor)}
-          crews={crews}
-          initialJobs={jobs}
-          unassignedInitial={unassigned}
-        />
+        <>
+          {/* Mobile: chronological day list, swipe-to-step (always day granularity). */}
+          <MobileDayView
+            date={anchor}
+            crews={crews}
+            jobs={jobs.filter((j) => j.scheduled_date === toDateStr(anchor))}
+            onStepDay={(direction) => navigate({ view: 'day', date: addDays(anchor, direction) })}
+            onJumpToday={jumpToday}
+          />
+
+          {/* Desktop: existing day/week/month grids. */}
+          <div className="hidden md:block">
+            {view === 'day' ? (
+              <ScheduleDayGrid
+                key={toDateStr(anchor)}
+                date={anchor}
+                crews={crews}
+                initialJobs={jobs}
+              />
+            ) : view === 'month' ? (
+              <ScheduleMonthGrid
+                key={`${anchor.getFullYear()}-${anchor.getMonth()}`}
+                monthAnchor={anchor}
+                crews={crews}
+                jobs={jobs}
+                onDayClick={(date) => navigate({ view: 'day', date })}
+              />
+            ) : (
+              <ScheduleGrid
+                key={toDateStr(getMondayOf(anchor))}
+                weekStart={getMondayOf(anchor)}
+                crews={crews}
+                initialJobs={jobs}
+                unassignedInitial={unassigned}
+              />
+            )}
+          </div>
+        </>
       )}
     </div>
   );
