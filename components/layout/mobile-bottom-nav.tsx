@@ -87,9 +87,9 @@ export function MobileBottomNav({ role: roleProp }: Props) {
   if (resolvedRole === null && loading) {
     return (
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t bg-background opacity-0 pointer-events-none"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t bg-background"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-        aria-hidden="true"
+        data-testid="mobile-bottom-nav-loading"
       >
         <ul className="flex items-stretch">
           <li className="flex-1" />
@@ -109,6 +109,7 @@ export function MobileBottomNav({ role: roleProp }: Props) {
       <nav
         className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t bg-background"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        data-testid="mobile-bottom-nav"
         aria-label="Primary navigation"
       >
         <ul className="flex items-stretch">
