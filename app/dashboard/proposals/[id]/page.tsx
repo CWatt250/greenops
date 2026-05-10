@@ -15,6 +15,7 @@ const STATUS_COLORS: Record<EstimateStatus, string> = {
   accepted: 'bg-green-100 text-green-700',
   declined: 'bg-red-100 text-red-700',
   expired: 'bg-amber-100 text-amber-700',
+  converted: 'bg-orange-100 text-orange-700',
 };
 
 interface Props {
@@ -53,7 +54,9 @@ export default async function ProposalDetailPage({ params }: Props) {
     (s, li) => s + Number(li.monthly_rate ?? li.total ?? 0),
     0
   );
-  const taxAmount = subtotal * (Number(proposal.tax_rate ?? 0) / 100);
+  // tax_rate is decimal: 0.085 means 8.5% (normalized in migration 031).
+  const taxRateDecimal = Number(proposal.tax_rate ?? 0);
+  const taxAmount = subtotal * taxRateDecimal;
   const grandTotal = subtotal + taxAmount;
 
   return (
@@ -203,9 +206,9 @@ export default async function ProposalDetailPage({ params }: Props) {
             <span className="tabular-nums">{formatCurrency(monthlyTotal)}</span>
           </div>
         )}
-        {Number(proposal.tax_rate ?? 0) > 0 && subtotal > 0 && (
+        {taxRateDecimal > 0 && subtotal > 0 && (
           <div className="flex justify-between text-muted-foreground">
-            <span>Tax ({Number(proposal.tax_rate)}%)</span>
+            <span>Tax ({(taxRateDecimal * 100).toFixed(2).replace(/\.?0+$/, '')}%)</span>
             <span className="tabular-nums">{formatCurrency(taxAmount)}</span>
           </div>
         )}

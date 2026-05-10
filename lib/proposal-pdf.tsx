@@ -51,7 +51,9 @@ export function ProposalDocument({
     (s, li) => s + Number(li.monthly_rate ?? li.total ?? 0),
     0
   );
-  const taxAmount = subtotal * (Number(proposal.tax_rate ?? 0) / 100);
+  // tax_rate is decimal: 0.085 means 8.5% (normalized in migration 031).
+  const taxRateDecimal = Number(proposal.tax_rate ?? 0);
+  const taxAmount = subtotal * taxRateDecimal;
   const grandTotal = subtotal + taxAmount;
 
   return (
@@ -142,10 +144,10 @@ export function ProposalDocument({
               <Text>{fmt(monthlyTotal)}</Text>
             </View>
           )}
-          {Number(proposal.tax_rate ?? 0) > 0 && subtotal > 0 && (
+          {taxRateDecimal > 0 && subtotal > 0 && (
             <View style={styles.totalsRow}>
               <Text style={styles.totalsLabel}>
-                Tax ({Number(proposal.tax_rate ?? 0)}%)
+                Tax ({(taxRateDecimal * 100).toFixed(2).replace(/\.?0+$/, '')}%)
               </Text>
               <Text>{fmt(taxAmount)}</Text>
             </View>

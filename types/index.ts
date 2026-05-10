@@ -46,6 +46,8 @@ export interface Company {
   weather_forecast_days?: number | null;
   weather_units?: 'imperial' | 'metric' | null;
   weather_show_on_dashboard?: boolean | null;
+  /** Per-tenant invoice prefix (migration 030). e.g., "TLC", "ABC". */
+  invoice_prefix?: string | null;
   created_at: string;
 }
 
@@ -351,7 +353,7 @@ export interface Route {
 export type InvoiceStatus = 'draft' | 'sent' | 'viewed' | 'partial' | 'paid' | 'overdue' | 'cancelled';
 export type PaymentMethod = 'cash' | 'check' | 'card' | 'ach' | 'other';
 
-export type EstimateStatus = 'draft' | 'sent' | 'accepted' | 'declined' | 'expired';
+export type EstimateStatus = 'draft' | 'sent' | 'accepted' | 'declined' | 'expired' | 'converted';
 export type PropertyComplexity = 'simple' | 'moderate' | 'complex';
 export type LineItemFrequency =
   | 'one_time' | 'weekly' | 'biweekly' | 'monthly' | 'seasonal' | 'annual';

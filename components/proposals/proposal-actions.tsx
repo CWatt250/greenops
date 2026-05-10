@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import { Send, FileDown, ThumbsUp, ThumbsDown, Trash2, Loader2 } from 'lucide-react';
+import { Send, FileDown, ThumbsUp, ThumbsDown, Trash2, Loader2, Briefcase } from 'lucide-react';
 import type { Estimate, EstimateLineItem, EstimateStatus } from '@/types';
 import { annualValue, lineTotal, type LineItemDraft } from '@/lib/proposal-pricing';
 
@@ -98,11 +98,29 @@ export function ProposalActions({ proposal, lineItems }: Props) {
     }
   }
 
+  async function convertToJob() {
+    setBusy('convert');
+    try {
+      const res = await fetch(`/api/proposals/${proposal.id}/convert`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        toast.error(json.error ?? 'Conversion failed.');
+        return;
+      }
+      toast.success('Job created from proposal.');
+      router.push(`/dashboard/jobs/${json.job_id}`);
+    } catch (err) {
+      toast.error((err as Error).message ?? 'Network error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   // Helpers to silence unused-import warnings
   void lineTotal;
 
   const status = proposal.status;
-  const isFinal = status === 'declined' || status === 'expired';
+  const isFinal = status === 'declined' || status === 'expired' || status === 'converted';
 
   return (
     <>
@@ -154,6 +172,21 @@ export function ProposalActions({ proposal, lineItems }: Props) {
               <ThumbsDown className="h-3.5 w-3.5" /> Decline
             </Button>
           </>
+        )}
+        {status === 'accepted' && (
+          <Button
+            size="sm"
+            onClick={convertToJob}
+            disabled={busy !== null}
+            style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
+            className="gap-1.5"
+            title="Create a job from this accepted proposal"
+          >
+            {busy === 'convert'
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <Briefcase className="h-3.5 w-3.5" />}
+            Convert to Job
+          </Button>
         )}
         <Button
           variant="outline"

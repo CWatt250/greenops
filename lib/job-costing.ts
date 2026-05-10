@@ -1,4 +1,5 @@
 import type { JobCostEntry } from '@/types';
+import { marginToneWithGray } from '@/lib/margin-colors';
 
 export interface CrewMemberRate {
   profile_id: string;
@@ -154,13 +155,13 @@ export function profitSummary(revenue: number, totalCost: number): ProfitSummary
   const margin_pct = revenue > 0
     ? Math.round((profit / revenue) * 1000) / 10
     : 0;
-  let tone: ProfitSummary['tone'] = 'gray';
-  if (revenue > 0) {
-    if (margin_pct >= 30) tone = 'green';
-    else if (margin_pct >= 15) tone = 'yellow';
-    else tone = 'red';
-  }
-  return { revenue, total_cost: totalCost, profit, margin_pct, tone };
+  return {
+    revenue,
+    total_cost: totalCost,
+    profit,
+    margin_pct,
+    tone: marginToneWithGray(margin_pct, revenue),
+  };
 }
 
 export function fmtUsd(n: number): string {

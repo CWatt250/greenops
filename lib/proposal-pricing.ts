@@ -31,12 +31,25 @@ export const FREQUENCY_DISCOUNT_PCT: Record<LineItemFrequency, number> = {
   annual: 0,
 };
 
+// Per-flag percent bumps. ADDITIVE — flags sum, then we add to 1.
+//   moderate (15) + slopes (10) + dogs (5) = 1 + 0.30 = 1.30
+// (Previously these were multiplicative, which produced 1.328 for the
+// same flags. Industry convention in landscaping is additive.)
+export const COMPLEXITY_PCT: Record<PropertyComplexity, number> = {
+  simple: 0,
+  moderate: 15,
+  complex: 30,
+};
+export const SLOPE_PCT = 10;
+export const DOGS_PCT = 5;
+export const OBSTACLES_PCT = 5;
+
+// Back-compat exports for callers that imported the old constants.
 export const COMPLEXITY_LABOR_MULTIPLIER: Record<PropertyComplexity, number> = {
   simple: 1,
   moderate: 1.15,
   complex: 1.30,
 };
-
 export const SLOPE_MULTIPLIER = 1.10;
 export const DOGS_MULTIPLIER = 1.05;
 
@@ -47,11 +60,30 @@ export interface PricingFlags {
   has_obstacles: boolean;
 }
 
+export interface MultiplierBreakdown {
+  factor: number;
+  parts: Array<{ label: string; pct: number }>;
+}
+
+/** Resolve the labor multiplier as an additive sum of percentage bumps,
+ *  plus a parts list so the UI can show the breakdown. */
+export function laborMultiplierBreakdown(flags: PricingFlags): MultiplierBreakdown {
+  const parts: MultiplierBreakdown['parts'] = [];
+  const cPct = COMPLEXITY_PCT[flags.property_complexity];
+  if (cPct > 0) parts.push({ label: capitalize(flags.property_complexity), pct: cPct });
+  if (flags.has_slopes) parts.push({ label: 'Slopes', pct: SLOPE_PCT });
+  if (flags.has_dogs) parts.push({ label: 'Dogs', pct: DOGS_PCT });
+  if (flags.has_obstacles) parts.push({ label: 'Obstacles', pct: OBSTACLES_PCT });
+  const total = parts.reduce((s, p) => s + p.pct, 0);
+  return { factor: 1 + total / 100, parts };
+}
+
 export function laborMultiplier(flags: PricingFlags): number {
-  let m = COMPLEXITY_LABOR_MULTIPLIER[flags.property_complexity];
-  if (flags.has_slopes) m *= SLOPE_MULTIPLIER;
-  if (flags.has_dogs) m *= DOGS_MULTIPLIER;
-  return m;
+  return laborMultiplierBreakdown(flags).factor;
+}
+
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export interface LineItemDraft {
@@ -163,8 +195,6 @@ export function profitMargin(items: LineItemDraft[], flags?: PricingFlags): numb
   return Math.round(((revenue - cost) / revenue) * 100);
 }
 
-export function marginColor(pct: number): 'green' | 'yellow' | 'red' {
-  if (pct >= 30) return 'green';
-  if (pct >= 20) return 'yellow';
-  return 'red';
-}
+// Margin thresholds are owned by the shared util in lib/margin-colors.ts —
+// re-exported here so legacy imports keep working with one source of truth.
+export { marginTone as marginColor } from '@/lib/margin-colors';

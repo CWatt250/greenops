@@ -28,6 +28,7 @@ const STATUS_COLORS: Record<EstimateStatus, string> = {
   accepted: 'bg-green-100 text-green-700',
   declined: 'bg-red-100 text-red-700',
   expired: 'bg-amber-100 text-amber-700',
+  converted: 'bg-orange-100 text-orange-700',
 };
 
 type ProposalRow = Estimate & {

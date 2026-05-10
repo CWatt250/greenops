@@ -7,6 +7,7 @@ import { PageIntro } from '@/components/help/page-intro';
 import { HowProfitabilityWorks } from '@/components/help/how-page-works';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { fmtUsd } from '@/lib/job-costing';
+import { marginToneWithGray } from '@/lib/margin-colors';
 import { cn } from '@/lib/utils';
 interface JobWithJoins {
   id: string;
@@ -21,12 +22,9 @@ interface JobWithJoins {
   actual_total_cost?: number | null;
 }
 
-function marginTone(pct: number): 'green' | 'yellow' | 'red' | 'gray' {
-  if (pct >= 30) return 'green';
-  if (pct >= 15) return 'yellow';
-  if (pct > 0) return 'red';
-  return 'gray';
-}
+// Single source of truth for margin colors lives in lib/margin-colors.ts.
+// Local alias keeps the call sites readable without redefining thresholds.
+const marginTone = marginToneWithGray;
 
 const TONE_TEXT = {
   green: 'text-green-700',
@@ -236,7 +234,7 @@ export default async function ProfitabilityPage() {
             ) : (
               <ul className="divide-y -mx-6">
                 {crewRows.map((r) => {
-                  const tone = marginTone(r.margin);
+                  const tone = marginTone(r.margin, r.revenue);
                   return (
                     <li key={r.id} className="flex items-center justify-between px-6 py-2 text-sm">
                       <span className="flex items-center gap-2 min-w-0">
@@ -274,7 +272,7 @@ export default async function ProfitabilityPage() {
             <ul className="divide-y -mx-6">
               {monthRows.map(([ym, v]) => {
                 const margin = v.revenue > 0 ? (v.profit / v.revenue) * 100 : 0;
-                const tone = marginTone(margin);
+                const tone = marginTone(margin, v.revenue);
                 const label = new Date(`${ym}-01T12:00`).toLocaleDateString('en-US', {
                   month: 'long', year: 'numeric',
                 });

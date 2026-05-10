@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -21,7 +22,7 @@ import {
 } from 'lucide-react';
 import {
   FREQUENCY_LABELS, FREQUENCY_DISCOUNT_PCT, FREQUENCY_VISITS_PER_YEAR,
-  laborMultiplier, lineTotal, annualValue, monthlyRecurring, perVisitSubtotal,
+  laborMultiplier, laborMultiplierBreakdown, lineTotal, annualValue, monthlyRecurring, perVisitSubtotal,
   suggestedMonthlyRate, profitMargin, marginColor,
   type LineItemDraft, type PricingFlags,
 } from '@/lib/proposal-pricing';
@@ -168,6 +169,9 @@ export function ProposalWizard({
   const subtotal = useMemo(() => perVisitSubtotal(items, flags), [items, flags]);
   // Monthly recurring is the sum of per_month line totals.
   const monthlyTotal = useMemo(() => monthlyRecurring(items, flags), [items, flags]);
+  // taxRate state is in percent for the input UI (e.g., 8.5 = 8.5%).
+  // The DB stores decimal — see migration 031. We divide by 100 at insert
+  // time and at compute time.
   const taxAmount = useMemo(() => subtotal * (taxRate / 100), [subtotal, taxRate]);
   const grandTotal = subtotal + taxAmount;
   const annual = useMemo(() => annualValue(items, flags), [items, flags]);
@@ -524,7 +528,7 @@ export function ProposalWizard({
         status: targetStatus,
         valid_until: validUntil,
         notes: notes || null,
-        tax_rate: taxRate,
+        tax_rate: taxRate / 100, // store as decimal: 8.5 (UI) → 0.085 (DB)
         property_complexity: flags.property_complexity,
         has_slopes: flags.has_slopes,
         has_dogs: flags.has_dogs,
@@ -985,16 +989,16 @@ export function ProposalWizard({
             <div className="rounded-xl border bg-card overflow-hidden">
               <div className="px-4 py-3 border-b flex items-center justify-between">
                 <p className="text-sm font-semibold">Line items ({items.length})</p>
-                <span
-                  className={cn(
-                    'text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5',
-                    marginTone === 'green' && 'bg-green-100 text-green-700',
-                    marginTone === 'yellow' && 'bg-amber-100 text-amber-700',
-                    marginTone === 'red' && 'bg-red-100 text-red-700'
-                  )}
+                {/* Margin chip is hidden until per-service cost data exists.
+                 *  See lib/proposal-pricing.ts:profitMargin() — current cost
+                 *  estimate is a stub. CTA links to where to set real costs. */}
+                <Link
+                  href="/dashboard/services"
+                  className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
+                  title="Add labor + material estimates per service to see live margin"
                 >
-                  Margin {margin}%
-                </span>
+                  Set service costs to see margin →
+                </Link>
               </div>
               {items.length === 0 ? (
                 <p className="text-xs text-muted-foreground italic px-4 py-8 text-center">
@@ -1224,6 +1228,22 @@ export function ProposalWizard({
               </button>
               {propertyOpen && (
                 <div className="border-t p-4 space-y-4">
+                  {/* Resolved multiplier breakdown — additive: 15+10+5 = +30%, not 1.328 */}
+                  {(() => {
+                    const bd = laborMultiplierBreakdown(flags);
+                    if (bd.parts.length === 0) return null;
+                    return (
+                      <p className="text-[11px] text-muted-foreground">
+                        Labor multiplier: <strong className="text-foreground">+{bd.parts.reduce((s, p) => s + p.pct, 0)}%</strong>
+                        {' = '}
+                        {bd.parts.map((p, i) => (
+                          <span key={p.label}>
+                            {p.label} +{p.pct}%{i < bd.parts.length - 1 ? ', ' : ''}
+                          </span>
+                        ))}
+                      </p>
+                    );
+                  })()}
                   <div>
                     <Label className="text-xs mb-1.5 block">Complexity</Label>
                     <div className="flex gap-1.5">
@@ -1465,25 +1485,18 @@ export function ProposalWizard({
           </div>
 
           <div className="space-y-3">
-            <div className="rounded-xl border bg-card p-4 space-y-2 text-xs">
+            <div className="rounded-xl border border-dashed bg-card p-4 space-y-2 text-xs">
               <p className="font-semibold uppercase tracking-wide text-muted-foreground">
                 Profit margin
               </p>
-              <p
-                className={cn(
-                  'text-2xl font-bold',
-                  marginTone === 'green' && 'text-green-700',
-                  marginTone === 'yellow' && 'text-amber-700',
-                  marginTone === 'red' && 'text-red-700'
-                )}
-              >
-                {margin}%
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Live margin requires per-service labor and material estimates.
+                Add those once on{' '}
+                <Link href="/dashboard/services" className="font-semibold underline">
+                  Services
+                </Link>{' '}
+                and this card will surface a real number.
               </p>
-              {marginTone === 'red' && (
-                <p className="text-[11px] text-red-700">
-                  Margin is low — consider raising prices or trimming services.
-                </p>
-              )}
             </div>
 
             <Button

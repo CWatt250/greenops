@@ -44,6 +44,7 @@ export function CompanyInfoForm({ company }: Props) {
     website: company.website ?? '',
     tagline: company.tagline ?? '',
     service_area: company.service_area ?? '',
+    invoice_prefix: company.invoice_prefix ?? 'INV',
     logo_url: company.logo_url ?? '',
   });
 
@@ -218,6 +219,21 @@ export function CompanyInfoForm({ company }: Props) {
           value={form.service_area}
           onChange={(e) => update('service_area', e.target.value)}
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="ci-prefix">Invoice prefix</Label>
+        <Input
+          id="ci-prefix"
+          placeholder="TLC"
+          maxLength={8}
+          value={form.invoice_prefix}
+          onChange={(e) => update('invoice_prefix', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+          className="w-24"
+        />
+        <p className="text-xs text-muted-foreground">
+          New invoices are numbered <strong>{form.invoice_prefix || 'INV'}-1234</strong>. Existing invoices keep their old numbers.
+        </p>
       </div>
 
       {/* Business hours */}

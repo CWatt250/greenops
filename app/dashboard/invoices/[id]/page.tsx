@@ -10,7 +10,7 @@ import { InvoiceTotals } from '@/components/billing/invoice-totals';
 import { PaymentForm } from '@/components/billing/payment-form';
 import { PaymentHistory } from '@/components/billing/payment-history';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 import {
   ChevronLeft, Loader2, Download, Copy, XCircle, CreditCard, Send,
 } from 'lucide-react';
@@ -81,6 +81,55 @@ export default function InvoiceDetailPage() {
       .eq('id', id);
     if (error) toast.error(error.message);
     else { toast.success('Invoice marked as sent.'); await loadAll(); }
+    setActioning(null);
+  }
+
+  /**
+   * Open the user's mail client with a prefilled message and mark the
+   * invoice as sent. Until we wire a transactional-email provider this is
+   * how Trent actually delivers an invoice — mailto bridges the gap.
+   */
+  async function emailInvoice() {
+    if (!invoice) return;
+    if (!invoice.client?.email) {
+      toast.error('No email on file for this client.');
+      return;
+    }
+    setActioning('email');
+    // Pull the company once so the email signature can be branded.
+    const { data: companyRow } = await supabase
+      .from('companies')
+      .select('name, phone, email, website')
+      .eq('id', invoice.company_id)
+      .single();
+    const company = companyRow as { name?: string; phone?: string | null; email?: string | null; website?: string | null } | null;
+    const companyName = company?.name ?? 'Our team';
+    const portalUrl = `${window.location.origin}/portal/invoices/${invoice.id}`;
+    const lines: string[] = [
+      `Hi ${invoice.client?.name?.split(' ')[0] ?? 'there'},`,
+      '',
+      `Your invoice ${invoice.invoice_number} is ready — ${formatCurrency(invoice.balance_due)} due${invoice.due_date ? ` by ${invoice.due_date}` : ''}.`,
+      '',
+      `View + pay in your portal: ${portalUrl}`,
+      '',
+      "If you'd prefer a PDF, download it from the dashboard and attach it to this email before sending.",
+      '',
+      `Thanks,`,
+      companyName,
+      ...(company?.phone ? [company.phone] : []),
+      ...(company?.email ? [company.email] : []),
+    ];
+    const subject = `Invoice ${invoice.invoice_number} from ${companyName}`;
+    const body = lines.join('\n');
+    const url = `mailto:${encodeURIComponent(invoice.client.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = url;
+    // Optimistically mark the invoice as sent. If the user cancels their
+    // email client they can still see and use Mark Sent / Mark Draft.
+    const { error } = await supabase
+      .from('invoices')
+      .update({ status: 'sent', sent_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (!error) await loadAll();
     setActioning(null);
   }
 
@@ -235,16 +284,28 @@ export default function InvoiceDetailPage() {
           {/* Actions */}
           <div className="flex flex-wrap gap-2">
             {canSend && (
-              <Button
-                size="sm"
-                onClick={markSent}
-                disabled={actioning !== null}
-                className="gap-1.5"
-                style={{ backgroundColor: 'var(--color-brand-green-raw)', color: '#fff' }}
-              >
-                {actioning === 'send' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                Mark Sent
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  onClick={emailInvoice}
+                  disabled={actioning !== null}
+                  className="gap-1.5"
+                  style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
+                >
+                  {actioning === 'email' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                  Send Invoice
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={markSent}
+                  disabled={actioning !== null}
+                  className="gap-1.5"
+                >
+                  {actioning === 'send' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  Mark Sent
+                </Button>
+              </>
             )}
             {canPay && (
               <Button size="sm" variant="outline" onClick={() => setPaymentOpen(true)} className="gap-1.5">
