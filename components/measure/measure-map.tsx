@@ -14,10 +14,9 @@ import {
   isAreaType, isLineType,
   type MeasuredShape, type ShapeType,
 } from '@/lib/measurement';
-import {
-  Layers, Pentagon, Slash, Trash2, HelpCircle, Undo2, Eraser,
-} from 'lucide-react';
+import { Layers, Pentagon, Slash, Trash2, HelpCircle, Undo2, Eraser } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import { ShapeEditPopup } from './shape-edit-popup';
 
 const TRI_CITIES_FALLBACK = { longitude: -119.1734, latitude: 46.2087, zoom: 11 };
@@ -34,6 +33,8 @@ interface MeasureMapProps {
   onUndo?: () => void;
   canUndo?: boolean;
   onClearAll?: () => void;
+  /** Called when Area tool is tapped for the first time (mobile toast). */
+  onFirstAreaTap?: () => void;
 }
 
 /**
@@ -42,7 +43,7 @@ interface MeasureMapProps {
  */
 export default function MeasureMap({
   center, shapes, onShapesChange, focusShapeRef, syncShapesRef,
-  onUndo, canUndo = false, onClearAll,
+  onUndo, canUndo = false, onClearAll, onFirstAreaTap,
 }: MeasureMapProps) {
   const mapRef = useRef<MapRef>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -58,6 +59,7 @@ export default function MeasureMap({
   const [drawReady, setDrawReady] = useState(false);
   const [activeMode, setActiveMode] = useState<'simple_select' | 'draw_polygon' | 'draw_line_string'>('simple_select');
   const [helpOpen, setHelpOpen] = useState(false);
+  const firstAreaTapRef = useRef(false);
 
   // Selected-shape editor state (popup positioned at the shape's centroid)
   const [editing, setEditing] = useState<{
@@ -351,6 +353,18 @@ export default function MeasureMap({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (drawRef.current as any).changeMode(mode);
     setActiveMode(mode);
+    // First-time Area tap: show intro toast + fire callback
+    if (mode === 'draw_polygon' && !firstAreaTapRef.current) {
+      firstAreaTapRef.current = true;
+      onFirstAreaTap?.();
+      // Also check localStorage for global "seen before" flag
+      try {
+        if (!window.localStorage.getItem('mobile_measure_seen_intro')) {
+          window.localStorage.setItem('mobile_measure_seen_intro', '1');
+          toast('Tap each corner of the property, then double-tap to close the shape.', { duration: 4000, position: 'top-center' });
+        }
+      } catch { /* localStorage not available */ }
+    }
   }
 
   function deleteSelected() {
@@ -476,11 +490,11 @@ export default function MeasureMap({
         ))}
       </div>
 
-      {/* Custom tool panel (top-right) — big, labeled buttons */}
-      <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-10">
+      {/* ── DESKTOP TOOLBAR (hidden on mobile) ── */}
+      <div className="hidden md:flex absolute top-3 right-3 flex-col gap-1.5 z-10">
         {/* Shape count — live spatial awareness */}
         <div
-          className="self-end inline-flex items-center gap-1 rounded-full border bg-background/95 backdrop-blur-sm shadow px-2.5 py-1 text-[10px] font-mono tabular-nums text-muted-foreground"
+          className="inline-flex items-center gap-1 rounded-full border bg-background/95 backdrop-blur-sm shadow px-2.5 py-1 text-[10px] font-mono tabular-nums text-muted-foreground"
           aria-live="polite"
         >
           {shapes.length} shape{shapes.length === 1 ? '' : 's'} drawn
@@ -564,24 +578,72 @@ export default function MeasureMap({
         )}
       </div>
 
-      {/* "Start drawing" pulse for empty state */}
-      {noShapes && drawReady && (
-        <div
-          className="pointer-events-none absolute top-3 right-[200px] z-10 flex items-center gap-2"
-          aria-hidden
-        >
-          <div className="rounded-full bg-background/95 backdrop-blur-sm border shadow px-3 py-1.5 text-xs font-semibold animate-pulse">
-            ← Start with the Area tool
+      {/* ── MOBILE TOOLBAR (hidden on desktop) ── */}
+      <div className="md:hidden absolute inset-x-0 bottom-14 z-10 flex flex-col items-center gap-2 pointer-events-none">
+        {/* Shape count — top of map area on mobile */}
+        {shapes.length > 0 && (
+          <div className="pointer-events-auto rounded-full border bg-background/95 backdrop-blur-sm shadow px-2.5 py-1 text-[10px] font-mono tabular-nums text-muted-foreground">
+            {shapes.length} shape{shapes.length === 1 ? '' : 's'} drawn
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Drawing instructions strip */}
-      {noShapes && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-background/95 backdrop-blur-sm border shadow px-3 py-1.5 text-[11px] text-muted-foreground z-10">
-          Click around the perimeter, double-click to close.
+        {/* Horizontal compact toolbar */}
+        <div className="pointer-events-auto flex items-center gap-2 rounded-xl border bg-background/95 backdrop-blur-sm shadow-lg px-2.5 py-1.5">
+          <CompactToolButton
+            label="Area"
+            active={activeMode === 'draw_polygon'}
+            onClick={() => setMode('draw_polygon')}
+          />
+          <CompactToolButton
+            label="Line"
+            active={activeMode === 'draw_line_string'}
+            onClick={() => setMode('draw_line_string')}
+          />
+          <div className="w-px h-6 bg-border" aria-hidden />
+          <CompactToolButton
+            label="Undo"
+            disabled={!canUndo}
+            onClick={() => onUndo?.()}
+            destructive
+          />
+          <CompactToolButton
+            label="Delete"
+            onClick={deleteSelected}
+            destructive
+          />
         </div>
-      )}
+
+        {/* Help button */}
+        <div className="pointer-events-auto absolute bottom-0 right-3 translate-y-1/2">
+          <button
+            type="button"
+            onClick={() => setHelpOpen((o) => !o)}
+            className="inline-flex items-center justify-center w-8 h-8 rounded-full border bg-background/95 backdrop-blur-sm shadow text-muted-foreground hover:text-foreground"
+            aria-label="Tool descriptions"
+          >
+            <HelpCircle className="h-4 w-4" />
+          </button>
+          {helpOpen && (
+            <div className="absolute bottom-full right-0 mb-2 rounded-xl border bg-popover shadow-xl p-3 w-[220px] text-xs space-y-1.5">
+              <p className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground mb-1">
+                Tools
+              </p>
+              <p>
+                <strong>Area</strong> — tap corners of the property, then double-tap to close the shape.
+              </p>
+              <p>
+                <strong>Line</strong> — measure distances like driveway or fence length.
+              </p>
+              <p>
+                <strong>Delete</strong> — first select a shape on the map, then tap Delete.
+              </p>
+              <p className="text-muted-foreground">
+                Tip: tap any drawn shape to rename it or change its type.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Floating shape editor */}
       {editingShape && editing && (
@@ -598,12 +660,36 @@ export default function MeasureMap({
           onClose={() => setEditing(null)}
         />
       )}
-
-      {/* Mobile accuracy nudge */}
-      <p className="md:hidden absolute top-12 left-3 right-3 z-10 rounded-md bg-background/95 backdrop-blur-sm border shadow px-3 py-2 text-[11px] text-muted-foreground">
-        💡 For best accuracy, measure on desktop or tablet.
-      </p>
     </div>
+  );
+}
+
+function CompactToolButton({
+  label, active, onClick, disabled = false, destructive = false,
+}: {
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        'flex flex-col items-center justify-center gap-0.5 w-10 h-10 rounded-lg transition-all text-[11px] font-semibold',
+        active
+          ? 'bg-[var(--orange)] text-white shadow'
+          : destructive
+            ? 'text-muted-foreground hover:text-destructive hover:bg-destructive/10'
+            : 'text-muted-foreground hover:text-foreground hover:bg-accent/40',
+        disabled && 'opacity-40 cursor-not-allowed pointer-events-none'
+      )}
+    >
+      {label}
+    </button>
   );
 }
 

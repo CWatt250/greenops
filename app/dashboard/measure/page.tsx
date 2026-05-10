@@ -34,32 +34,38 @@ export default async function StandaloneMeasurePage({
 
   return (
     <>
-      <div className="flex items-center justify-end mb-2">
+      {/* Desktop: HowMeasureWorks link; hidden on mobile via md:block */}
+      <div className="hidden md:flex items-center justify-end mb-2">
         <HowMeasureWorks />
       </div>
+      {/* Desktop: PageIntro banners; hidden on mobile */}
       {isCrew ? (
-        <PageIntro
-          id="measure-crew"
-          title="Measure a property"
-          description="Found a yard that's bigger than the original quote? Customer asking about adding services? Measure it here, send it to the office, and they'll follow up with a quote."
-          steps={[
-            'Search the address (or use the GPS button).',
-            'Draw the yard, beds, and hardscape.',
-            'Add a quick note about what the customer wants.',
-            'Tap "Send to office for quote".',
-          ]}
-        />
+        <div className="hidden md:block">
+          <PageIntro
+            id="measure-crew"
+            title="Measure a property"
+            description="Found a yard that's bigger than the original quote? Customer asking about adding services? Measure it here, send it to the office, and they'll follow up with a quote."
+            steps={[
+              'Search the address (or use the GPS button).',
+              'Draw the yard, beds, and hardscape.',
+              'Add a quick note about what the customer wants.',
+              'Tap "Send to office for quote".',
+            ]}
+          />
+        </div>
       ) : (
-        <PageIntro
-          id="measure"
-          title="Measure any property"
-          description="Type an address, draw the lawn, and get instant square footage. Save measurements to clients or generate a proposal in two clicks."
-          steps={[
-            'Search an address up top — the map flies to the property.',
-            'Click points on the map to outline the lawn, beds, or hardscape.',
-            'Hit Save (to a client or as a quick lookup) or Generate Proposal.',
-          ]}
-        />
+        <div className="hidden md:block">
+          <PageIntro
+            id="measure"
+            title="Measure any property"
+            description="Type an address, draw the lawn, and get instant square footage. Save measurements to clients or generate a proposal in two clicks."
+            steps={[
+              'Search an address up top — the map flies to the property.',
+              'Click points on the map to outline the lawn, beds, or hardscape.',
+              'Hit Save (to a client or as a quick lookup) or Generate Proposal.',
+            ]}
+          />
+        </div>
       )}
       <MeasureView
         companyId={profile.company_id}

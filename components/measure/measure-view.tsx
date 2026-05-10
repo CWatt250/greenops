@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ShapeList } from './shape-list';
 import { AreaSummary } from './area-summary';
 import { InstructionsBanner } from './instructions-banner';
+import { MeasurementBottomSheet } from './measurement-bottom-sheet';
 import { AddressSearch } from './address-search';
 import {
   CreateCustomerFromMeasurement, type PrefilledAddress,
@@ -463,13 +464,15 @@ export function MeasureView({
       className="-m-4 md:-m-6 lg:-m-8 flex flex-col overflow-hidden"
       style={{ height: 'calc(100svh - 3.5rem)' }}
     >
-      {/* HOW TO MEASURE — first thing on the page so first-time users see it. */}
-      <InstructionsBanner />
+      {/* Instructions — desktop only, hidden on mobile */}
+      <div className="hidden md:block">
+        <InstructionsBanner />
+      </div>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* MAP COLUMN */}
         <div className="flex-1 relative min-h-[300px] flex flex-col">
-          {/* Top bar — primary address search only. */}
+          {/* Top bar — primary address search only */}
           {!lockedClientId && (
             <div className="border-b bg-background p-3 space-y-2.5 shrink-0">
               <AddressSearch
@@ -512,8 +515,8 @@ export function MeasureView({
           </div>
         </div>
 
-        {/* RIGHT PANEL */}
-        <aside className="md:w-[360px] shrink-0 border-l bg-background overflow-y-auto">
+        {/* RIGHT PANEL — desktop only */}
+        <aside className="hidden md:block md:w-[360px] shrink-0 border-l bg-background overflow-y-auto">
           <div className="p-4 space-y-4">
             <div>
               <Link
@@ -726,6 +729,207 @@ export function MeasureView({
           </div>
         </div>
       </aside>
+      </div>
+
+      {/* ── MOBILE BOTTOM SHEET (hidden on desktop) ── */}
+      <div className="md:hidden">
+        <MeasurementBottomSheet
+          peek={
+            shapes.length > 0 ? (
+              <div className="flex items-center justify-between text-xs">
+                <span>📐 {shapes.length} shape{shapes.length === 1 ? '' : 's'}</span>
+                <span className="font-mono tabular-nums">
+                  {(
+                    totals.turf + totals.hardscape + totals.bed + totals.other
+                  ).toLocaleString()} sq ft
+                </span>
+                <span className="text-muted-foreground">Tap to label &amp; save</span>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground text-center">
+                Draw shapes to see measurements
+              </p>
+            )
+          }
+          detail={
+            <div className="space-y-4 pb-4">
+              {/* Shape list */}
+              <ShapeList
+                shapes={shapes}
+                onUpdate={updateShape}
+                onRemove={removeShape}
+                onReorder={reorderShapes}
+                onFocus={focusShape}
+              />
+
+              {/* Totals + pricing */}
+              <AreaSummary shapes={shapes} />
+
+              {/* Action buttons — compact for mobile */}
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="outline"
+                  onClick={downloadPdf}
+                  disabled={pdfBusy || shapes.length === 0}
+                  className="w-full gap-1.5 text-xs h-9"
+                >
+                  {pdfBusy
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <FileDown className="h-3.5 w-3.5" />}
+                  Save as PDF
+                </Button>
+
+                {lockedClientId ? (
+                  <Button
+                    onClick={saveLocked}
+                    disabled={saving || shapes.length === 0}
+                    className="w-full gap-1.5 text-xs h-9"
+                    style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
+                  >
+                    {saving
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Save className="h-3.5 w-3.5" />}
+                    Save Measurement
+                  </Button>
+                ) : (
+                  <>
+                    {/* Save to existing customer (quick action) */}
+                    {selectedClientId && (
+                      <Button
+                        onClick={() => void saveToPickedClient()}
+                        disabled={saving || shapes.length === 0}
+                        className="w-full gap-1.5 text-xs h-9"
+                        style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
+                      >
+                        {saving
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <Save className="h-3.5 w-3.5" />}
+                        Save to {selectedClient?.name ?? 'customer'}
+                      </Button>
+                    )}
+
+                    {/* Save menu toggle */}
+                    <Button
+                      onClick={() => setSaveMenuOpen((o) => !o)}
+                      disabled={saving || shapes.length === 0}
+                      variant="outline"
+                      className="w-full gap-1.5 text-xs h-9"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                      More save options…
+                    </Button>
+                    {saveMenuOpen && (
+                      <div className="rounded-lg border bg-popover shadow-xl p-1.5 space-y-1">
+                        <SaveOption
+                          icon={<User className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />}
+                          title="Save to existing customer"
+                          desc="Links to an existing client record."
+                          highlighted={defaultSaveAction === 'existing'}
+                          onClick={() => {
+                            setSaveMenuOpen(false);
+                            setShowClientPicker(true);
+                          }}
+                        />
+                        <SaveOption
+                          icon={<UserPlus className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />}
+                          title="Create new customer"
+                          desc="Auto-fills address + lot size."
+                          highlighted={defaultSaveAction === 'new'}
+                          onClick={() => {
+                            if (!addressInfo?.service_address) {
+                              toast.error('Search an address first.');
+                              return;
+                            }
+                            setSaveMenuOpen(false);
+                            setCreateIntent('measurement');
+                            setShowCreateCustomer(true);
+                          }}
+                        />
+                        <SaveOption
+                          icon={<Globe className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />}
+                          title="Save standalone"
+                          desc="No customer yet."
+                          highlighted={defaultSaveAction === 'standalone'}
+                          onClick={saveStandalone}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Crew: send to office */}
+                {isCrew ? (
+                  submittedToOffice ? (
+                    <div
+                      className="rounded-lg border px-3 py-2.5 text-xs"
+                      style={{
+                        backgroundColor: 'var(--orange-soft)',
+                        borderColor: 'var(--orange)',
+                        color: 'var(--orange-deep)',
+                      }}
+                    >
+                      <p className="font-bold">✅ Sent to office</p>
+                      <p className="mt-0.5">Dispatch will follow up with a quote.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <textarea
+                        id="field-note-mobile"
+                        value={fieldNote}
+                        onChange={(e) => setFieldNote(e.target.value)}
+                        rows={2}
+                        placeholder="Note for the office…"
+                        className="w-full rounded-md border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                      <Button
+                        onClick={submitToOffice}
+                        disabled={shapes.length === 0 || submittingToOffice || saving}
+                        className="w-full gap-1.5 text-xs h-9 text-white"
+                        style={{ backgroundColor: 'var(--orange)' }}
+                      >
+                        {submittingToOffice
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <Send className="h-3.5 w-3.5" />}
+                        Send to office for quote
+                      </Button>
+                    </div>
+                  )
+                ) : (
+                  <Button
+                    onClick={generateProposal}
+                    disabled={shapes.length === 0 || saving}
+                    className="w-full gap-1.5 text-xs h-9 font-semibold"
+                    style={{
+                      backgroundColor: 'var(--orange-soft)',
+                      color: 'var(--orange-deep)',
+                      border: '2px solid var(--orange)',
+                    }}
+                  >
+                    <FilePlus className="h-3.5 w-3.5" />
+                    Generate Proposal
+                  </Button>
+                )}
+
+                {/* Inline client picker for "Save to existing" */}
+                {showClientPicker && (
+                  <div className="rounded-lg border bg-card p-3 space-y-2">
+                    <p className="text-xs font-semibold">Pick the customer to save to</p>
+                    <ClientCombobox
+                      value={selectedClientId}
+                      onChange={(id, c) => handlePickClient(id, c)}
+                      placeholder="Search clients…"
+                    />
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setShowClientPicker(false)} className="flex-1">Cancel</Button>
+                      <Button size="sm" onClick={() => void saveToPickedClient()} disabled={!selectedClientId} className="flex-1" style={{ backgroundColor: 'var(--orange)', color: '#fff' }}>Save</Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          }
+          hasShapes={shapes.length > 0}
+        />
       </div>
 
       {/* Create-customer sheet */}
