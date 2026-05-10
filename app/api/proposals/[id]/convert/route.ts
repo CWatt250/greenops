@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { frequencyToRRule } from '@/lib/rrule-helpers';
+import { materializeRecurringJob, defaultMaterializeHorizon } from '@/lib/recurring-jobs';
 
 /**
  * POST /api/proposals/[id]/convert
@@ -64,8 +66,36 @@ export async function POST(
     );
   }
 
-  // Create the job. We default to 'unscheduled' so the dispatcher picks
-  // dates + crew on the job detail page rather than guessing here.
+  // Pick the highest-frequency cadence among line items (weekly beats
+  // biweekly beats monthly beats one_time). The series RRULE is anchored
+  // on the most recurring service; less-frequent services tag along.
+  const FREQ_RANK: Record<string, number> = {
+    weekly: 5, biweekly: 4, monthly: 3, seasonal: 2, annual: 1, one_time: 0,
+  };
+  const rawItems = (lineItems ?? []) as Array<{
+    service_id: string | null;
+    description: string;
+    quantity: number;
+    unit_price: number;
+    total: number;
+    frequency?: string | null;
+  }>;
+  let topFreq = 'one_time';
+  for (const li of rawItems) {
+    const f = (li.frequency ?? 'one_time').toLowerCase();
+    if ((FREQ_RANK[f] ?? 0) > (FREQ_RANK[topFreq] ?? 0)) topFreq = f;
+  }
+
+  // Anchor the series on today (dispatcher can pick a real date on the
+  // job detail page; the materializer recomputes from there if changed).
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  const rruleStr = frequencyToRRule(topFreq, today);
+  const isRecurring = !!rruleStr;
+
+  // Create the job (or recurring parent). For recurring proposals we
+  // schedule the anchor to today so materializeRecurringJob has a seed;
+  // dispatcher can drag it to a real start date afterward.
   const nowIso = new Date().toISOString();
   const { data: job, error: jobErr } = await supabase
     .from('jobs')
@@ -73,9 +103,13 @@ export async function POST(
       company_id: proposal.company_id,
       client_id: proposal.client_id,
       title: proposal.title,
-      status: 'unscheduled',
+      status: isRecurring ? 'scheduled' : 'unscheduled',
+      scheduled_date: isRecurring ? todayStr : null,
       notes: proposal.notes ?? null,
-      is_recurring: false,
+      is_recurring: isRecurring,
+      recurrence_rule: rruleStr,
+      rrule: rruleStr,
+      is_recurring_parent: isRecurring,
       estimate_id: proposal.id,
       created_by: user.id,
       created_at: nowIso,
@@ -117,6 +151,26 @@ export async function POST(
     }
   }
 
+  // For recurring proposals, expand the parent into 6 months of child
+  // occurrences immediately so the schedule populates. Cron extends the
+  // horizon thereafter.
+  let materializedCount = 0;
+  if (isRecurring) {
+    try {
+      const result = await materializeRecurringJob(
+        job.id,
+        defaultMaterializeHorizon(),
+        supabase,
+      );
+      materializedCount = result.inserted;
+    } catch (err) {
+      // Don't roll back — the parent job is fine; the cron will fill in
+      // missed occurrences on the next morning's tick.
+      // eslint-disable-next-line no-console
+      console.warn('Materialize failed at convert time:', (err as Error).message);
+    }
+  }
+
   // Mark proposal as converted.
   await supabase
     .from('estimates')
@@ -128,5 +182,10 @@ export async function POST(
     })
     .eq('id', proposal.id);
 
-  return NextResponse.json({ ok: true, job_id: job.id });
+  return NextResponse.json({
+    ok: true,
+    job_id: job.id,
+    is_recurring: isRecurring,
+    occurrences_materialized: materializedCount,
+  });
 }

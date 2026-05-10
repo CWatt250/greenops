@@ -158,6 +158,16 @@ export interface Job {
   /** Customer-facing notes shown on the portal (migration 027).
    *  `notes` stays crew-internal. */
   customer_notes?: string | null;
+  /** Recurring-job materialization (migration 034). */
+  is_recurring_parent?: boolean | null;
+  recurring_parent_id?: string | null;
+  materialized_through?: string | null;
+  rrule?: string | null;
+  recurrence_end_date?: string | null;
+  /** Issue-flag detail (migration 036). */
+  issue_notes?: string | null;
+  issue_flagged_at?: string | null;
+  issue_flagged_by?: string | null;
   created_at: string;
   updated_at: string;
   client?: Client;

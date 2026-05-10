@@ -158,14 +158,23 @@ export default function CompleteJobPage() {
 
   async function handleSubmit() {
     if (!userId || !companyId) return;
+
+    // Block submit if any photo is still uploading or had an upload error.
+    // Without this, the job could be marked complete while photos are
+    // missing — exactly the failure mode the audit flagged.
     if (photos.some((p) => p.uploading)) {
       setError('Wait for photos to finish uploading before completing.');
       return;
     }
+    if (photos.some((p) => p.error)) {
+      setError('Some photos failed to upload. Tap the red ones to retry, or remove them.');
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
 
-    // Upload signature → job-signatures bucket → jobs.signature_url.
+    // Upload signature → job-signatures bucket. URL is passed to the RPC.
     let signatureUrl: string | null = null;
     if (!sigRef.current?.isEmpty()) {
       try {
@@ -186,90 +195,64 @@ export default function CompleteJobPage() {
       }
     }
 
-    const nowIso = new Date().toISOString();
-    const jobPatch: Record<string, unknown> = {
-      status: 'complete',
-      actual_end: nowIso,
-      updated_at: nowIso,
-    };
-    if (signatureUrl) {
-      jobPatch.signature_url = signatureUrl;
-      jobPatch.signed_by_name = signerName.trim() || null;
-      jobPatch.signed_at = nowIso;
+    // Best-effort GPS for the implicit clock-out.
+    let lat: number | null = null;
+    let lng: number | null = null;
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: false,
+          timeout: 8000,
+          maximumAge: 60_000,
+        }),
+      );
+      lat = pos.coords.latitude;
+      lng = pos.coords.longitude;
+    } catch {
+      // No coords is fine — the RPC accepts nulls.
     }
 
-    const { error: jobErr } = await supabase
-      .from('jobs')
-      .update(jobPatch)
-      .eq('id', id);
+    const photoPayload = photos
+      .filter((p) => p.uploadedPath && !p.error)
+      .map((p) => ({
+        storage_path: p.uploadedPath,
+        caption: p.isAfter ? 'After' : 'Before',
+      }));
 
-    if (jobErr) {
-      setError(jobErr.message);
+    // ALL critical writes (job update, clock_out, photo rows, activity
+    // log) happen inside the complete_job() RPC's single transaction.
+    // Any failure rolls back the whole thing — no partial completes.
+    const { error: rpcErr } = await supabase.rpc('complete_job', {
+      p_job_id: id,
+      p_signature_url: signatureUrl ?? '',
+      p_signed_by_name: signerName.trim(),
+      p_photos: photoPayload,
+      p_clock_event_lat: lat,
+      p_clock_event_lng: lng,
+      p_user_id: userId,
+    });
+
+    if (rpcErr) {
+      setError(rpcErr.message);
       setSubmitting(false);
       return;
     }
 
-    // Persist completed-photo rows. Skip any that failed to upload.
-    const uploadedPhotos = photos.filter((p) => p.uploadedPath && !p.error);
-    if (uploadedPhotos.length > 0) {
-      await supabase.from('job_photos').insert(
-        uploadedPhotos.map((p) => ({
-          company_id: companyId,
-          job_id: id,
-          uploaded_by: userId,
-          storage_path: p.uploadedPath,
-          caption: p.isAfter ? 'After' : 'Before',
-        })),
-      );
+    // Notes ride alongside as a separate non-critical activity_log entry
+    // (the RPC's metadata covers the status change + counts; this adds
+    // the free-form notes). Failure here doesn't roll back the complete.
+    if (notes.trim()) {
+      void supabase.from('activity_log').insert({
+        company_id: companyId,
+        entity_type: 'job',
+        entity_id: id,
+        action: 'completion_notes',
+        actor_id: userId,
+        metadata: { completion_notes: notes },
+      });
     }
 
-    // Final clock-out if user is still clocked in
-    const { data: openClockIn } = await supabase
-      .from('clock_events')
-      .select('id')
-      .eq('job_id', id)
-      .eq('profile_id', userId)
-      .eq('event_type', 'clock_in')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (openClockIn) {
-      const hasClockOut = await supabase
-        .from('clock_events')
-        .select('id')
-        .eq('job_id', id)
-        .eq('profile_id', userId)
-        .eq('event_type', 'clock_out')
-        .gt('created_at', openClockIn.id) // compare by ordering, not id
-        .maybeSingle();
-
-      if (!hasClockOut.data) {
-        await supabase.from('clock_events').insert({
-          company_id: companyId,
-          job_id: id,
-          profile_id: userId,
-          event_type: 'clock_out',
-        });
-      }
-    }
-
-    // Activity log entry. Signature is now on the job row itself; we
-    // keep notes here since they're free-form completion context.
-    await supabase.from('activity_log').insert({
-      company_id: companyId,
-      entity_type: 'job',
-      entity_id: id,
-      action: 'status_changed_to_complete',
-      actor_id: userId,
-      metadata: {
-        completion_notes: notes || null,
-        photo_count: uploadedPhotos.length,
-        signed: !!signatureUrl,
-      },
-    });
-
-    // Notify the dispatcher (anyone with owner/dispatcher role in the company)
+    // Notify the dispatcher (best-effort; outside the critical transaction).
     const { data: dispatchers } = await supabase
       .from('profiles')
       .select('id')
@@ -277,7 +260,7 @@ export default function CompleteJobPage() {
       .in('role', ['owner', 'dispatcher']);
 
     if (dispatchers?.length) {
-      await supabase.from('notifications').insert(
+      void supabase.from('notifications').insert(
         dispatchers.map((d: { id: string }) => ({
           company_id: companyId,
           profile_id: d.id,
@@ -287,7 +270,7 @@ export default function CompleteJobPage() {
             : undefined,
           entity_type: 'job',
           entity_id: id,
-        }))
+        })),
       );
     }
 

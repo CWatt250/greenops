@@ -5,10 +5,12 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { GPSTracker } from '@/components/crew/gps-tracker';
+import { CrewStatusBar } from '@/components/crew/crew-status-bar';
 import { formatDate } from '@/lib/utils';
 import { MapPin, Clock, ChevronRight, CalendarDays } from 'lucide-react';
 import type { Job } from '@/types';
 
+type CrewMembership = { crew_id: string; crew: { name: string; color: string } | null };
 type JobWithClient = Job & {
   client: { name: string; service_address: string } | null;
 };
@@ -32,15 +34,19 @@ export default async function TodayPage() {
     );
   }
 
-  const { data: crewMemberRaw } = await supabase
+  // Multi-crew membership. A worker on Crew 1 + Crew 2 sees jobs from
+  // BOTH (the previous .maybeSingle() truncated to one crew).
+  const { data: membershipsRaw } = await supabase
     .from('crew_members')
     .select('crew_id, crew:crews(name,color)')
-    .eq('profile_id', user.id)
-    .maybeSingle();
+    .eq('profile_id', user.id);
 
-  const crewMember = crewMemberRaw as
-    | { crew_id: string; crew: { name: string; color: string } | null }
-    | null;
+  const memberships = ((membershipsRaw ?? []) as unknown) as CrewMembership[];
+  const crewIds = memberships.map((m) => m.crew_id);
+  const crewById = new Map<string, { name: string; color: string }>();
+  for (const m of memberships) {
+    if (m.crew && m.crew_id) crewById.set(m.crew_id, m.crew);
+  }
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -52,8 +58,8 @@ export default async function TodayPage() {
     .not('status', 'in', '("cancelled")')
     .order('scheduled_start');
 
-  if (crewMember?.crew_id) {
-    jobsQuery = jobsQuery.eq('crew_id', crewMember.crew_id);
+  if (crewIds.length > 0) {
+    jobsQuery = jobsQuery.in('crew_id', crewIds);
   }
 
   const { data: jobs } = await jobsQuery;
@@ -66,13 +72,22 @@ export default async function TodayPage() {
   const done = todayJobs.filter((j) => j.status === 'complete');
 
   function JobCard({ job }: { job: JobWithClient }) {
+    const jobCrew = job.crew_id ? crewById.get(job.crew_id) : null;
     return (
       <Link
         href={`/job/${job.id}`}
         className="flex items-start justify-between gap-3 rounded-xl border bg-card p-4 active:opacity-70 transition-opacity"
+        style={jobCrew ? { borderLeftWidth: 4, borderLeftColor: jobCrew.color } : undefined}
       >
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-sm leading-tight truncate">{job.title}</p>
+          {/* Multi-crew chip — only show when the worker is on more than one crew */}
+          {memberships.length > 1 && jobCrew && (
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: jobCrew.color }} />
+              <span className="text-[11px] text-muted-foreground">{jobCrew.name}</span>
+            </div>
+          )}
           {job.client && (
             <>
               <div className="flex items-center gap-1.5 mt-1.5">
@@ -105,11 +120,16 @@ export default async function TodayPage() {
 
   return (
     <div className="space-y-5 pb-8">
+      {/* Online/offline indicator + queued-mutation count + sign-out */}
+      <CrewStatusBar todayLabel={formatDate(today)} />
+
       {/* GPS tracker — only active when at least one job is in progress so
-       *  battery isn't drained between stops. */}
+       *  battery isn't drained between stops. Tags pings with the first
+       *  crew the worker is on; multi-crew GPS attribution is a future
+       *  refinement. */}
       <GPSTracker
         profileId={user.id}
-        crewId={crewMember?.crew_id ?? null}
+        crewId={crewIds[0] ?? null}
         companyId={profile.company_id}
         isActive={inProgress.length > 0}
       />
@@ -123,16 +143,21 @@ export default async function TodayPage() {
         </div>
       </div>
 
-      {/* Crew badge */}
-      {crewMember?.crew && (
-        <div className="flex items-center gap-2">
-          <span
-            className="h-2.5 w-2.5 rounded-full"
-            style={{ backgroundColor: crewMember.crew?.color ?? '#3D6B2C' }}
-          />
-          <span className="text-xs font-medium text-muted-foreground">
-            {crewMember.crew?.name}
-          </span>
+      {/* Crew badges — one per crew the worker is on */}
+      {memberships.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {memberships.map((m) => (
+            <span
+              key={m.crew_id}
+              className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2 py-0.5 text-xs"
+            >
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: m.crew?.color ?? '#3D6B2C' }}
+              />
+              <span className="text-muted-foreground">{m.crew?.name ?? 'Crew'}</span>
+            </span>
+          ))}
         </div>
       )}
 

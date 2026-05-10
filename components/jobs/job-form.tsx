@@ -80,6 +80,7 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
   async function onSubmit(data: JobFormData) {
     setServerError(null);
 
+    const recurring = !!rrule;
     const payload = {
       title: data.title,
       status: data.status,
@@ -91,8 +92,13 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
       scheduled_end: data.scheduled_end || null,
       notes: data.notes || null,
       customer_notes: data.customer_notes || null,
-      is_recurring: !!rrule,
+      is_recurring: recurring,
       recurrence_rule: rrule ?? null,
+      // Recurring-materialization columns (migration 034). The parent row
+      // tracks the rule + how far we've expanded; child occurrence rows
+      // get spawned by materializeRecurringJob() below.
+      is_recurring_parent: recurring,
+      rrule: rrule ?? null,
     };
 
     let jobId: string;
@@ -128,6 +134,20 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
         }))
       );
       if (error) { setServerError(error.message); return; }
+    }
+
+    // Materialize 6 months of occurrences for recurring jobs. Without
+    // this the schedule view stays blank past the first instance.
+    if (recurring && rrule && data.scheduled_date) {
+      try {
+        const { materializeRecurringJob, defaultMaterializeHorizon } =
+          await import('@/lib/recurring-jobs');
+        await materializeRecurringJob(jobId, defaultMaterializeHorizon(), supabase);
+      } catch (err) {
+        // Non-fatal: parent job is saved; cron will catch up.
+        // eslint-disable-next-line no-console
+        console.warn('Recurring materialization failed:', (err as Error).message);
+      }
     }
 
     router.push(`/dashboard/jobs/${jobId}`);

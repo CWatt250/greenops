@@ -8,10 +8,14 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { formatCurrency } from '@/lib/utils';
+import { enqueue } from '@/lib/offline-queue';
+import { IssueFlagSheet } from '@/components/crew/issue-flag-sheet';
+import { JobFormsSection } from '@/components/forms/job-forms-section';
 import {
   MapPin, Clock, ChevronLeft, Navigation, LogIn, LogOut,
   CheckSquare, AlertTriangle, FileText, Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Job, JobLineItem, ClockEvent } from '@/types';
 
 type JobDetail = Job & {
@@ -45,6 +49,10 @@ export default function CrewJobDetailPage() {
   const [loading, setLoading] = useState(true);
   const [clockLoading, setClockLoading] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
+  const [issueOpen, setIssueOpen] = useState(false);
+  // Pre-job form gating state
+  const [requiredPreJobIds, setRequiredPreJobIds] = useState<string[]>([]);
+  const [submittedPreJobIds, setSubmittedPreJobIds] = useState<string[]>([]);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -77,8 +85,43 @@ export default function CrewJobDetailPage() {
     }
     setLineItems((lineRes.data ?? []) as LineItemWithService[]);
     setClockEvents((clockRes.data ?? []) as ClockEvent[]);
+
+    // Pre-job form gating: collect active pre_job templates that apply
+    // to this job (no service_categories filter = applies-to-all, or
+    // overlap with the job's service categories) and count submissions.
+    const jobCompanyId = (jobRes.data as JobDetail | null)?.company_id;
+    if (jobCompanyId) {
+      const jobCategories = ((lineRes.data ?? []) as LineItemWithService[])
+        .map((li) => li.service?.category as string | undefined)
+        .filter((c): c is string => !!c);
+      const [{ data: tplRows }, { data: subRows }] = await Promise.all([
+        supabase
+          .from('form_templates')
+          .select('id, service_categories')
+          .eq('company_id', jobCompanyId)
+          .eq('is_active', true)
+          .eq('trigger', 'pre_job'),
+        supabase
+          .from('form_submissions')
+          .select('template_id')
+          .eq('job_id', id),
+      ]);
+      const required = ((tplRows ?? []) as Array<{ id: string; service_categories: string[] | null }>)
+        .filter((t) => {
+          const cats = t.service_categories ?? [];
+          return cats.length === 0 || cats.some((c) => (jobCategories as string[]).includes(c));
+        })
+        .map((t) => t.id);
+      setRequiredPreJobIds(required);
+      setSubmittedPreJobIds(
+        ((subRows ?? []) as Array<{ template_id: string | null }>)
+          .map((s) => s.template_id)
+          .filter((x): x is string => !!x),
+      );
+    }
+
     setLoading(false);
-  }, [id]);
+  }, [id, supabase]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -105,6 +148,10 @@ export default function CrewJobDetailPage() {
       setGpsError('GPS unavailable — clocking in without location.');
     }
 
+    const promote = job?.status === 'scheduled' || job?.status === 'unscheduled';
+
+    // Try the live write first. If we're offline (or any network failure),
+    // queue the mutation in localStorage and replay on reconnect.
     const { error } = await supabase.from('clock_events').insert({
       company_id: companyId,
       job_id: id,
@@ -114,20 +161,30 @@ export default function CrewJobDetailPage() {
       longitude: lng,
     });
 
-    if (!error) {
-      // Promote job to in_progress on first clock-in
-      if (job?.status === 'scheduled' || job?.status === 'unscheduled') {
-        await supabase
-          .from('jobs')
-          .update({
-            status: 'in_progress',
-            actual_start: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', id);
-      }
-      await loadAll();
+    if (error) {
+      enqueue({
+        kind: 'clock_in',
+        payload: {
+          job_id: id,
+          company_id: companyId,
+          profile_id: userId,
+          latitude: lat,
+          longitude: lng,
+          promote_to_in_progress: promote,
+        },
+      });
+      toast.success('Clock-in queued — will sync when you reconnect.');
+    } else if (promote) {
+      await supabase
+        .from('jobs')
+        .update({
+          status: 'in_progress',
+          actual_start: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
     }
+    await loadAll();
     setClockLoading(false);
   }
 
@@ -159,12 +216,10 @@ export default function CrewJobDetailPage() {
     setClockLoading(false);
   }
 
-  async function handleFlagIssue() {
-    await supabase
-      .from('jobs')
-      .update({ status: 'issue', updated_at: new Date().toISOString() })
-      .eq('id', id);
-    await loadAll();
+  // Issue flagging now opens a Sheet that captures notes + photos before
+  // flipping status. The Sheet handles its own write/queue logic.
+  function openIssueSheet() {
+    setIssueOpen(true);
   }
 
   if (loading) {
@@ -204,11 +259,34 @@ export default function CrewJobDetailPage() {
           <p className="text-xs text-amber-600">{gpsError}</p>
         )}
 
+        {(() => {
+          const missing = requiredPreJobIds.filter((id) => !submittedPreJobIds.includes(id));
+          if (missing.length > 0 && !isClockedIn) {
+            return (
+              <div
+                className="rounded-md border px-3 py-2 text-xs flex items-start gap-2"
+                style={{ backgroundColor: 'var(--orange-soft)', borderColor: 'var(--orange)', color: 'var(--orange-deep)' }}
+              >
+                <FileText className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>
+                  Complete <strong>{missing.length} pre-job form{missing.length === 1 ? '' : 's'}</strong> below before clocking in.
+                </span>
+              </div>
+            );
+          }
+          return null;
+        })()}
+
         <div className="flex gap-2">
           {!isClockedIn ? (
             <Button
               onClick={handleClockIn}
-              disabled={clockLoading || job.status === 'complete' || job.status === 'cancelled'}
+              disabled={
+                clockLoading
+                || job.status === 'complete'
+                || job.status === 'cancelled'
+                || requiredPreJobIds.some((id) => !submittedPreJobIds.includes(id))
+              }
               className="flex-1 gap-2"
               style={{ backgroundColor: 'var(--color-brand-green-raw)', color: '#fff' }}
             >
@@ -242,12 +320,40 @@ export default function CrewJobDetailPage() {
 
         {job.status !== 'complete' && job.status !== 'issue' && job.status !== 'cancelled' && (
           <button
-            onClick={handleFlagIssue}
+            onClick={openIssueSheet}
             className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-700"
           >
             <AlertTriangle className="h-3.5 w-3.5" />
             Flag an issue
           </button>
+        )}
+
+        {userId && companyId && (
+          <IssueFlagSheet
+            open={issueOpen}
+            onOpenChange={setIssueOpen}
+            jobId={id}
+            companyId={companyId}
+            profileId={userId}
+            onFlagged={() => loadAll()}
+          />
+        )}
+
+        {/* Forms — pre-job, post-job, on-demand. Crews can fill them
+         *  here without leaving the job page. */}
+        {userId && companyId && (
+          <div className="rounded-xl border bg-card p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold">Forms</h2>
+            </div>
+            <JobFormsSection
+              jobId={id}
+              clientId={job.client?.id ?? null}
+              companyId={companyId}
+              userId={userId}
+            />
+          </div>
         )}
 
         {/* Clock event history */}

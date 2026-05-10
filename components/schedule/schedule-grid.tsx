@@ -5,11 +5,13 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
+import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { DroppableCell } from './droppable-cell';
 import { DraggableJobCard } from './draggable-job-card';
@@ -95,8 +97,42 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
   const [activeJob, setActiveJob] = useState<Job | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // Phones: long-press to drag, tolerate 5px finger jitter so taps still
+    // register normally while scrolling.
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   );
+
+  /**
+   * Looks for a job already on the target crew/date that overlaps the
+   * dragged job's time window. Returns the conflicting job titles or
+   * null if no conflict.
+   */
+  async function findTimeConflict(
+    jobId: string,
+    targetCrewId: string,
+    targetDate: string,
+    startTime: string | null,
+    endTime: string | null,
+  ): Promise<string[] | null> {
+    if (!startTime || !endTime) return null;
+    const { data } = await supabase
+      .from('jobs')
+      .select('id, title, scheduled_start, scheduled_end')
+      .eq('crew_id', targetCrewId)
+      .eq('scheduled_date', targetDate)
+      .neq('id', jobId)
+      .not('status', 'in', '("cancelled","complete")');
+    if (!data || data.length === 0) return null;
+    const overlaps = (data as Array<{
+      title: string; scheduled_start: string | null; scheduled_end: string | null;
+    }>).filter((row) => {
+      if (!row.scheduled_start || !row.scheduled_end) return false;
+      // [a,b] overlaps [c,d] iff a < d AND c < b
+      return startTime < row.scheduled_end && row.scheduled_start < endTime;
+    });
+    return overlaps.length > 0 ? overlaps.map((r) => r.title) : null;
+  }
 
   function findJobById(id: string): { job: Job; fromKey: string } | null {
     for (const [key, jobs] of jobMap.entries()) {
@@ -122,6 +158,32 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
     if (found.fromKey === toKey) return;
 
     const { job, fromKey } = found;
+
+    // Time-conflict check before the optimistic update — only for moves
+    // onto a real crew + date with a known time window.
+    if (toKey !== 'unscheduled') {
+      const parsed = parseCellKey(toKey);
+      if (parsed && parsed.crewId && job.scheduled_start && job.scheduled_end) {
+        const conflicts = await findTimeConflict(
+          jobId,
+          parsed.crewId,
+          parsed.dateStr,
+          job.scheduled_start as string,
+          job.scheduled_end as string,
+        );
+        if (conflicts && conflicts.length > 0) {
+          const ok = window.confirm(
+            `This crew already has ${conflicts.length === 1 ? 'a job' : `${conflicts.length} jobs`} ` +
+            `overlapping that time: ${conflicts.slice(0, 3).join(', ')}` +
+            `${conflicts.length > 3 ? '…' : ''}\n\nReassign anyway?`,
+          );
+          if (!ok) {
+            toast.info('Move cancelled.');
+            return;
+          }
+        }
+      }
+    }
 
     // Optimistic update
     setJobMap((prev) => {

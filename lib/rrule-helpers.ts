@@ -71,3 +71,47 @@ export function daysFromRrule(rruleStr: string): WeekdayStr[] {
   if (!match) return [];
   return match[1].split(',') as WeekdayStr[];
 }
+
+const WEEKDAYS: WeekdayStr[] = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+
+/**
+ * Build an RRULE string from a proposal's frequency value. Used by the
+ * Convert-to-Job flow to translate the proposal builder's frequency
+ * choice into an iCal RRULE that the recurring materializer understands.
+ *
+ * - "weekly" / "biweekly" anchor on the given start date's day of week.
+ * - "monthly" recurs on the same calendar day each month.
+ * - "seasonal" + "annual" map to yearly with a count.
+ * - "one_time" returns null (caller should use the non-recurring path).
+ */
+export function frequencyToRRule(
+  frequency: string,
+  startDate: Date,
+  endDate?: Date | null,
+): string | null {
+  const freq = (frequency ?? '').toLowerCase();
+  const dayCode = WEEKDAYS[startDate.getUTCDay()];
+  const until = endDate
+    ? `;UNTIL=${endDate.toISOString().slice(0, 10).replace(/-/g, '')}T235959Z`
+    : '';
+  switch (freq) {
+    case 'one_time':
+    case 'one-time':
+      return null;
+    case 'weekly':
+      return `FREQ=WEEKLY;BYDAY=${dayCode}${until}`;
+    case 'biweekly':
+    case 'bi-weekly':
+      return `FREQ=WEEKLY;INTERVAL=2;BYDAY=${dayCode}${until}`;
+    case 'monthly':
+      return `FREQ=MONTHLY;BYMONTHDAY=${startDate.getUTCDate()}${until}`;
+    case 'seasonal':
+      // 4 visits/year — quarterly anchored on the start day.
+      return `FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=${startDate.getUTCDate()}${until}`;
+    case 'annual':
+    case 'yearly':
+      return `FREQ=YEARLY${until}`;
+    default:
+      return null;
+  }
+}
