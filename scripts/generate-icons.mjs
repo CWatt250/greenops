@@ -2,9 +2,13 @@
 /**
  * Regenerate the TLC PWA icon set.
  *
- * Composites the existing transparent TLC wordmark (public/tlc-logo.png) onto
- * a black rounded-square base with an orange outer glow, then rasterizes to
- * every size referenced by manifest.json + app/layout.tsx.
+ * Crops just the cloud+flame mark out of public/tlc-logo.png (the master
+ * brand asset that bundles mark + "TLC" wordmark + tagline), then composites
+ * the mark onto a black rounded-square base with an orange outer glow and
+ * rasterizes to every size referenced by manifest.json + app/layout.tsx.
+ *
+ * Mark-only — no text in the icon. iOS/Android render the app label below
+ * the home-screen tile, so wordmarks inside the icon are redundant.
  *
  * Usage:  node scripts/generate-icons.mjs
  */
@@ -26,8 +30,23 @@ const ORANGE_RGB = { r: 0xF1, g: 0x5A, b: 0x24 };
 const LOGO_PATH = resolve(PUBLIC, 'tlc-logo.png');
 const MASTER = 1024; // master canvas for high-quality downsampling
 
+// Cloud+flame mark bbox inside public/tlc-logo.png (275x120). Probed by
+// scanning ink (non-black, opaque) columns above the tagline gap. The right
+// edge sits in the 6-px gutter between the mark and the "T" of "TLC".
+const MARK_CROP = { left: 39, top: 14, width: 69, height: 60 };
+
 const logoMeta = await sharp(LOGO_PATH).metadata();
 console.log(`logo: ${logoMeta.width}x${logoMeta.height} (${logoMeta.format})`);
+
+// Pre-extract the mark once and upscale it to a high-res master so each icon
+// resize is a single downsample (better quality than chained resizes).
+const MARK_MASTER = await sharp(LOGO_PATH)
+  .extract(MARK_CROP)
+  .resize({ width: MASTER, kernel: 'lanczos3' })
+  .png()
+  .toBuffer();
+const markMeta = await sharp(MARK_MASTER).metadata();
+console.log(`mark master: ${markMeta.width}x${markMeta.height}`);
 
 /**
  * Build a square-canvas SVG: solid black rounded-square with a soft orange
@@ -40,7 +59,7 @@ console.log(`logo: ${logoMeta.width}x${logoMeta.height} (${logoMeta.format})`);
 function baseSvg({
   size = MASTER,
   padding = 0.06,
-  radiusPct = 0.22,
+  radiusPct = 0.25,
   glow = true,
 } = {}) {
   const inset = Math.round(size * padding);
@@ -70,8 +89,8 @@ async function renderBase(size, opts = {}) {
 }
 
 /**
- * Composite the TLC wordmark onto the base canvas. `logoFracWidth` is the
- * fraction of the canvas the logo should span horizontally — smaller values
+ * Composite the cloud+flame mark onto the base canvas. `logoFracWidth` is the
+ * fraction of the canvas the mark should span horizontally — smaller values
  * leave more padding (used for maskable icons where the system may crop the
  * outer 20%).
  */
@@ -84,8 +103,8 @@ async function buildIcon({
   const base = await renderBase(size, { padding });
 
   const targetW = Math.round(size * logoFracWidth);
-  const logoBuf = await sharp(LOGO_PATH)
-    .resize({ width: targetW, withoutEnlargement: false })
+  const logoBuf = await sharp(MARK_MASTER)
+    .resize({ width: targetW, kernel: 'lanczos3', withoutEnlargement: false })
     .toBuffer();
   const lm = await sharp(logoBuf).metadata();
 
@@ -103,22 +122,26 @@ async function buildIcon({
   return outPath;
 }
 
-/* ---------- Standard "any" icons ---------- */
+/* ---------- Standard "any" icons ----------
+   Mark is now square-ish (69x60 source vs old wide 275x120 wordmark), so the
+   same width-fraction reads much bolder than before — most of the dial-back
+   from the old fractions is to keep breathing room around the rounded square
+   corners, not to shrink the mark. */
 const standardSizes = [
-  { size: 16,  name: 'favicon-16.png',          frac: 0.86, padding: 0.04 },
-  { size: 32,  name: 'favicon-32.png',          frac: 0.84, padding: 0.05 },
-  { size: 48,  name: 'favicon-48.png',          frac: 0.82, padding: 0.05 },
-  { size: 72,  name: 'icon-72.png',             frac: 0.78, padding: 0.06 },
-  { size: 96,  name: 'icon-96.png',             frac: 0.76, padding: 0.06 },
-  { size: 128, name: 'icon-128.png',            frac: 0.74, padding: 0.06 },
-  { size: 144, name: 'icon-144.png',            frac: 0.72, padding: 0.06 },
-  { size: 152, name: 'icon-152.png',            frac: 0.72, padding: 0.06 },
-  { size: 167, name: 'icon-167.png',            frac: 0.72, padding: 0.06 },
-  { size: 180, name: 'icon-180.png',            frac: 0.72, padding: 0.06 },
-  { size: 180, name: 'apple-touch-icon.png',    frac: 0.72, padding: 0.06 },
-  { size: 192, name: 'icon-192.png',            frac: 0.72, padding: 0.06 },
-  { size: 384, name: 'icon-384.png',            frac: 0.7,  padding: 0.06 },
-  { size: 512, name: 'icon-512.png',            frac: 0.7,  padding: 0.06 },
+  { size: 16,  name: 'favicon-16.png',          frac: 0.78, padding: 0.04 },
+  { size: 32,  name: 'favicon-32.png',          frac: 0.76, padding: 0.05 },
+  { size: 48,  name: 'favicon-48.png',          frac: 0.74, padding: 0.05 },
+  { size: 72,  name: 'icon-72.png',             frac: 0.70, padding: 0.06 },
+  { size: 96,  name: 'icon-96.png',             frac: 0.68, padding: 0.06 },
+  { size: 128, name: 'icon-128.png',            frac: 0.68, padding: 0.06 },
+  { size: 144, name: 'icon-144.png',            frac: 0.66, padding: 0.06 },
+  { size: 152, name: 'icon-152.png',            frac: 0.66, padding: 0.06 },
+  { size: 167, name: 'icon-167.png',            frac: 0.66, padding: 0.06 },
+  { size: 180, name: 'icon-180.png',            frac: 0.66, padding: 0.06 },
+  { size: 180, name: 'apple-touch-icon.png',    frac: 0.66, padding: 0.06 },
+  { size: 192, name: 'icon-192.png',            frac: 0.66, padding: 0.06 },
+  { size: 384, name: 'icon-384.png',            frac: 0.65, padding: 0.06 },
+  { size: 512, name: 'icon-512.png',            frac: 0.65, padding: 0.06 },
 ];
 
 for (const s of standardSizes) {
@@ -126,11 +149,12 @@ for (const s of standardSizes) {
 }
 
 /* ---------- Maskable icons (Android adaptive) ----------
-   Adaptive icons may be cropped to a circle/squircle; safe zone is the
-   inner 80%. Logo sized at ~55% width keeps it well inside that mask. */
+   Adaptive icons may be cropped to a circle/squircle/teardrop; safe zone is
+   the inner 80%. Background fills the canvas (padding=0); mark sized at
+   ~52% keeps it well inside the 80% safe zone since the mark is square. */
 const maskable = [
-  { size: 192, name: 'icon-192-maskable.png', frac: 0.55, padding: 0.0 },
-  { size: 512, name: 'icon-512-maskable.png', frac: 0.55, padding: 0.0 },
+  { size: 192, name: 'icon-192-maskable.png', frac: 0.52, padding: 0.0 },
+  { size: 512, name: 'icon-512-maskable.png', frac: 0.52, padding: 0.0 },
 ];
 for (const s of maskable) {
   await buildIcon({ size: s.size, logoFracWidth: s.frac, padding: s.padding, filename: s.name });
@@ -173,7 +197,7 @@ for (const s of splashes) {
   const iconSize = Math.round(Math.min(s.w, s.h) * 0.55);
   const iconBuf = await buildIconBuffer({
     size: iconSize,
-    logoFracWidth: 0.7,
+    logoFracWidth: 0.65,
     padding: 0.06,
   });
   const left = Math.round((s.w - iconSize) / 2);
@@ -199,8 +223,8 @@ for (const s of splashes) {
 async function buildIconBuffer({ size, logoFracWidth, padding }) {
   const base = await renderBase(size, { padding });
   const targetW = Math.round(size * logoFracWidth);
-  const logoBuf = await sharp(LOGO_PATH)
-    .resize({ width: targetW, withoutEnlargement: false })
+  const logoBuf = await sharp(MARK_MASTER)
+    .resize({ width: targetW, kernel: 'lanczos3', withoutEnlargement: false })
     .toBuffer();
   const lm = await sharp(logoBuf).metadata();
   const left = Math.round((size - lm.width) / 2);
