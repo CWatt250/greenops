@@ -2,15 +2,17 @@
 //
 // Strategy:
 //   - Static assets (Next /_next/static, /icons, fonts): cache-first
-//   - Same-origin GET navigations / pages: stale-while-revalidate so the
-//     last-loaded /today still renders when offline
+//   - Same-origin GET navigations / pages: network-first (stale as
+//     fallback only) so the latest deploy is always reflected.  The
+//     old stale-while-revalidate meant PWA users got cached HTML that
+//     referenced old JS chunks — no bottom nav after deploy.
 //   - Everything else (Supabase POSTs, ORS proxy, third-party APIs):
 //     network-only, fall through to a clear offline error
 // We intentionally keep this small and readable instead of pulling in
 // next-pwa / Workbox — Next.js 16 + App Router doesn't always play well
 // with the bundled solutions.
 
-const CACHE_VERSION = 'tlc-pwa-v1';
+const CACHE_VERSION = 'tlc-pwa-v2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 
@@ -84,7 +86,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (isNavigation(request)) {
-    event.respondWith(staleWhileRevalidate(request, PAGE_CACHE));
+    event.respondWith(networkFirst(request, PAGE_CACHE));
     return;
   }
 });
@@ -102,16 +104,17 @@ async function cacheFirst(request, cacheName) {
   }
 }
 
-async function staleWhileRevalidate(request, cacheName) {
+async function networkFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
-  const cached = await cache.match(request);
-  const network = fetch(request)
-    .then((res) => {
-      if (res.ok) cache.put(request, res.clone());
-      return res;
-    })
-    .catch(() => cached);
-  return cached || network;
+  try {
+    const fresh = await fetch(request);
+    if (fresh.ok) cache.put(request, fresh.clone());
+    return fresh;
+  } catch {
+    // Network failed — fall back to cache so offline still works
+    const cached = await cache.match(request);
+    return cached || Response.error();
+  }
 }
 
 // Allow the page to ask the SW to update on demand (e.g. after deploy).
