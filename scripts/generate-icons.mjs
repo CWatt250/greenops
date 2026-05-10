@@ -136,19 +136,27 @@ for (const s of maskable) {
   await buildIcon({ size: s.size, logoFracWidth: s.frac, padding: s.padding, filename: s.name });
 }
 
-/* ---------- favicon.ico (16/32/48) via ImageMagick ---------- */
-const faviconOut = resolve(PUBLIC, 'favicon.ico');
-execFileSync(
-  'convert',
-  [
-    resolve(ICONS, 'favicon-16.png'),
-    resolve(ICONS, 'favicon-32.png'),
-    resolve(ICONS, 'favicon-48.png'),
-    faviconOut,
-  ],
-  { stdio: 'inherit' }
-);
-console.log(`✓ favicon.ico  (16/32/48 multi-layer)`);
+/* ---------- favicon.ico (16/32/48) via ImageMagick ----------
+   Next 16 prefers app/favicon.ico over public/favicon.ico when both exist,
+   so we write both — keeps `/favicon.ico` consistent regardless of which
+   path Next.js routes through. */
+const faviconPaths = [
+  resolve(PUBLIC, 'favicon.ico'),
+  resolve(ROOT, 'app', 'favicon.ico'),
+];
+for (const faviconOut of faviconPaths) {
+  execFileSync(
+    'convert',
+    [
+      resolve(ICONS, 'favicon-16.png'),
+      resolve(ICONS, 'favicon-32.png'),
+      resolve(ICONS, 'favicon-48.png'),
+      faviconOut,
+    ],
+    { stdio: 'inherit' }
+  );
+  console.log(`✓ ${faviconOut.replace(ROOT + '/', '')}  (16/32/48 multi-layer)`);
+}
 
 /* ---------- iOS splash screens ----------
    Black background, centered glowing icon (the 512 master) at ~38% of the
