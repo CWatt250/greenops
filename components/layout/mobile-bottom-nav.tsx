@@ -56,27 +56,51 @@ export function MobileBottomNav({ role: roleProp }: Props) {
   const pathname = usePathname() ?? '/';
   const [moreOpen, setMoreOpen] = useState(false);
   const [resolvedRole, setResolvedRole] = useState<Role>(roleProp ?? null);
+  const [loading, setLoading] = useState(roleProp === undefined);
 
   useEffect(() => {
     if (roleProp !== undefined) {
       setResolvedRole(roleProp);
+      setLoading(false);
       return;
     }
     let cancelled = false;
     (async () => {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user || cancelled) return;
+      if (!user || cancelled) { if (!cancelled) setLoading(false); return; }
       const { data } = await supabase
         .from('profiles').select('role').eq('id', user.id).maybeSingle();
       if (cancelled) return;
       const r = (data as { role?: Role } | null)?.role ?? null;
       setResolvedRole(r);
+      setLoading(false);
     })();
     return () => { cancelled = true; };
   }, [roleProp]);
 
-  if (resolvedRole === 'customer' || resolvedRole === null) return null;
+  /* Don't return null during loading — keep the nav mounting position
+   * stable so PWA service-worker caches don't lose it forever.  Render
+   * a non-interactive placeholder that becomes visible once the role is
+   * fetched.  This eliminates the iOS PWA flash-of-no-nav problem. */
+  if (resolvedRole === 'customer' || (resolvedRole === null && !loading)) return null;
+  if (resolvedRole === null && loading) {
+    return (
+      <nav
+        className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t bg-background opacity-0 pointer-events-none"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        aria-hidden="true"
+      >
+        <ul className="flex items-stretch">
+          <li className="flex-1" />
+          <li className="flex-1" />
+          <li className="flex-1 flex justify-center" />
+          <li className="flex-1" />
+          <li className="flex-1" />
+        </ul>
+      </nav>
+    );
+  }
 
   const tabs = resolvedRole === 'crew' ? CREW_TABS : ADMIN_TABS;
 
