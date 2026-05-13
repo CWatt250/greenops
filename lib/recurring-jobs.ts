@@ -14,6 +14,7 @@ interface ParentRow {
   scheduled_date: string | null;
   scheduled_start: string | null;
   scheduled_end: string | null;
+  estimated_duration_minutes: number | null;
   rrule: string | null;
   recurrence_rule: string | null;
   materialized_through: string | null;
@@ -74,7 +75,7 @@ export async function materializeRecurringJob(
     .from('jobs')
     .select(
       'id, company_id, client_id, crew_id, title, notes, customer_notes, ' +
-      'scheduled_date, scheduled_start, scheduled_end, ' +
+      'scheduled_date, scheduled_start, scheduled_end, estimated_duration_minutes, ' +
       'rrule, recurrence_rule, materialized_through, recurrence_end_date',
     )
     .eq('id', parentJobId)
@@ -164,6 +165,7 @@ export async function materializeRecurringJob(
     scheduled_date: dateStr,
     scheduled_start: parent.scheduled_start,
     scheduled_end: parent.scheduled_end,
+    estimated_duration_minutes: parent.estimated_duration_minutes,
     notes: parent.notes,
     customer_notes: parent.customer_notes,
     is_recurring: true,

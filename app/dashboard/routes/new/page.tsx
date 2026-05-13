@@ -17,7 +17,12 @@ import { CrewMultiPicker } from '@/components/routes/crew-multi-picker';
 import {
   geocodeAddress, getRouteLegs, getRoutePolyline, type PlaceSuggestion,
 } from '@/lib/mapbox';
-import { optimizeMultiCrewRoute, routeCentroid, type VroomStop } from '@/lib/vroom';
+import {
+  optimizeMultiCrewRoute,
+  resolveJobDurationMinutes,
+  routeCentroid,
+  type VroomStop,
+} from '@/lib/vroom';
 import { getWeatherForRoute } from '@/lib/weather';
 import { toast } from 'sonner';
 import { Loader2, Save, Send, MapPin, Sparkles } from 'lucide-react';
@@ -35,6 +40,8 @@ type JobWithClient = {
   status: string;
   crew_id: string | null;
   scheduled_start?: string | null;
+  scheduled_end?: string | null;
+  estimated_duration_minutes?: number | null;
   client: {
     id: string;
     name: string;
@@ -42,6 +49,12 @@ type JobWithClient = {
     latitude?: number | null;
     longitude?: number | null;
   } | null;
+  line_items?: Array<{
+    service: {
+      estimated_duration_minutes?: number | null;
+      category?: string | null;
+    } | null;
+  }> | null;
 };
 
 function toDateStr(d: Date) {
@@ -249,7 +262,10 @@ export default function RouteBuilderPage() {
 
       // Pull jobs assigned to the selected crews + jobs that are unassigned.
       // .in() doesn't match nulls, so we issue both queries in parallel and merge.
-      const baseSelect = 'id, title, status, crew_id, scheduled_start, client:clients(id,name,service_address,latitude,longitude)';
+      const baseSelect =
+        'id, title, status, crew_id, scheduled_start, scheduled_end, estimated_duration_minutes, ' +
+        'client:clients(id,name,service_address,latitude,longitude), ' +
+        'line_items:job_line_items(service:services(estimated_duration_minutes,category))';
       const [assignedRes, unassignedRes] = await Promise.all([
         supabase
           .from('jobs')
@@ -313,6 +329,10 @@ export default function RouteBuilderPage() {
           const initialCrew = isMulti
             ? (job.crew_id ?? null)
             : selectedCrewIds[0];
+          const durationMinutes = resolveJobDurationMinutes(job, {
+            jobId: job.id,
+            jobTitle: job.title,
+          });
           return {
             _key: makeKey(),
             job_id: job.id,
@@ -320,7 +340,7 @@ export default function RouteBuilderPage() {
             label: null,
             address: null,
             stop_order: isMulti ? nextOrderFor(initialCrew) : i + 1,
-            estimated_duration_minutes: 30,
+            estimated_duration_minutes: durationMinutes,
             drive_minutes_from_prev: 0,
             drive_distance_miles: 0,
             lat,

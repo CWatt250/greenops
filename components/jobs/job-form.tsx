@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -17,7 +17,8 @@ import { LineItemsTable, type LineItemDraft } from '@/components/jobs/line-items
 import { RecurrencePicker } from '@/components/jobs/recurrence-picker';
 import { NoteTemplatePicker } from '@/components/jobs/note-template-picker';
 import { Separator } from '@/components/ui/separator';
-import type { Job, Crew } from '@/types';
+import { resolveJobDurationMinutes } from '@/lib/vroom';
+import type { Job, Crew, Service } from '@/types';
 
 const jobSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -25,6 +26,7 @@ const jobSchema = z.object({
   scheduled_date: z.string().optional(),
   scheduled_start: z.string().optional(),
   scheduled_end: z.string().optional(),
+  estimated_duration_minutes: z.string().optional(),
   notes: z.string().optional(),
   customer_notes: z.string().optional(),
 });
@@ -63,6 +65,7 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
     handleSubmit,
     setValue,
     getValues,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<JobFormData>({
     resolver: zodResolver(jobSchema),
@@ -72,15 +75,65 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
       scheduled_date: initialData?.scheduled_date ?? '',
       scheduled_start: initialData?.scheduled_start?.slice(0, 5) ?? '',
       scheduled_end: initialData?.scheduled_end?.slice(0, 5) ?? '',
+      estimated_duration_minutes:
+        initialData?.estimated_duration_minutes != null
+          ? String(initialData.estimated_duration_minutes)
+          : '',
       notes: initialData?.notes ?? '',
       customer_notes: initialData?.customer_notes ?? '',
     },
   });
 
+  // Load the company's services so we can look up estimated_duration_minutes
+  // for whatever line items the user selects. Small list, fetched once.
+  const [services, setServices] = useState<Service[]>([]);
+  useEffect(() => {
+    supabase
+      .from('services')
+      .select('id, category, estimated_duration_minutes')
+      .eq('is_active', true)
+      .then(({ data }) => setServices((data ?? []) as Service[]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Watch the fields that feed the duration resolver so the "calculated"
+  // hint updates live as the user edits start/end times or line items.
+  const watchedStart = watch('scheduled_start');
+  const watchedEnd = watch('scheduled_end');
+  const watchedDuration = watch('estimated_duration_minutes');
+
+  const calculatedDurationMinutes = useMemo(() => {
+    const servicesById = new Map(services.map((s) => [s.id, s]));
+    return resolveJobDurationMinutes(
+      {
+        scheduled_start: watchedStart || null,
+        scheduled_end: watchedEnd || null,
+        line_items: lineItems.map((li) => ({
+          service: li.service_id ? {
+            estimated_duration_minutes:
+              servicesById.get(li.service_id)?.estimated_duration_minutes ?? null,
+            category: servicesById.get(li.service_id)?.category ?? null,
+          } : null,
+        })),
+      },
+      { jobTitle: initialData?.title ?? '(new job)' },
+    );
+  }, [watchedStart, watchedEnd, lineItems, services, initialData?.title]);
+
+  const overrideMinutes = (() => {
+    const raw = (watchedDuration ?? '').trim();
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+  })();
+
   async function onSubmit(data: JobFormData) {
     setServerError(null);
 
     const recurring = !!rrule;
+    // Persist the override when the user typed one, otherwise fall back to
+    // the live calculation so VROOM gets a real number even on first save.
+    const durationMinutes = overrideMinutes ?? calculatedDurationMinutes;
     const payload = {
       title: data.title,
       status: data.status,
@@ -90,6 +143,7 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
       scheduled_date: data.scheduled_date || null,
       scheduled_start: data.scheduled_start || null,
       scheduled_end: data.scheduled_end || null,
+      estimated_duration_minutes: durationMinutes,
       notes: data.notes || null,
       customer_notes: data.customer_notes || null,
       is_recurring: recurring,
@@ -205,6 +259,32 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
           <div className="space-y-2">
             <Label htmlFor="scheduled_end">End Time</Label>
             <Input id="scheduled_end" type="time" {...register('scheduled_end')} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="space-y-2">
+            <Label htmlFor="estimated_duration_minutes">
+              Estimated duration (min)
+              <span className="ml-1 text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
+                used for route balancing
+              </span>
+            </Label>
+            <Input
+              id="estimated_duration_minutes"
+              type="number"
+              min={1}
+              step={5}
+              placeholder={String(calculatedDurationMinutes)}
+              {...register('estimated_duration_minutes')}
+            />
+            <p className="text-xs text-muted-foreground">
+              Calculated: <span className="font-medium">{calculatedDurationMinutes} min</span>{' '}
+              (from {watchedStart && watchedEnd
+                ? 'scheduled time window'
+                : lineItems.some((li) => li.service_id) ? 'line-item services' : 'fallback'}).
+              Leave blank to use the calculated value, or override with a number.
+            </p>
           </div>
         </div>
 

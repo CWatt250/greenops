@@ -133,6 +133,8 @@ export interface Service {
   is_active: boolean;
   /** Per-square-foot pricing override (migration 010). Optional. */
   per_sqft_rate?: number | null;
+  /** Default minutes of on-site work per service (migration 040). */
+  estimated_duration_minutes?: number | null;
   created_at: string;
 }
 
@@ -201,6 +203,9 @@ export interface Job {
   /** Live ETA broadcast when worker taps Get Directions (migration 038). */
   eta_minutes?: number | null;
   en_route_at?: string | null;
+  /** Per-job duration override fed to VROOM (migration 040).
+   *  Falls back to line-item service durations / category defaults. */
+  estimated_duration_minutes?: number | null;
   created_at: string;
   updated_at: string;
   client?: Client;

@@ -4,6 +4,95 @@ export interface VroomStop {
   service: number; // seconds
 }
 
+// ---------------------------------------------------------------------------
+// Duration resolution
+// ---------------------------------------------------------------------------
+// VROOM treats every job's `service` window as authoritative — if every stop
+// is 30 minutes the solver balances by count, not time. This resolver mirrors
+// the priority order documented in the audit:
+//   1. jobs.estimated_duration_minutes (explicit override on the job row)
+//   2. scheduled_end − scheduled_start (when both `time`s are set)
+//   3. sum of line-item services' estimated_duration_minutes
+//   4. category default for the dominant line-item service
+//   5. 30-minute fallback (and warn so we can spot un-tagged jobs)
+
+const CATEGORY_DEFAULTS: Record<string, number> = {
+  mowing: 45,
+  edging: 30,
+  cleanup: 180,
+  fertilization: 30,
+  aeration: 60,
+  overseeding: 45,
+  mulch: 120,
+  tree: 90,
+  sprinkler: 60,
+  snow: 45,
+  holiday: 120,
+};
+
+export const DURATION_FALLBACK_MINUTES = 30;
+
+export interface DurationSource {
+  estimated_duration_minutes?: number | null;
+  scheduled_start?: string | null;
+  scheduled_end?: string | null;
+  line_items?: Array<{
+    service?: {
+      estimated_duration_minutes?: number | null;
+      category?: string | null;
+    } | null;
+  }> | null;
+}
+
+function parseTimeOfDayMinutes(s: string | null | undefined): number | null {
+  if (!s) return null;
+  // Postgres `time` round-trips as "HH:MM:SS" or "HH:MM" — accept both.
+  const match = /^(\d{1,2}):(\d{2})/.exec(s);
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
+export function resolveJobDurationMinutes(
+  job: DurationSource,
+  opts: { jobId?: string | number; jobTitle?: string } = {},
+): number {
+  // 1. Explicit override on the job row.
+  const explicit = job.estimated_duration_minutes;
+  if (typeof explicit === 'number' && explicit > 0) return explicit;
+
+  // 2. Time-of-day window.
+  const start = parseTimeOfDayMinutes(job.scheduled_start);
+  const end = parseTimeOfDayMinutes(job.scheduled_end);
+  if (start !== null && end !== null && end > start) return end - start;
+
+  // 3. Sum of line-item service durations.
+  const items = job.line_items ?? [];
+  let sum = 0;
+  for (const li of items) {
+    const d = li.service?.estimated_duration_minutes;
+    if (typeof d === 'number' && d > 0) sum += d;
+  }
+  if (sum > 0) return sum;
+
+  // 4. Dominant category default.
+  const firstCategory = items.find((li) => li.service?.category)?.service?.category;
+  if (firstCategory && firstCategory in CATEGORY_DEFAULTS) {
+    return CATEGORY_DEFAULTS[firstCategory];
+  }
+
+  // 5. Fallback — warn so we can find jobs missing duration data.
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[vroom] duration fallback (${DURATION_FALLBACK_MINUTES}m) for job`,
+    opts.jobId ?? opts.jobTitle ?? '(unknown)',
+    '— no override, no time window, no priced services with duration.',
+  );
+  return DURATION_FALLBACK_MINUTES;
+}
+
 // Calls our internal proxy at /api/optimize-route, which forwards to
 // OpenRouteService's optimization endpoint. The ORS API key stays
 // server-side. The payload format is identical to VROOM (vehicles + jobs);

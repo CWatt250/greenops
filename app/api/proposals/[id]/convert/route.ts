@@ -48,7 +48,7 @@ export async function POST(
       .single(),
     supabase
       .from('estimate_line_items')
-      .select('*')
+      .select('*, service:services(estimated_duration_minutes,category)')
       .eq('estimate_id', id)
       .order('sort_order'),
   ]);
@@ -79,6 +79,7 @@ export async function POST(
     unit_price: number;
     total: number;
     frequency?: string | null;
+    service?: { estimated_duration_minutes?: number | null; category?: string | null } | null;
   }>;
   let topFreq = 'one_time';
   for (const li of rawItems) {
@@ -93,6 +94,15 @@ export async function POST(
   const rruleStr = frequencyToRRule(topFreq, today);
   const isRecurring = !!rruleStr;
 
+  // Sum line-item service durations so the job carries a real time estimate
+  // through to VROOM. Falls back to null when no line item maps to a service
+  // with a duration — lib/vroom.ts will still pick up the category default.
+  const summedDuration = rawItems.reduce((sum, li) => {
+    const d = li.service?.estimated_duration_minutes;
+    return typeof d === 'number' && d > 0 ? sum + d : sum;
+  }, 0);
+  const estimatedDurationMinutes = summedDuration > 0 ? summedDuration : null;
+
   // Create the job (or recurring parent). For recurring proposals we
   // schedule the anchor to today so materializeRecurringJob has a seed;
   // dispatcher can drag it to a real start date afterward.
@@ -105,6 +115,7 @@ export async function POST(
       title: proposal.title,
       status: isRecurring ? 'scheduled' : 'unscheduled',
       scheduled_date: isRecurring ? todayStr : null,
+      estimated_duration_minutes: estimatedDurationMinutes,
       notes: proposal.notes ?? null,
       is_recurring: isRecurring,
       recurrence_rule: rruleStr,
