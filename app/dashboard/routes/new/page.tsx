@@ -602,6 +602,18 @@ export default function RouteBuilderPage() {
       return stop;
     });
 
+    // Audit log — surfaces the exact per-job constraints VROOM will see.
+    // Mode A jobs render with no time_window; Mode B/C render with one.
+    // eslint-disable-next-line no-console
+    console.log('[optimize] VROOM stops:', vroomStops.map((s) => ({
+      id: s.id,
+      service_min: Math.round(s.service / 60),
+      time_window: s.time_window
+        ? `${new Date(s.time_window[0] * 1000).toLocaleTimeString()}` +
+          `–${new Date(s.time_window[1] * 1000).toLocaleTimeString()}`
+        : '— (anytime)',
+    })));
+
     const crewVehicles = selectedCrewIds.map((id) => ({ crew_id: id }));
 
     const origDrive = stops.reduce((sum, s) => sum + (s.drive_minutes_from_prev ?? 0), 0);

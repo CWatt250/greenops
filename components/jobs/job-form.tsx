@@ -20,24 +20,51 @@ import { Separator } from '@/components/ui/separator';
 import { resolveJobDurationMinutes } from '@/lib/vroom';
 import { saveJobAsTemplate } from '@/lib/job-templates';
 import { toast } from 'sonner';
-import { ChevronDown, ChevronUp, BookmarkPlus } from 'lucide-react';
+import { BookmarkPlus, Calendar, Clock, Hourglass, Target } from 'lucide-react';
 import type { Job, Crew, Service } from '@/types';
 
 const jobSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   status: z.enum(['unscheduled', 'scheduled', 'en_route', 'in_progress', 'complete', 'cancelled', 'issue']),
   scheduled_date: z.string().optional(),
-  scheduled_start: z.string().optional(),
-  scheduled_end: z.string().optional(),
-  estimated_duration_minutes: z.string().optional(),
-  time_window_start: z.string().optional(),
-  time_window_end: z.string().optional(),
   notes: z.string().optional(),
   customer_notes: z.string().optional(),
-}).refine(
-  (d) => !d.time_window_start || !d.time_window_end || d.time_window_end > d.time_window_start,
-  { path: ['time_window_end'], message: 'End must be after start.' },
-);
+});
+
+type TimeMode = 'anytime' | 'window' | 'arrival';
+
+function detectTimeMode(initial: Partial<Job> | undefined): TimeMode {
+  if (initial?.scheduled_start) return 'arrival';
+  if (initial?.time_window_start && initial?.time_window_end) return 'window';
+  return 'anytime';
+}
+
+function toHHMM(t: string | null | undefined): string {
+  if (!t) return '';
+  return t.slice(0, 5);
+}
+
+function hhmmToMinutes(t: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(t);
+  if (!m) return null;
+  const h = Number(m[1]); const min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return null;
+  return h * 60 + min;
+}
+
+function minutesToHHMM(total: number): string {
+  const wrapped = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+  const h = Math.floor(wrapped / 60);
+  const m = wrapped % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+}
+
+function splitDuration(total: number | null | undefined): { hours: string; minutes: string } {
+  if (total == null || !Number.isFinite(total) || total <= 0) return { hours: '', minutes: '' };
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return { hours: h ? String(h) : '', minutes: m ? String(m) : (h ? '' : '0') };
+}
 
 type JobFormData = z.infer<typeof jobSchema>;
 
@@ -69,11 +96,18 @@ export function JobForm({
   const [clientId, setClientId] = useState(initialData?.client_id ?? '');
   const [crewId, setCrewId] = useState(initialData?.crew_id ?? '');
   const [rrule, setRrule] = useState<string | null>(initialData?.recurrence_rule ?? null);
-  // Time window UI is collapsed by default; opens when there are saved
-  // bounds on the row (editing an existing job that already has a window).
-  const [tWindowOpen, setTWindowOpen] = useState(
-    !!(initialData?.time_window_start || initialData?.time_window_end),
-  );
+
+  // Scheduling — three mutually-exclusive modes, plus a duration that's
+  // optional with a smart default. See detectTimeMode() for how we figure
+  // out which mode an existing job is in.
+  const [timeMode, setTimeMode] = useState<TimeMode>(detectTimeMode(initialData));
+  const initialDur = splitDuration(initialData?.estimated_duration_minutes);
+  const [durationHours, setDurationHours] = useState<string>(initialDur.hours);
+  const [durationMinutes, setDurationMinutes] = useState<string>(initialDur.minutes);
+  const [arrivalTime, setArrivalTime] = useState<string>(toHHMM(initialData?.scheduled_start));
+  const [windowStart, setWindowStart] = useState<string>(toHHMM(initialData?.time_window_start));
+  const [windowEnd, setWindowEnd] = useState<string>(toHHMM(initialData?.time_window_end));
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   // Save-as-template controls. Hidden when there's no client selected,
   // since a template must be tied to a client.
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
@@ -97,7 +131,6 @@ export function JobForm({
     handleSubmit,
     setValue,
     getValues,
-    watch,
     formState: { errors, isSubmitting },
   } = useForm<JobFormData>({
     resolver: zodResolver(jobSchema),
@@ -105,14 +138,6 @@ export function JobForm({
       title: initialData?.title ?? '',
       status: initialData?.status ?? 'unscheduled',
       scheduled_date: initialData?.scheduled_date ?? '',
-      scheduled_start: initialData?.scheduled_start?.slice(0, 5) ?? '',
-      scheduled_end: initialData?.scheduled_end?.slice(0, 5) ?? '',
-      estimated_duration_minutes:
-        initialData?.estimated_duration_minutes != null
-          ? String(initialData.estimated_duration_minutes)
-          : '',
-      time_window_start: initialData?.time_window_start?.slice(0, 5) ?? '',
-      time_window_end: initialData?.time_window_end?.slice(0, 5) ?? '',
       notes: initialData?.notes ?? '',
       customer_notes: initialData?.customer_notes ?? '',
     },
@@ -152,18 +177,16 @@ export function JobForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Watch the fields that feed the duration resolver so the "calculated"
-  // hint updates live as the user edits start/end times or line items.
-  const watchedStart = watch('scheduled_start');
-  const watchedEnd = watch('scheduled_end');
-  const watchedDuration = watch('estimated_duration_minutes');
-
+  // Live "default" duration the resolver would pick — used only to render
+  // the placeholder "30 min (from service category)" hint. The actual
+  // VROOM duration comes from the override-if-set / resolve-at-optimize
+  // chain in lib/vroom.ts.
   const calculatedDurationMinutes = useMemo(() => {
     const servicesById = new Map(services.map((s) => [s.id, s]));
     return resolveJobDurationMinutes(
       {
-        scheduled_start: watchedStart || null,
-        scheduled_end: watchedEnd || null,
+        scheduled_start: null,
+        scheduled_end: null,
         line_items: lineItems.map((li) => ({
           service: li.service_id ? {
             estimated_duration_minutes:
@@ -174,17 +197,85 @@ export function JobForm({
       },
       { jobTitle: initialData?.title ?? '(new job)' },
     );
-  }, [watchedStart, watchedEnd, lineItems, services, initialData?.title]);
+  }, [lineItems, services, initialData?.title]);
 
   const overrideMinutes = (() => {
-    const raw = (watchedDuration ?? '').trim();
-    if (!raw) return null;
-    const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+    const h = Number(durationHours.trim() || '0');
+    const m = Number(durationMinutes.trim() || '0');
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    const total = Math.max(0, Math.round(h * 60 + m));
+    return total > 0 ? total : null;
   })();
+  // Effective duration used for window validation + arrival-end computation.
+  // Falls back to the resolver default when the user didn't type one.
+  const effectiveDurationMinutes = overrideMinutes ?? calculatedDurationMinutes;
+
+  const calculatedDurationLabel = useMemo(() => {
+    const total = calculatedDurationMinutes;
+    if (total <= 0) return '—';
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    if (h === 0) return `${m} min`;
+    if (m === 0) return `${h}h`;
+    return `${h}h ${m}m`;
+  }, [calculatedDurationMinutes]);
+
+  const calculatedSource = lineItems.some((li) => li.service_id)
+    ? 'line-item services' : 'service category';
 
   async function onSubmit(data: JobFormData) {
     setServerError(null);
+    setScheduleError(null);
+
+    // Translate the three-mode UI into the underlying jobs columns. Mode
+    // semantics are intentionally narrow so VROOM gets unambiguous input:
+    //   Mode A (anytime): everything null
+    //   Mode B (window):  time_window_start/_end only; scheduled_start NULL
+    //   Mode C (arrival): both pairs locked to [arrival, arrival+duration]
+    let scheduled_start: string | null = null;
+    let scheduled_end: string | null = null;
+    let tw_start: string | null = null;
+    let tw_end: string | null = null;
+
+    if (timeMode === 'window') {
+      if (!windowStart || !windowEnd) {
+        setScheduleError('Set both a start and end time for the window.');
+        return;
+      }
+      const ws = hhmmToMinutes(windowStart);
+      const we = hhmmToMinutes(windowEnd);
+      if (ws === null || we === null || we <= ws) {
+        setScheduleError('Window end must be after window start.');
+        return;
+      }
+      if (we - ws < effectiveDurationMinutes) {
+        setScheduleError(
+          `Window is ${we - ws} min — too short for a ${effectiveDurationMinutes}-min job. ` +
+          `Widen the window or shorten the duration.`,
+        );
+        return;
+      }
+      tw_start = windowStart;
+      tw_end = windowEnd;
+    } else if (timeMode === 'arrival') {
+      if (!arrivalTime) {
+        setScheduleError('Set the arrival time.');
+        return;
+      }
+      const am = hhmmToMinutes(arrivalTime);
+      if (am === null) {
+        setScheduleError('Arrival time is invalid.');
+        return;
+      }
+      const endHHMM = minutesToHHMM(am + effectiveDurationMinutes);
+      scheduled_start = arrivalTime;
+      scheduled_end = endHHMM;
+      // Mode C also writes the tight window so VROOM honors it as a hard
+      // constraint, not just a hint on the row.
+      tw_start = arrivalTime;
+      tw_end = endHHMM;
+    }
+    // Mode 'anytime' leaves all four columns null.
 
     const recurring = !!rrule;
     // Per spec: only persist a duration when the user typed one. Otherwise
@@ -198,11 +289,11 @@ export function JobForm({
       client_id: clientId || null,
       crew_id: crewId || null,
       scheduled_date: data.scheduled_date || null,
-      scheduled_start: data.scheduled_start || null,
-      scheduled_end: data.scheduled_end || null,
+      scheduled_start,
+      scheduled_end,
       estimated_duration_minutes: overrideMinutes,
-      time_window_start: tWindowOpen && data.time_window_start ? data.time_window_start : null,
-      time_window_end:   tWindowOpen && data.time_window_end   ? data.time_window_end   : null,
+      time_window_start: tw_start,
+      time_window_end:   tw_end,
       notes: data.notes || null,
       customer_notes: data.customer_notes || null,
       is_recurring: recurring,
@@ -352,44 +443,138 @@ export function JobForm({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <div className="space-y-2">
-            <Label htmlFor="scheduled_date">Date</Label>
-            <Input id="scheduled_date" type="date" {...register('scheduled_date')} />
+        {/* ─────────── Scheduling ─────────── */}
+        <div className="rounded-md border bg-muted/30 px-4 py-4 space-y-5">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            <Calendar className="h-3.5 w-3.5" />
+            Scheduling
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="scheduled_start">Start Time</Label>
-            <Input id="scheduled_start" type="time" {...register('scheduled_start')} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="scheduled_end">End Time</Label>
-            <Input id="scheduled_end" type="time" {...register('scheduled_end')} />
-          </div>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <div className="space-y-2">
-            <Label htmlFor="estimated_duration_minutes">
-              Estimated duration (min)
-              <span className="ml-1 text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
-                used for route balancing
-              </span>
-            </Label>
-            <Input
-              id="estimated_duration_minutes"
-              type="number"
-              min={1}
-              step={5}
-              placeholder={String(calculatedDurationMinutes)}
-              {...register('estimated_duration_minutes')}
-            />
-            <p className="text-xs text-muted-foreground">
-              Calculated default: <span className="font-medium">{calculatedDurationMinutes} min</span>{' '}
-              (from {watchedStart && watchedEnd
-                ? 'scheduled time window'
-                : lineItems.some((li) => li.service_id) ? 'line-item services' : 'service category'}).
-              Leave blank to use the calculated value; override only if this one will take longer or shorter.
+          {/* Date + Duration */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="space-y-1.5">
+              <Label htmlFor="scheduled_date">Date</Label>
+              <Input id="scheduled_date" type="date" {...register('scheduled_date')} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="duration_hours" className="inline-flex items-center gap-1">
+                <Hourglass className="h-3.5 w-3.5 text-muted-foreground" />
+                Estimated Duration
+                <span
+                  className="ml-1 cursor-help text-[10px] uppercase tracking-wider text-muted-foreground/70"
+                  title="Used for route balancing in VROOM"
+                >
+                  ⓘ
+                </span>
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="duration_hours"
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  value={durationHours}
+                  onChange={(e) => setDurationHours(e.target.value)}
+                  className="w-20"
+                  aria-label="Hours"
+                />
+                <span className="text-xs text-muted-foreground">hr</span>
+                <Input
+                  type="number"
+                  min={0}
+                  max={59}
+                  inputMode="numeric"
+                  value={durationMinutes}
+                  onChange={(e) => setDurationMinutes(e.target.value)}
+                  className="w-20"
+                  aria-label="Minutes"
+                  placeholder={String(calculatedDurationMinutes % 60)}
+                />
+                <span className="text-xs text-muted-foreground">min</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Default: <span className="font-medium">{calculatedDurationLabel}</span> (from {calculatedSource}).
+                Leave blank to use the calculated value.
+              </p>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* When-during-the-day mode picker */}
+          <div className="space-y-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              When during the day?
             </p>
+
+            <ModeRadio
+              checked={timeMode === 'anytime'}
+              onSelect={() => setTimeMode('anytime')}
+              title="Anytime during the workday (8 AM – 5 PM)"
+              body="Most jobs work this way. The system picks the best time to fit each crew's route."
+            />
+
+            <ModeRadio
+              checked={timeMode === 'window'}
+              onSelect={() => setTimeMode('window')}
+              title="Customer prefers a time window"
+              body={`Example: "Customer is home 1–4 PM" — VROOM fits the ${effectiveDurationMinutes}-min job somewhere in that window.`}
+            >
+              {timeMode === 'window' && (
+                <div className="mt-3 space-y-2">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="window_start" className="text-xs">Must be done between</Label>
+                      <Input
+                        id="window_start"
+                        type="time"
+                        value={windowStart}
+                        onChange={(e) => setWindowStart(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="window_end" className="text-xs">and</Label>
+                      <Input
+                        id="window_end"
+                        type="time"
+                        value={windowEnd}
+                        onChange={(e) => setWindowEnd(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </ModeRadio>
+
+            <ModeRadio
+              checked={timeMode === 'arrival'}
+              onSelect={() => setTimeMode('arrival')}
+              title="Customer needs a specific arrival time"
+              body='Example: "Customer requested exactly 9 AM" — job locks to that start time.'
+              icon={<Target className="h-3.5 w-3.5" />}
+            >
+              {timeMode === 'arrival' && (
+                <div className="mt-3 max-w-[180px] space-y-1">
+                  <Label htmlFor="arrival_time" className="text-xs">Arrive at</Label>
+                  <Input
+                    id="arrival_time"
+                    type="time"
+                    value={arrivalTime}
+                    onChange={(e) => setArrivalTime(e.target.value)}
+                  />
+                  {arrivalTime && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Locks the job to {arrivalTime} – {minutesToHHMM((hhmmToMinutes(arrivalTime) ?? 0) + effectiveDurationMinutes)}
+                    </p>
+                  )}
+                </div>
+              )}
+            </ModeRadio>
+
+            {scheduleError && (
+              <p className="text-sm text-destructive">{scheduleError}</p>
+            )}
           </div>
         </div>
 
@@ -411,46 +596,6 @@ export function JobForm({
               </SelectContent>
             </Select>
           </div>
-        </div>
-
-        {/* Time window — collapsible. NULL = customer is flexible. */}
-        <div className="rounded-md border bg-muted/30 px-4 py-3">
-          <button
-            type="button"
-            onClick={() => setTWindowOpen((v) => !v)}
-            className="flex w-full items-center justify-between gap-2 text-left"
-          >
-            <span className="flex items-center gap-2 text-sm font-medium">
-              <input
-                type="checkbox"
-                checked={tWindowOpen}
-                onChange={(e) => setTWindowOpen(e.target.checked)}
-                onClick={(e) => e.stopPropagation()}
-                className="h-4 w-4 rounded border-input accent-[var(--color-brand-green-raw,#3D6B2C)]"
-              />
-              Customer requires this job within a specific time window?
-            </span>
-            {tWindowOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-          </button>
-          {tWindowOpen && (
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="time_window_start">Must start after</Label>
-                <Input id="time_window_start" type="time" {...register('time_window_start')} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="time_window_end">Must end before</Label>
-                <Input id="time_window_end" type="time" {...register('time_window_end')} />
-                {errors.time_window_end && (
-                  <p className="text-xs text-destructive">{errors.time_window_end.message}</p>
-                )}
-              </div>
-              <p className="md:col-span-2 text-xs text-muted-foreground">
-                Leave blank if the customer is flexible. Set when they need it done
-                between specific hours (e.g., before noon, after 2 PM).
-              </p>
-            </div>
-          )}
         </div>
       </div>
 
@@ -567,5 +712,42 @@ export function JobForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+interface ModeRadioProps {
+  checked: boolean;
+  onSelect: () => void;
+  title: string;
+  body: string;
+  icon?: React.ReactNode;
+  children?: React.ReactNode;
+}
+
+function ModeRadio({ checked, onSelect, title, body, icon, children }: ModeRadioProps) {
+  return (
+    <label
+      onClick={onSelect}
+      className={`block rounded-lg border bg-background px-3 py-2.5 cursor-pointer transition-colors ${
+        checked ? 'border-[var(--color-brand-green-raw,#3D6B2C)] ring-1 ring-[var(--color-brand-green-raw,#3D6B2C)]' : 'hover:bg-muted/30'
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <input
+          type="radio"
+          checked={checked}
+          onChange={onSelect}
+          className="mt-1 h-4 w-4 accent-[var(--color-brand-green-raw,#3D6B2C)]"
+        />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium leading-tight flex items-center gap-1.5">
+            {icon}
+            {title}
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">{body}</p>
+          {children}
+        </div>
+      </div>
+    </label>
   );
 }
