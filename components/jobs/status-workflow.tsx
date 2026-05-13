@@ -33,6 +33,14 @@ const TRANSITIONS: Record<JobStatus, Transition[]> = {
       style: { backgroundColor: '#3B82F6', color: '#fff' },
     },
   ],
+  en_route: [
+    {
+      next: 'in_progress',
+      label: 'Start Job',
+      icon: <Play className="h-4 w-4" />,
+      style: { backgroundColor: '#3B82F6', color: '#fff' },
+    },
+  ],
   in_progress: [
     {
       next: 'complete',
@@ -59,7 +67,7 @@ const TRANSITIONS: Record<JobStatus, Transition[]> = {
   ],
 };
 
-const CAN_FLAG: JobStatus[] = ['unscheduled', 'scheduled', 'in_progress'];
+const CAN_FLAG: JobStatus[] = ['unscheduled', 'scheduled', 'en_route', 'in_progress'];
 
 interface StatusWorkflowProps {
   jobId: string;

@@ -9,7 +9,7 @@ export type ServiceCategory =
 export type ServiceUnit =
   | 'per_visit' | 'per_sqft' | 'per_hour' | 'flat' | 'per_unit' | 'per_yard';
 export type JobStatus =
-  | 'unscheduled' | 'scheduled' | 'in_progress' | 'complete' | 'cancelled' | 'issue';
+  | 'unscheduled' | 'scheduled' | 'en_route' | 'in_progress' | 'complete' | 'cancelled' | 'issue';
 export type CrewMemberRole = 'lead' | 'member';
 
 export interface Company {
@@ -48,6 +48,30 @@ export interface Company {
   weather_show_on_dashboard?: boolean | null;
   /** Per-tenant invoice prefix (migration 030). e.g., "TLC", "ABC". */
   invoice_prefix?: string | null;
+  /** Depot coords (migration 038). The route optimizer + crew app both pin
+   *  the day's start and end to these. */
+  depot_latitude?: number | null;
+  depot_longitude?: number | null;
+  depot_address?: string | null;
+  created_at: string;
+}
+
+export interface DailySummary {
+  id: string;
+  company_id: string;
+  profile_id: string;
+  date: string;
+  shift_start_at: string | null;
+  shift_end_at: string | null;
+  jobs_completed: number;
+  worked_minutes: number;
+  drive_minutes: number;
+  drive_miles: number | null;
+  photos_count: number;
+  signatures_count: number;
+  measurements_count: number;
+  equipment_notes: string | null;
+  day_mood: 'great' | 'fine' | 'rough' | null;
   created_at: string;
 }
 
@@ -168,6 +192,15 @@ export interface Job {
   issue_notes?: string | null;
   issue_flagged_at?: string | null;
   issue_flagged_by?: string | null;
+  /** Drive-order metadata (migration 038). Populated when a route is saved
+   *  from /dashboard/routes/new — the crew app sorts /today by route_order
+   *  and shows "X min from previous" between cards. */
+  route_order?: number | null;
+  drive_minutes_from_previous?: number | null;
+  drive_distance_miles_from_previous?: number | null;
+  /** Live ETA broadcast when worker taps Get Directions (migration 038). */
+  eta_minutes?: number | null;
+  en_route_at?: string | null;
   created_at: string;
   updated_at: string;
   client?: Client;
@@ -216,9 +249,9 @@ export interface ActivityLog {
 export interface ClockEvent {
   id: string;
   company_id: string;
-  job_id: string;
+  job_id: string | null;
   profile_id: string;
-  event_type: 'clock_in' | 'clock_out';
+  event_type: 'clock_in' | 'clock_out' | 'shift_start' | 'shift_end';
   latitude?: number | null;
   longitude?: number | null;
   notes?: string | null;

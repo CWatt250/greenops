@@ -7,6 +7,7 @@ import type { Job } from '@/types';
 
 const STATUS_CONFIG = {
   scheduled:   { label: 'Scheduled',   color: 'bg-blue-100 text-blue-700' },
+  en_route:    { label: 'En Route',    color: 'bg-orange-100 text-orange-700' },
   in_progress: { label: 'In Progress', color: 'bg-amber-100 text-amber-700' },
   complete:    { label: 'Complete',    color: 'bg-green-100 text-green-700' },
   cancelled:   { label: 'Cancelled',   color: 'bg-gray-100 text-gray-500' },

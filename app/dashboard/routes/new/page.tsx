@@ -120,13 +120,18 @@ export default function RouteBuilderPage() {
         .single();
       if (data?.company_id) {
         setCompanyId(data.company_id);
-        // Pull company address and try to geocode it for the depot location.
+        // Prefer the company's locked depot coords (migration 038). Fall back
+        // to geocoding the address if depot_latitude/longitude aren't set yet.
         const { data: company } = await supabase
           .from('companies')
-          .select('address, city, state, zip')
+          .select('address, city, state, zip, depot_latitude, depot_longitude')
           .eq('id', data.company_id)
           .single();
-        if (company?.address) {
+        const depotLat = company?.depot_latitude;
+        const depotLng = company?.depot_longitude;
+        if (Number.isFinite(depotLng) && Number.isFinite(depotLat)) {
+          setOfficeCoords([Number(depotLng), Number(depotLat)]);
+        } else if (company?.address) {
           const full = [company.address, company.city, company.state, company.zip]
             .filter(Boolean)
             .join(', ');
@@ -666,17 +671,22 @@ export default function RouteBuilderPage() {
         return null;
       }
 
-      // In multi mode, reflect VROOM's reassignment back onto the source jobs.
-      if (mode === 'multi') {
-        const jobIds = ordered
-          .map((s) => s.job_id)
-          .filter((id): id is string => !!id);
-        if (jobIds.length > 0) {
-          await supabase
-            .from('jobs')
-            .update({ crew_id: cid })
-            .in('id', jobIds);
-        }
+      // Reflect VROOM's order back onto the source jobs. The crew app reads
+      // jobs.route_order on /today so the worker sees stops in true drive
+      // order (with drive_minutes_from_previous shown between each card).
+      // In multi mode we also reassign crew_id since VROOM may have moved
+      // stops between trucks.
+      const orderedJobs = ordered.filter((s) => !!s.job_id);
+      for (let i = 0; i < orderedJobs.length; i++) {
+        const s = orderedJobs[i];
+        if (!s.job_id) continue;
+        const update: Record<string, unknown> = {
+          route_order: i + 1,
+          drive_minutes_from_previous: Math.round(s.drive_minutes_from_prev ?? 0),
+          drive_distance_miles_from_previous: s.drive_distance_miles ?? 0,
+        };
+        if (mode === 'multi') update.crew_id = cid;
+        await supabase.from('jobs').update(update).eq('id', s.job_id);
       }
 
       createdIds.push(route.id);

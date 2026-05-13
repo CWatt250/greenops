@@ -275,8 +275,38 @@ export default function CompleteJobPage() {
     }
 
     void supabase.rpc('refresh_analytics');
+
+    // Auto-forward to next stop. Find the next scheduled job for the same
+    // crew today (drive order first, then scheduled_start). If nothing's
+    // left, /today shows the End-of-Day card.
+    let nextJobId: string | null = null;
+    try {
+      if (companyId && job?.crew_id && job?.scheduled_date) {
+        const { data: nextRows } = await supabase
+          .from('jobs')
+          .select('id, route_order, scheduled_start')
+          .eq('company_id', companyId)
+          .eq('crew_id', job.crew_id)
+          .eq('scheduled_date', job.scheduled_date)
+          .neq('id', id)
+          .in('status', ['scheduled', 'en_route', 'in_progress'])
+          .order('route_order', { ascending: true, nullsFirst: false })
+          .order('scheduled_start', { ascending: true, nullsFirst: false })
+          .limit(1);
+        nextJobId = (nextRows?.[0]?.id as string | undefined) ?? null;
+      }
+    } catch {
+      // Best-effort — failure just sends the worker to /today with no focus.
+    }
+
     setDone(true);
     setSubmitting(false);
+
+    // Brief success splash, then push to /today (focused on the next stop).
+    setTimeout(() => {
+      const url = nextJobId ? `/today?focus=${nextJobId}` : '/today';
+      router.push(url);
+    }, 1200);
   }
 
   if (loading) {
@@ -293,8 +323,20 @@ export default function CompleteJobPage() {
 
   const grandTotal = lineItems.reduce((s, li) => s + (li.total ?? 0), 0);
 
-  // Success state
+  // Success state — brief flash before the auto-forward kicks in (1.2s).
   if (done) {
+    // Compute the on-site duration to surface in the toast.
+    let durationLabel: string | null = null;
+    if (job.actual_start) {
+      const ms = Date.now() - new Date(job.actual_start).getTime();
+      if (ms > 0) {
+        const mins = Math.round(ms / 60_000);
+        durationLabel = mins >= 60
+          ? `${Math.floor(mins / 60)}h ${mins % 60}m`
+          : `${mins} min`;
+      }
+    }
+    const clientName = job.client?.name ?? 'Job';
     return (
       <div className="flex flex-col items-center justify-center gap-5 py-20 text-center">
         <div
@@ -304,19 +346,11 @@ export default function CompleteJobPage() {
           <CheckCircle2 className="h-8 w-8 text-white" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold">Job Complete!</h1>
-          <p className="text-sm text-muted-foreground mt-1">{job.title}</p>
-          {job.client && (
-            <p className="text-xs text-muted-foreground">{job.client.name}</p>
-          )}
+          <h1 className="text-2xl font-bold">
+            ✅ {clientName} complete{durationLabel ? ` in ${durationLabel}` : ''}
+          </h1>
+          <p className="text-xs text-muted-foreground mt-2">Heading to next stop…</p>
         </div>
-        <Button
-          onClick={() => router.push('/today')}
-          style={{ backgroundColor: 'var(--color-brand-green-raw)', color: '#fff' }}
-          className="w-full max-w-xs"
-        >
-          Back to Today's Jobs
-        </Button>
       </div>
     );
   }

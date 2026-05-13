@@ -9,6 +9,7 @@ import { PortalBannerForm } from '@/components/settings/portal-banner-form';
 import { NoteTemplatesManager } from '@/components/settings/note-templates-manager';
 import { OverheadForm } from '@/components/settings/overhead-form';
 import { CompanyInfoForm } from '@/components/settings/company-info-form';
+import { DepotForm } from '@/components/settings/depot-form';
 import { WeatherSettingsForm } from '@/components/settings/weather-settings-form';
 import type { Company } from '@/types';
 
@@ -75,6 +76,24 @@ export default async function SettingsPage() {
             </CardHeader>
             <CardContent>
               <CompanyInfoForm company={c} />
+            </CardContent>
+          </Card>
+        )}
+
+        {c && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Depot / HQ</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DepotForm
+                companyId={c.id}
+                initial={{
+                  depot_address: c.depot_address ?? null,
+                  depot_latitude: c.depot_latitude ?? null,
+                  depot_longitude: c.depot_longitude ?? null,
+                }}
+              />
             </CardContent>
           </Card>
         )}

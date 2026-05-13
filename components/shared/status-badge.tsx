@@ -4,6 +4,7 @@ import type { JobStatus, ClientStatus } from '@/types';
 const jobStatusConfig: Record<JobStatus, { label: string; className: string }> = {
   unscheduled: { label: 'Unscheduled', className: 'bg-gray-100 text-gray-700' },
   scheduled:   { label: 'Scheduled',   className: 'bg-blue-100 text-blue-700' },
+  en_route:    { label: 'En Route',    className: 'bg-orange-100 text-orange-700' },
   in_progress: { label: 'In Progress', className: 'bg-amber-100 text-amber-700' },
   complete:    { label: 'Complete',    className: 'bg-green-100 text-green-700' },
   cancelled:   { label: 'Cancelled',  className: 'bg-gray-100 text-gray-500 line-through' },

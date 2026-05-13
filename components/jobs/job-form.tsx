@@ -21,7 +21,7 @@ import type { Job, Crew } from '@/types';
 
 const jobSchema = z.object({
   title: z.string().min(1, 'Title is required'),
-  status: z.enum(['unscheduled', 'scheduled', 'in_progress', 'complete', 'cancelled', 'issue']),
+  status: z.enum(['unscheduled', 'scheduled', 'en_route', 'in_progress', 'complete', 'cancelled', 'issue']),
   scheduled_date: z.string().optional(),
   scheduled_start: z.string().optional(),
   scheduled_end: z.string().optional(),
