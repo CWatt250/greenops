@@ -14,6 +14,7 @@ import {
 import { InviteToPortalButton } from '@/components/clients/invite-to-portal-button';
 import { DeleteClientButton } from '@/components/clients/delete-client-button';
 import { ClientFormSubmissionsList } from '@/components/forms/client-form-submissions-list';
+import { JobTemplatesSection } from '@/components/clients/job-templates-section';
 import type { Client, Job } from '@/types';
 
 interface Props {
@@ -93,6 +94,9 @@ export default async function ClientDetailPage({ params }: Props) {
           />
         </div>
       </div>
+
+      {/* Job templates — quick-spawn presets tied to this property. */}
+      <JobTemplatesSection clientId={id} clientName={c.name} />
 
       {/* Tabs */}
       <Tabs defaultValue="overview">

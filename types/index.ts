@@ -206,10 +206,44 @@ export interface Job {
   /** Per-job duration override fed to VROOM (migration 040).
    *  Falls back to line-item service durations / category defaults. */
   estimated_duration_minutes?: number | null;
+  /** Optional per-job time window (migration 041). When both bounds are
+   *  set, VROOM honors them as the job's earliest/latest allowable
+   *  service start. Null on either side = unconstrained. */
+  time_window_start?: string | null;
+  time_window_end?: string | null;
   created_at: string;
   updated_at: string;
   client?: Client;
   crew?: Crew;
+}
+
+export interface JobTemplateLineItem {
+  service_id: string | null;
+  description: string | null;
+  quantity: number;
+  unit_price: number;
+}
+
+/** Reusable job setup tied to a single client (migration 042). */
+export interface JobTemplate {
+  id: string;
+  company_id: string;
+  client_id: string;
+  name: string;
+  service_id?: string | null;
+  title?: string | null;
+  notes?: string | null;
+  customer_notes?: string | null;
+  estimated_duration_minutes?: number | null;
+  time_window_start?: string | null;
+  time_window_end?: string | null;
+  default_crew_id?: string | null;
+  default_line_items: JobTemplateLineItem[];
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  times_used: number;
+  last_used_at?: string | null;
 }
 
 /** Live GPS ping from a crew member during an in-progress job (migration 023). */

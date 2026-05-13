@@ -14,6 +14,7 @@ import { OptimizeButton } from '@/components/routes/optimize-button';
 import { WeatherBanner } from '@/components/routes/weather-banner';
 import { AddStopInput } from '@/components/routes/add-stop-input';
 import { CrewMultiPicker } from '@/components/routes/crew-multi-picker';
+import { JobPickerSheet, type PickerJob } from '@/components/routes/job-picker-sheet';
 import {
   geocodeAddress, getRouteLegs, getRoutePolyline, type PlaceSuggestion,
 } from '@/lib/mapbox';
@@ -21,11 +22,12 @@ import {
   optimizeMultiCrewRoute,
   resolveJobDurationMinutes,
   routeCentroid,
+  timeOfDayToEpochSeconds,
   type VroomStop,
 } from '@/lib/vroom';
 import { getWeatherForRoute } from '@/lib/weather';
 import { toast } from 'sonner';
-import { Loader2, Save, Send, MapPin, Sparkles } from 'lucide-react';
+import { Loader2, Save, Send, MapPin, Sparkles, ListChecks } from 'lucide-react';
 import type { Crew } from '@/types';
 import type { MapStop, MapPolyline, MapLegendItem } from '@/components/routes/route-map';
 
@@ -111,6 +113,11 @@ export default function RouteBuilderPage() {
   const [saving, setSaving] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [autoLoaded, setAutoLoaded] = useState(false);
+  // Picker-driven flow: when true, the auto-load useEffect skips and the
+  // user assembles stops by clicking "+ Choose Jobs for This Route". One-shot
+  // "Or auto-load…" link below the picker button flips this to false.
+  const [pickerMode, setPickerMode] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const geocodeCache = useRef<Map<string, [number, number]>>(new Map());
 
@@ -245,7 +252,12 @@ export default function RouteBuilderPage() {
   }, []);
 
   // ── Auto-load jobs whenever crews + date change ────────────────────────
+  // Picker mode is the default; auto-load only fires when the user clicks
+  // the "Or auto-load all jobs scheduled for [date]" link below the picker
+  // button. This keeps the route builder from blowing away whatever the
+  // user is hand-curating just because they switched the date.
   useEffect(() => {
+    if (pickerMode) return;
     if (selectedCrewIds.length === 0 || !selectedDate || !companyId) {
       setStops([]);
       setPolylinesByGroup({});
@@ -263,7 +275,8 @@ export default function RouteBuilderPage() {
       // Pull jobs assigned to the selected crews + jobs that are unassigned.
       // .in() doesn't match nulls, so we issue both queries in parallel and merge.
       const baseSelect =
-        'id, title, status, crew_id, scheduled_start, scheduled_end, estimated_duration_minutes, ' +
+        'id, title, status, crew_id, scheduled_date, scheduled_start, scheduled_end, ' +
+        'estimated_duration_minutes, time_window_start, time_window_end, ' +
         'client:clients(id,name,service_address,latitude,longitude), ' +
         'line_items:job_line_items(service:services(estimated_duration_minutes,category))';
       const [assignedRes, unassignedRes] = await Promise.all([
@@ -371,7 +384,7 @@ export default function RouteBuilderPage() {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCrewIds.join(','), selectedDate, companyId, crewById]);
+  }, [selectedCrewIds.join(','), selectedDate, companyId, crewById, pickerMode]);
 
   // ── Single-crew handlers ───────────────────────────────────────────────
   async function handleReorderSingle(reordered: StopDraft[]) {
@@ -421,6 +434,77 @@ export default function RouteBuilderPage() {
     });
     const withGeometry = await rebuildGeometry(renumbered, mode === 'multi');
     setStops(withGeometry);
+  }
+
+  // Picker-driven add: convert each chosen job into a StopDraft, geocoding
+  // any without cached client coords. Skips duplicates already on the route.
+  async function handleAddJobsFromPicker(picked: PickerJob[]) {
+    if (picked.length === 0) return;
+    const existing = new Set(stops.map((s) => s.job_id).filter((id): id is string => !!id));
+    const fresh = picked.filter((j) => !existing.has(j.id));
+    if (fresh.length === 0) {
+      toast.message('All picked jobs are already on the route.');
+      return;
+    }
+
+    const isMulti = selectedCrewIds.length > 1;
+    const orderByCrew = new Map<string, number>();
+    function nextOrderFor(crewId: string | null): number {
+      const k = crewId ?? '__unassigned';
+      const n = (orderByCrew.get(k) ?? 0) + 1;
+      orderByCrew.set(k, n);
+      return n;
+    }
+    // Seed the per-crew counters with whatever's already on the route so
+    // newly picked jobs append rather than collide.
+    for (const s of stops) {
+      const k = s.assigned_crew_id ?? '__unassigned';
+      orderByCrew.set(k, Math.max(orderByCrew.get(k) ?? 0, s.stop_order));
+    }
+    let globalCounter = stops.length;
+
+    const drafted: StopDraft[] = await Promise.all(
+      fresh.map(async (job) => {
+        const storedLat = job.client?.latitude;
+        const storedLng = job.client?.longitude;
+        const hasStored =
+          typeof storedLat === 'number' && typeof storedLng === 'number'
+          && Number.isFinite(storedLat) && Number.isFinite(storedLng);
+        let lat: number | null = hasStored ? (storedLat as number) : null;
+        let lng: number | null = hasStored ? (storedLng as number) : null;
+        if (!hasStored && job.client?.service_address) {
+          const coords = await geocodeStop(job.client.service_address);
+          if (coords) {
+            lng = coords[0];
+            lat = coords[1];
+          }
+        }
+        const initialCrew = isMulti ? (job.crew_id ?? null) : (selectedCrewIds[0] ?? null);
+        const durationMinutes = resolveJobDurationMinutes(job, {
+          jobId: job.id,
+          jobTitle: job.title,
+        });
+        return {
+          _key: makeKey(),
+          job_id: job.id,
+          job: job as unknown as StopDraft['job'],
+          label: null,
+          address: null,
+          stop_order: isMulti ? nextOrderFor(initialCrew) : ++globalCounter,
+          estimated_duration_minutes: durationMinutes,
+          drive_minutes_from_prev: 0,
+          drive_distance_miles: 0,
+          lat,
+          lng,
+          assigned_crew_id: initialCrew,
+        };
+      }),
+    );
+
+    const next = [...stops, ...drafted];
+    const withGeometry = await rebuildGeometry(next, isMulti);
+    setStops(withGeometry);
+    toast.success(`Added ${drafted.length} job${drafted.length === 1 ? '' : 's'} to the route.`);
   }
 
   async function handleAddStop(place: PlaceSuggestion) {
@@ -495,11 +579,28 @@ export default function RouteBuilderPage() {
     // eslint-disable-next-line no-console
     console.log('[optimize] depot:', startLocation, officeCoords ? '(company office)' : '(fallback)');
 
-    const vroomStops: VroomStop[] = geocodedStops.map((s, i) => ({
-      id: i,
-      location: [s.lng!, s.lat!],
-      service: (s.estimated_duration_minutes ?? 30) * 60,
-    }));
+    const vroomStops: VroomStop[] = geocodedStops.map((s, i) => {
+      const stop: VroomStop = {
+        id: i,
+        location: [s.lng!, s.lat!],
+        service: (s.estimated_duration_minutes ?? 30) * 60,
+      };
+      // Per-job time window from the underlying jobs row (migration 041).
+      // Both bounds must be present; otherwise ORS rejects the payload.
+      const jobAny = s.job as unknown as
+        | { time_window_start?: string | null; time_window_end?: string | null }
+        | null;
+      const tws = jobAny?.time_window_start;
+      const twe = jobAny?.time_window_end;
+      if (tws && twe) {
+        const startEpoch = timeOfDayToEpochSeconds(selectedDate, tws);
+        const endEpoch = timeOfDayToEpochSeconds(selectedDate, twe);
+        if (startEpoch !== null && endEpoch !== null && endEpoch > startEpoch) {
+          stop.time_window = [startEpoch, endEpoch];
+        }
+      }
+      return stop;
+    });
 
     const crewVehicles = selectedCrewIds.map((id) => ({ crew_id: id }));
 
@@ -898,6 +999,32 @@ export default function RouteBuilderPage() {
           )}
         </div>
 
+        {/* Pick-jobs CTA — primary path. Auto-load is the secondary link. */}
+        <div className="px-3 pb-2 shrink-0">
+          <Button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            disabled={!companyId}
+            className="w-full gap-2 h-11 font-semibold"
+            style={{ backgroundColor: 'var(--color-brand-green-raw)', color: '#fff' }}
+          >
+            <ListChecks className="h-4 w-4" />
+            + Choose Jobs for This Route
+          </Button>
+          <button
+            type="button"
+            onClick={() => {
+              setPickerMode(false);
+              setStops([]);
+            }}
+            disabled={!selectedDate || selectedCrewIds.length === 0}
+            className="mt-1.5 text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-40 disabled:no-underline"
+          >
+            Or auto-load all jobs scheduled for{' '}
+            {selectedDate ? formatDateLabel(selectedDate) : 'the selected date'}
+          </button>
+        </div>
+
         {/* Action bar */}
         <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/20 shrink-0 flex-wrap">
           {mode === 'single' ? (
@@ -1053,6 +1180,20 @@ export default function RouteBuilderPage() {
           </div>
         )}
       </div>
+
+      {/* Multi-select job picker — mounted in the page so it can pull from
+       *  the full schedulable job pool, not just today's auto-load set. */}
+      {companyId && (
+        <JobPickerSheet
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          companyId={companyId}
+          crews={crews}
+          defaultDate={selectedDate}
+          alreadyInRoute={new Set(stops.map((s) => s.job_id).filter((id): id is string => !!id))}
+          onAdd={(picked) => { void handleAddJobsFromPicker(picked); }}
+        />
+      )}
     </div>
   );
 }

@@ -2,6 +2,34 @@ export interface VroomStop {
   id: number;
   location: [number, number]; // [lng, lat]
   service: number; // seconds
+  /** Optional per-job hard time window (migration 041). Both bounds are
+   *  epoch seconds. When set, the solver is forced to schedule the stop
+   *  within this window; when omitted, the vehicle's workday window
+   *  governs. */
+  time_window?: [number, number];
+}
+
+/** Convert a "HH:MM" or "HH:MM:SS" time-of-day on the given local route date
+ *  into epoch seconds. Returns null on invalid input so callers can skip
+ *  emitting a window for malformed data instead of breaking the whole
+ *  optimization payload. */
+export function timeOfDayToEpochSeconds(
+  routeDate: string,
+  timeOfDay: string | null | undefined,
+): number | null {
+  if (!timeOfDay) return null;
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(timeOfDay);
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  const s = Number(match[3] ?? '0');
+  if (!Number.isFinite(h) || !Number.isFinite(m) || !Number.isFinite(s)) return null;
+  const hh = h.toString().padStart(2, '0');
+  const mm = m.toString().padStart(2, '0');
+  const ss = s.toString().padStart(2, '0');
+  const ms = new Date(`${routeDate}T${hh}:${mm}:${ss}`).getTime();
+  if (!Number.isFinite(ms)) return null;
+  return Math.floor(ms / 1000);
 }
 
 // ---------------------------------------------------------------------------
@@ -131,11 +159,15 @@ export async function optimizeRoute(
         profile: VROOM_PROFILE,
       },
     ],
-    jobs: stops.map((s) => ({
-      id: s.id,
-      location: s.location,
-      service: s.service,
-    })),
+    jobs: stops.map((s) => {
+      const j: Record<string, unknown> = {
+        id: s.id,
+        location: s.location,
+        service: s.service,
+      };
+      if (s.time_window) j.time_windows = [s.time_window];
+      return j;
+    }),
   };
 
   try {
@@ -315,6 +347,10 @@ function buildPayload(
         service: s.service,
       };
       if (typeof capacity === 'number') j.delivery = [1];
+      // ORS/VROOM expects an *array* of allowable windows (typically one).
+      // We always emit a single window when the dispatcher set one on the
+      // job; omitting the field falls back to the vehicle's workday.
+      if (s.time_window) j.time_windows = [s.time_window];
       return j;
     }),
     options: {

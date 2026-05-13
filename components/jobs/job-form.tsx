@@ -18,6 +18,9 @@ import { RecurrencePicker } from '@/components/jobs/recurrence-picker';
 import { NoteTemplatePicker } from '@/components/jobs/note-template-picker';
 import { Separator } from '@/components/ui/separator';
 import { resolveJobDurationMinutes } from '@/lib/vroom';
+import { saveJobAsTemplate } from '@/lib/job-templates';
+import { toast } from 'sonner';
+import { ChevronDown, ChevronUp, BookmarkPlus } from 'lucide-react';
 import type { Job, Crew, Service } from '@/types';
 
 const jobSchema = z.object({
@@ -27,9 +30,14 @@ const jobSchema = z.object({
   scheduled_start: z.string().optional(),
   scheduled_end: z.string().optional(),
   estimated_duration_minutes: z.string().optional(),
+  time_window_start: z.string().optional(),
+  time_window_end: z.string().optional(),
   notes: z.string().optional(),
   customer_notes: z.string().optional(),
-});
+}).refine(
+  (d) => !d.time_window_start || !d.time_window_end || d.time_window_end > d.time_window_start,
+  { path: ['time_window_end'], message: 'End must be after start.' },
+);
 
 type JobFormData = z.infer<typeof jobSchema>;
 
@@ -38,15 +46,39 @@ interface JobFormProps {
   companyId: string;
   crews: Crew[];
   initialLineItems?: import('@/types').JobLineItem[];
+  /** Template that seeded this form (used to bump its usage counter after a
+   *  successful save). Only set when /dashboard/jobs/new was opened with
+   *  ?template_id=…. */
+  spawnedFromTemplateId?: string;
+  /** Client name shown next to the "Save as template" checkbox so the user
+   *  knows which property the template is being attached to. */
+  clientName?: string;
 }
 
-export function JobForm({ initialData, companyId, crews, initialLineItems = [] }: JobFormProps) {
+export function JobForm({
+  initialData,
+  companyId,
+  crews,
+  initialLineItems = [],
+  spawnedFromTemplateId,
+  clientName,
+}: JobFormProps) {
   const router = useRouter();
   const supabase = createClient();
 
   const [clientId, setClientId] = useState(initialData?.client_id ?? '');
   const [crewId, setCrewId] = useState(initialData?.crew_id ?? '');
   const [rrule, setRrule] = useState<string | null>(initialData?.recurrence_rule ?? null);
+  // Time window UI is collapsed by default; opens when there are saved
+  // bounds on the row (editing an existing job that already has a window).
+  const [tWindowOpen, setTWindowOpen] = useState(
+    !!(initialData?.time_window_start || initialData?.time_window_end),
+  );
+  // Save-as-template controls. Hidden when there's no client selected,
+  // since a template must be tied to a client.
+  const [saveAsTemplate, setSaveAsTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [resolvedClientName, setResolvedClientName] = useState<string | null>(clientName ?? null);
   const [lineItems, setLineItems] = useState<LineItemDraft[]>(
     initialLineItems.map((li) => ({
       id: li.id,
@@ -79,10 +111,34 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
         initialData?.estimated_duration_minutes != null
           ? String(initialData.estimated_duration_minutes)
           : '',
+      time_window_start: initialData?.time_window_start?.slice(0, 5) ?? '',
+      time_window_end: initialData?.time_window_end?.slice(0, 5) ?? '',
       notes: initialData?.notes ?? '',
       customer_notes: initialData?.customer_notes ?? '',
     },
   });
+
+  // When the user picks a client, resolve its name for the "Save as
+  // template for [Smith residence]" copy. Only fires if we don't already
+  // have a name (the parent route page passes one for the prefill flow).
+  useEffect(() => {
+    if (!clientId) {
+      setResolvedClientName(null);
+      return;
+    }
+    if (clientName && clientId === initialData?.client_id) return;
+    let cancelled = false;
+    supabase
+      .from('clients')
+      .select('name')
+      .eq('id', clientId)
+      .single()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setResolvedClientName((data?.name as string) ?? null);
+      });
+    return () => { cancelled = true; };
+  }, [clientId, clientName, initialData?.client_id]);
 
   // Load the company's services so we can look up estimated_duration_minutes
   // for whatever line items the user selects. Small list, fetched once.
@@ -131,9 +187,10 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
     setServerError(null);
 
     const recurring = !!rrule;
-    // Persist the override when the user typed one, otherwise fall back to
-    // the live calculation so VROOM gets a real number even on first save.
-    const durationMinutes = overrideMinutes ?? calculatedDurationMinutes;
+    // Per spec: only persist a duration when the user typed one. Otherwise
+    // leave NULL so VROOM's resolveJobDurationMinutes() recomputes from
+    // the priority chain at optimize-time (handles edits to line items /
+    // service categories that would otherwise be stale on the row).
     const payload = {
       title: data.title,
       status: data.status,
@@ -143,7 +200,9 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
       scheduled_date: data.scheduled_date || null,
       scheduled_start: data.scheduled_start || null,
       scheduled_end: data.scheduled_end || null,
-      estimated_duration_minutes: durationMinutes,
+      estimated_duration_minutes: overrideMinutes,
+      time_window_start: tWindowOpen && data.time_window_start ? data.time_window_start : null,
+      time_window_end:   tWindowOpen && data.time_window_end   ? data.time_window_end   : null,
       notes: data.notes || null,
       customer_notes: data.customer_notes || null,
       is_recurring: recurring,
@@ -188,6 +247,52 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
         }))
       );
       if (error) { setServerError(error.message); return; }
+    }
+
+    // Save-as-template — fire-and-forget after the job lands. The job
+    // save is the primary action; a template-write failure should toast
+    // but not block navigation.
+    if (saveAsTemplate && clientId) {
+      const finalTemplateName = (templateName || data.title).trim();
+      if (finalTemplateName) {
+        const { data: { user } } = await supabase.auth.getUser();
+        const result = await saveJobAsTemplate(supabase, {
+          company_id: companyId,
+          client_id: clientId,
+          name: finalTemplateName,
+          service_id: lineItems.find((li) => li.service_id && li.service_id !== '__custom__')?.service_id ?? null,
+          title: data.title,
+          notes: data.notes ?? null,
+          customer_notes: data.customer_notes ?? null,
+          estimated_duration_minutes: overrideMinutes ?? calculatedDurationMinutes,
+          time_window_start: payload.time_window_start,
+          time_window_end:   payload.time_window_end,
+          default_crew_id: crewId || null,
+          default_line_items: lineItems.map((li) => ({
+            service_id: li.service_id && li.service_id !== '__custom__' ? li.service_id : null,
+            description: li.description ?? null,
+            quantity: li.quantity,
+            unit_price: li.unit_price,
+          })),
+          created_by: user?.id ?? null,
+        });
+        if (result.ok) {
+          const propertyLabel = resolvedClientName ?? 'this property';
+          toast.success(`Saved as template — reuse it from any future job at ${propertyLabel}.`);
+        } else {
+          toast.error(`Template save failed: ${result.error}`);
+        }
+      }
+    }
+
+    // If this job was spawned from a template, bump that template's usage
+    // counter. Atomic via RPC.
+    if (spawnedFromTemplateId) {
+      try {
+        await supabase.rpc('increment_template_usage', { p_template_id: spawnedFromTemplateId });
+      } catch {
+        // Non-fatal — counters drift, but the job is saved.
+      }
     }
 
     // Materialize 6 months of occurrences for recurring jobs. Without
@@ -279,11 +384,11 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
               {...register('estimated_duration_minutes')}
             />
             <p className="text-xs text-muted-foreground">
-              Calculated: <span className="font-medium">{calculatedDurationMinutes} min</span>{' '}
+              Calculated default: <span className="font-medium">{calculatedDurationMinutes} min</span>{' '}
               (from {watchedStart && watchedEnd
                 ? 'scheduled time window'
-                : lineItems.some((li) => li.service_id) ? 'line-item services' : 'fallback'}).
-              Leave blank to use the calculated value, or override with a number.
+                : lineItems.some((li) => li.service_id) ? 'line-item services' : 'service category'}).
+              Leave blank to use the calculated value; override only if this one will take longer or shorter.
             </p>
           </div>
         </div>
@@ -306,6 +411,46 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
               </SelectContent>
             </Select>
           </div>
+        </div>
+
+        {/* Time window — collapsible. NULL = customer is flexible. */}
+        <div className="rounded-md border bg-muted/30 px-4 py-3">
+          <button
+            type="button"
+            onClick={() => setTWindowOpen((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 text-left"
+          >
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={tWindowOpen}
+                onChange={(e) => setTWindowOpen(e.target.checked)}
+                onClick={(e) => e.stopPropagation()}
+                className="h-4 w-4 rounded border-input accent-[var(--color-brand-green-raw,#3D6B2C)]"
+              />
+              Customer requires this job within a specific time window?
+            </span>
+            {tWindowOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+          </button>
+          {tWindowOpen && (
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="time_window_start">Must start after</Label>
+                <Input id="time_window_start" type="time" {...register('time_window_start')} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="time_window_end">Must end before</Label>
+                <Input id="time_window_end" type="time" {...register('time_window_end')} />
+                {errors.time_window_end && (
+                  <p className="text-xs text-destructive">{errors.time_window_end.message}</p>
+                )}
+              </div>
+              <p className="md:col-span-2 text-xs text-muted-foreground">
+                Leave blank if the customer is flexible. Set when they need it done
+                between specific hours (e.g., before noon, after 2 PM).
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -364,6 +509,44 @@ export function JobForm({ initialData, companyId, crews, initialLineItems = [] }
           {...register('customer_notes')}
         />
       </div>
+
+      {/* --- Save as template --- */}
+      {clientId && (
+        <div className="rounded-md border bg-muted/30 px-4 py-3 space-y-2.5">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={saveAsTemplate}
+              onChange={(e) => setSaveAsTemplate(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-input accent-[var(--color-brand-green-raw,#3D6B2C)]"
+            />
+            <div className="flex-1 text-sm">
+              <p className="font-medium flex items-center gap-1.5">
+                <BookmarkPlus className="h-3.5 w-3.5 text-muted-foreground" />
+                Save this job as a template for{' '}
+                <span className="text-foreground/90">{resolvedClientName ?? 'this property'}</span>
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Next time you create a job at this address, spawn a new one from this
+                template in one tap.
+              </p>
+            </div>
+          </label>
+          {saveAsTemplate && (
+            <div className="pl-6 space-y-1.5">
+              <Label htmlFor="template_name" className="text-xs">
+                Template name <span className="text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="template_name"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder={getValues('title') || 'e.g., Weekly Mowing'}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {serverError && (
         <div className="rounded-md bg-destructive/10 px-3 py-2">
