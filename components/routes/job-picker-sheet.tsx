@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Search, Clock, MapPin } from 'lucide-react';
+import { Loader2, Search, Clock, MapPin, X } from 'lucide-react';
 import { resolveJobDurationMinutes } from '@/lib/vroom';
 import type { Crew } from '@/types';
 
@@ -35,11 +35,20 @@ export interface PickerJob {
     longitude: number | null;
   } | null;
   line_items: Array<{
+    service_id: string | null;
     service: {
+      id: string | null;
+      name: string | null;
       estimated_duration_minutes: number | null;
       category: string | null;
     } | null;
   }>;
+}
+
+interface ServiceOption {
+  id: string;
+  name: string;
+  category: string | null;
 }
 
 interface Props {
@@ -47,7 +56,9 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   companyId: string;
   crews: Crew[];
-  /** Default value for the date filter — usually the route's selected date. */
+  /** Default value for the date filter — the picker now defaults to "Any date"
+   *  regardless of what's passed here, but the prop is retained so callers
+   *  can still seed it if they later want to. */
   defaultDate: string;
   /** Job IDs already in the route — these stay visible but checked + locked
    *  to prevent duplicate adds. */
@@ -55,6 +66,22 @@ interface Props {
   /** Called with the chosen jobs (full rows) when the user taps "Add to Route". */
   onAdd: (jobs: PickerJob[]) => void;
 }
+
+// Quick visual cues so Trent can scan the service dropdown without reading.
+const CATEGORY_EMOJI: Record<string, string> = {
+  mowing: '🌿',
+  edging: '✂️',
+  fertilization: '🌱',
+  aeration: '🕳️',
+  cleanup: '🍂',
+  tree: '🌳',
+  sprinkler: '💧',
+  snow: '❄️',
+  holiday: '🎄',
+  overseeding: '🌾',
+  mulch: '🪵',
+  other: '🛠️',
+};
 
 function formatDuration(mins: number): string {
   if (mins <= 0) return '0m';
@@ -75,25 +102,58 @@ function formatTime(t: string | null): string | null {
   return `${hour12}:${m.toString().padStart(2, '0')} ${period}`;
 }
 
+function formatShortDate(d: string | null): string | null {
+  if (!d) return null;
+  // Parse as local midday to avoid off-by-one when the YYYY-MM-DD is
+  // interpreted as UTC.
+  const dt = new Date(`${d}T12:00:00`);
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 export function JobPickerSheet({
-  open, onOpenChange, companyId, crews, defaultDate, alreadyInRoute, onAdd,
+  open, onOpenChange, companyId, crews, alreadyInRoute, onAdd,
 }: Props) {
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
   const [jobs, setJobs] = useState<PickerJob[]>([]);
+  const [services, setServices] = useState<ServiceOption[]>([]);
   const [search, setSearch] = useState('');
-  const [dateFilter, setDateFilter] = useState<string>(defaultDate);
+  // Default to "Any date" — when Trent is building today's route the jobs
+  // he wants are usually scheduled later in the week, so pinning to today
+  // makes the picker look broken.
+  const [dateFilter, setDateFilter] = useState<string>('');
   const [crewFilter, setCrewFilter] = useState<string>('all');
+  const [serviceFilter, setServiceFilter] = useState<string>('all');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  // Reset selection + reload when the sheet opens.
+  // Reset every time the sheet opens — keeps state fresh for the next route.
   useEffect(() => {
     if (!open) return;
     setSelected(new Set());
-    setDateFilter(defaultDate);
+    setDateFilter('');
     setSearch('');
     setCrewFilter('all');
-  }, [open, defaultDate]);
+    setServiceFilter('all');
+  }, [open]);
+
+  // Load the company's services for the dropdown options. Cached for the
+  // lifetime of the open sheet — small list, doesn't change mid-session.
+  useEffect(() => {
+    if (!open || !companyId) return;
+    let cancelled = false;
+    supabase
+      .from('services')
+      .select('id, name, category')
+      .eq('company_id', companyId)
+      .eq('is_active', true)
+      .order('name')
+      .then(({ data }) => {
+        if (cancelled) return;
+        setServices(((data ?? []) as unknown) as ServiceOption[]);
+      });
+    return () => { cancelled = true; };
+  }, [open, companyId]);
 
   useEffect(() => {
     if (!open || !companyId) return;
@@ -108,7 +168,10 @@ export function JobPickerSheet({
           id, title, status, crew_id, scheduled_date, scheduled_start, scheduled_end,
           estimated_duration_minutes, time_window_start, time_window_end,
           client:clients(id, name, service_address, service_city, latitude, longitude),
-          line_items:job_line_items(service:services(estimated_duration_minutes, category))
+          line_items:job_line_items(
+            service_id,
+            service:services(id, name, estimated_duration_minutes, category)
+          )
         `)
         .eq('company_id', companyId)
         .in('status', ['unscheduled', 'scheduled', 'en_route'])
@@ -133,16 +196,56 @@ export function JobPickerSheet({
     return m;
   }, [crews]);
 
+  const serviceById = useMemo(() => {
+    const m = new Map<string, ServiceOption>();
+    for (const s of services) m.set(s.id, s);
+    return m;
+  }, [services]);
+
+  // Filter + sort. Service filtering is client-side because checking the
+  // joined line_items in PostgREST is awkward; the dataset is already
+  // capped at 200 rows so the local pass is cheap.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return jobs;
-    return jobs.filter((j) => {
-      const inTitle = j.title?.toLowerCase().includes(q);
-      const inClient = j.client?.name?.toLowerCase().includes(q);
-      const inAddress = j.client?.service_address?.toLowerCase().includes(q);
-      return inTitle || inClient || inAddress;
+    const selectedService = serviceFilter !== 'all' ? serviceById.get(serviceFilter) ?? null : null;
+
+    let next = jobs.filter((j) => {
+      // Search filter
+      if (q) {
+        const inTitle = j.title?.toLowerCase().includes(q);
+        const inClient = j.client?.name?.toLowerCase().includes(q);
+        const inAddress = j.client?.service_address?.toLowerCase().includes(q);
+        if (!inTitle && !inClient && !inAddress) return false;
+      }
+      // Service filter — match by line-item service_id first, then fall
+      // back to a fuzzy title match so older un-itemized jobs still surface.
+      if (selectedService) {
+        const lineMatch = j.line_items?.some((li) => li.service_id === selectedService.id);
+        if (lineMatch) return true;
+        const fuzzy = selectedService.name?.toLowerCase();
+        return !!(fuzzy && j.title?.toLowerCase().includes(fuzzy));
+      }
+      return true;
     });
-  }, [jobs, search]);
+
+    // Sort: when "Any date" is selected we span multiple dates, so sort by
+    // scheduled_date asc and push unscheduled jobs to the bottom. With a
+    // specific date pinned, server-side ordering (scheduled_start) already
+    // suffices.
+    if (!dateFilter) {
+      next = [...next].sort((a, b) => {
+        if (a.scheduled_date && b.scheduled_date) {
+          const dc = a.scheduled_date.localeCompare(b.scheduled_date);
+          if (dc !== 0) return dc;
+          return (a.scheduled_start ?? '').localeCompare(b.scheduled_start ?? '');
+        }
+        if (a.scheduled_date) return -1;
+        if (b.scheduled_date) return 1;
+        return 0;
+      });
+    }
+    return next;
+  }, [jobs, search, serviceFilter, serviceById, dateFilter]);
 
   // Live "X jobs selected · total Yh Zm" — sum the resolved durations.
   const summary = useMemo(() => {
@@ -182,18 +285,34 @@ export function JobPickerSheet({
 
         {/* Filters */}
         <div className="px-5 py-3 border-b space-y-2.5 bg-muted/20">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
             <div className="space-y-1">
               <Label htmlFor="picker-date" className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 Date
               </Label>
-              <Input
-                id="picker-date"
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="h-9"
-              />
+              <div className="relative">
+                <Input
+                  id="picker-date"
+                  type="date"
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  placeholder="Any date"
+                  className="h-9 pr-8"
+                />
+                {dateFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setDateFilter('')}
+                    aria-label="Clear date filter"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                {dateFilter ? formatShortDate(dateFilter) ?? '—' : 'Any date'}
+              </p>
             </div>
             <div className="space-y-1">
               <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -220,6 +339,30 @@ export function JobPickerSheet({
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Service
+              </Label>
+              <Select value={serviceFilter} onValueChange={(v) => setServiceFilter(v ?? 'all')}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All services</SelectItem>
+                  {services.map((s) => {
+                    const emoji = (s.category && CATEGORY_EMOJI[s.category]) || '🛠️';
+                    return (
+                      <SelectItem key={s.id} value={s.id}>
+                        <span className="flex items-center gap-2">
+                          <span aria-hidden>{emoji}</span>
+                          <span>{s.name}</span>
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <div className="relative">
             <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -230,15 +373,6 @@ export function JobPickerSheet({
               className="h-9 pl-8"
             />
           </div>
-          {dateFilter && (
-            <button
-              type="button"
-              onClick={() => setDateFilter('')}
-              className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2"
-            >
-              Clear date filter (show all dates)
-            </button>
-          )}
         </div>
 
         {/* Job list */}
@@ -259,6 +393,13 @@ export function JobPickerSheet({
                 const locked = alreadyInRoute.has(j.id);
                 const duration = resolveJobDurationMinutes(j, { jobId: j.id, jobTitle: j.title });
                 const timeLabel = formatTime(j.scheduled_start);
+                const dateLabel = formatShortDate(j.scheduled_date);
+                // Compose date+time as a single chip when the picker is
+                // showing multiple dates ("Any date" mode). With a specific
+                // date pinned the date is redundant — show just the time.
+                const whenLabel = !dateFilter && dateLabel
+                  ? (timeLabel ? `${dateLabel} · ${timeLabel}` : dateLabel)
+                  : (timeLabel ?? null);
                 return (
                   <li
                     key={j.id}
@@ -293,7 +434,9 @@ export function JobPickerSheet({
                         <span className="inline-flex items-center gap-0.5">
                           <Clock className="h-3 w-3" /> {formatDuration(duration)}
                         </span>
-                        {timeLabel && <span>· {timeLabel}</span>}
+                        {whenLabel
+                          ? <span>· {whenLabel}</span>
+                          : <span className="italic">· Unscheduled</span>}
                         {locked && <span className="text-amber-700">· already on route</span>}
                       </div>
                     </div>
