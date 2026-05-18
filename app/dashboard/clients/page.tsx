@@ -126,8 +126,22 @@ export default function ClientsPage() {
           }}
         />
       ) : (
-        <ClientTable data={filtered} globalFilter={search} />
+        <ClientTable
+          data={filtered}
+          globalFilter={search}
+          onDeleted={(id) => setClients((prev) => prev.filter((c) => c.id !== id))}
+        />
       )}
+
+      {/* Mobile FAB — fixed above bottom nav */}
+      <Link
+        href="/dashboard/clients/new"
+        className="md:hidden fixed bottom-20 right-4 z-50 h-14 w-14 rounded-full shadow-xl flex items-center justify-center"
+        style={{ backgroundColor: 'var(--color-brand-gold-raw)', color: '#fff' }}
+        aria-label="New Client"
+      >
+        <Plus className="h-6 w-6" />
+      </Link>
     </div>
   );
 }

@@ -117,59 +117,102 @@ export default function ProposalsPage() {
           }}
         />
       ) : (
-        <div className="rounded-xl border bg-card overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="text-left px-4 py-2.5 font-semibold">Title</th>
-                <th className="text-left px-4 py-2.5 font-semibold">Client</th>
-                <th className="text-left px-4 py-2.5 font-semibold">Status</th>
-                <th className="text-right px-4 py-2.5 font-semibold">Total</th>
-                <th className="text-right px-4 py-2.5 font-semibold">Annual</th>
-                <th className="text-right px-4 py-2.5 font-semibold">Created</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {proposals.map((p) => {
-                const subtotal = (p.estimate_line_items ?? []).reduce(
-                  (s, li) => s + Number(li.total ?? 0),
-                  0
-                );
-                return (
-                  <tr
-                    key={p.id}
-                    className="cursor-pointer hover:bg-muted/30"
-                    onClick={() => router.push(`/dashboard/proposals/${p.id}`)}
-                  >
-                    <td className="px-4 py-3 font-medium">{p.title}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {p.client?.name ?? '—'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={cn(
-                          'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium capitalize',
-                          STATUS_COLORS[p.status]
-                        )}
-                      >
-                        {p.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums">
+        <>
+          {/* Mobile: card list */}
+          <div className="md:hidden space-y-3">
+            {proposals.map((p) => {
+              const subtotal = (p.estimate_line_items ?? []).reduce(
+                (s, li) => s + Number(li.total ?? 0),
+                0
+              );
+              return (
+                <div
+                  key={p.id}
+                  className="rounded-xl border bg-card p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                  onClick={() => router.push(`/dashboard/proposals/${p.id}`)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm truncate">{p.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {p.client?.name ?? '—'}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        'shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium capitalize',
+                        STATUS_COLORS[p.status]
+                      )}
+                    >
+                      {p.status}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+                    <span className="tabular-nums font-medium text-foreground">
                       {formatCurrency(subtotal)}
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
-                      {p.annual_value ? formatCurrency(Number(p.annual_value)) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-right text-muted-foreground tabular-nums">
-                      {formatDate(p.created_at)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                    </span>
+                    <span className="tabular-nums">{formatDate(p.created_at)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop: table */}
+          <div className="hidden md:block rounded-xl border bg-card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="text-left px-4 py-2.5 font-semibold">Title</th>
+                  <th className="text-left px-4 py-2.5 font-semibold">Client</th>
+                  <th className="text-left px-4 py-2.5 font-semibold">Status</th>
+                  <th className="text-right px-4 py-2.5 font-semibold">Total</th>
+                  <th className="text-right px-4 py-2.5 font-semibold">Annual</th>
+                  <th className="text-right px-4 py-2.5 font-semibold">Created</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {proposals.map((p) => {
+                  const subtotal = (p.estimate_line_items ?? []).reduce(
+                    (s, li) => s + Number(li.total ?? 0),
+                    0
+                  );
+                  return (
+                    <tr
+                      key={p.id}
+                      className="cursor-pointer hover:bg-muted/30"
+                      onClick={() => router.push(`/dashboard/proposals/${p.id}`)}
+                    >
+                      <td className="px-4 py-3 font-medium">{p.title}</td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {p.client?.name ?? '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={cn(
+                            'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium capitalize',
+                            STATUS_COLORS[p.status]
+                          )}
+                        >
+                          {p.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {formatCurrency(subtotal)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                        {p.annual_value ? formatCurrency(Number(p.annual_value)) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right text-muted-foreground tabular-nums">
+                        {formatDate(p.created_at)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

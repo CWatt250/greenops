@@ -10,6 +10,7 @@ import {
 } from '@tanstack/react-table';
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/components/ui/button';
 import type { Invoice, InvoiceStatus } from '@/types';
@@ -106,6 +107,7 @@ interface Props {
 }
 
 export function InvoiceTable({ invoices, statusFilter = 'all' }: Props) {
+  const router = useRouter();
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 
   const filtered = statusFilter === 'all' ? invoices : invoices.filter((i) => i.status === statusFilter);
@@ -128,37 +130,94 @@ export function InvoiceTable({ invoices, statusFilter = 'all' }: Props) {
   }
 
   return (
-    <div className="rounded-xl border overflow-hidden">
-      <table className="w-full text-left">
-        <thead className="bg-muted/40 border-b">
-          {table.getHeaderGroups().map((hg) => (
-            <tr key={hg.id}>
-              {hg.headers.map((header) => (
-                <th key={header.id} className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  {flexRender(header.column.columnDef.header, header.getContext())}
-                </th>
-              ))}
-            </tr>
-          ))}
-        </thead>
-        <tbody className="divide-y">
-          {table.getRowModel().rows.map((row) => (
-            <tr
-              key={row.id}
-              className={cn(
-                'hover:bg-muted/30 transition-colors',
-                row.original.status === 'overdue' && 'border-l-2 border-l-red-500'
-              )}
+    <>
+      {/* Mobile: card list */}
+      <div className="md:hidden space-y-3">
+        {filtered.map((inv) => {
+          const isOverdue =
+            inv.due_date &&
+            new Date(inv.due_date) < new Date() &&
+            inv.status !== 'paid';
+          return (
+            <div
+              key={inv.id}
+              className="rounded-xl border bg-card p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+              onClick={() => router.push(`/dashboard/invoices/${inv.id}`)}
             >
-              {row.getVisibleCells().map((cell) => (
-                <td key={cell.id} className="px-4 py-3">
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-sm">{inv.invoice_number}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {inv.client?.name ?? '—'}
+                  </p>
+                  {inv.due_date && (
+                    <p
+                      className={cn(
+                        'text-xs mt-0.5 tabular-nums',
+                        isOverdue ? 'text-red-600 font-medium' : 'text-muted-foreground'
+                      )}
+                    >
+                      Due {inv.due_date}
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  <span
+                    className={cn(
+                      'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium capitalize',
+                      STATUS_COLORS[inv.status as InvoiceStatus]
+                    )}
+                  >
+                    {inv.status}
+                  </span>
+                  <span
+                    className={cn(
+                      'text-sm tabular-nums font-semibold',
+                      inv.balance_due > 0 ? 'text-amber-700' : 'text-muted-foreground'
+                    )}
+                  >
+                    {fmt(inv.balance_due)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop: table */}
+      <div className="hidden md:block rounded-xl border overflow-hidden">
+        <table className="w-full text-left">
+          <thead className="bg-muted/40 border-b">
+            {table.getHeaderGroups().map((hg) => (
+              <tr key={hg.id}>
+                {hg.headers.map((header) => (
+                  <th key={header.id} className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    {flexRender(header.column.columnDef.header, header.getContext())}
+                  </th>
+                ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody className="divide-y">
+            {table.getRowModel().rows.map((row) => (
+              <tr
+                key={row.id}
+                className={cn(
+                  'hover:bg-muted/30 transition-colors',
+                  row.original.status === 'overdue' && 'border-l-2 border-l-red-500'
+                )}
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id} className="px-4 py-3">
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
