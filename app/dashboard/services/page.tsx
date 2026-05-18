@@ -278,11 +278,12 @@ export default function ServicesPage() {
             Used {usage}×
           </p>
         )}
-        <div className="flex gap-1 pt-1 border-t -mx-5 px-5 -mb-2 pb-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex gap-1 pt-1 border-t -mx-5 px-5 -mb-2 pb-1">
           <Button
             variant="ghost"
             size="sm"
-            className="flex-1 gap-1 text-xs h-8"
+            aria-label="Edit service"
+            className="flex-1 gap-1 text-xs h-8 text-gray-700 hover:bg-gray-100"
             onClick={() => openEdit(service)}
           >
             <Pencil className="h-3 w-3" /> Edit
@@ -290,7 +291,8 @@ export default function ServicesPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="flex-1 gap-1 text-xs h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+            aria-label="Delete service"
+            className="flex-1 gap-1 text-xs h-8 text-red-600 hover:text-red-600 hover:bg-red-50"
             onClick={() => setConfirmDelete(service)}
           >
             <Trash2 className="h-3 w-3" /> Delete

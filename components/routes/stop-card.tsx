@@ -157,7 +157,7 @@ export function StopCard({
       {!readonly && (
         <button
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          className="shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all rounded-full p-0.5"
+          className="shrink-0 text-muted-foreground hover:text-destructive transition-colors rounded-full p-0.5"
         >
           <X className="h-4 w-4" />
         </button>
