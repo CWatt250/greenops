@@ -136,7 +136,7 @@ export default function ClientsPage() {
       {/* Mobile FAB — fixed above bottom nav */}
       <Link
         href="/dashboard/clients/new"
-        className="md:hidden fixed bottom-20 right-4 z-50 h-14 w-14 rounded-full shadow-xl flex items-center justify-center"
+        className="md:hidden fixed bottom-[calc(5rem_+_env(safe-area-inset-bottom))] right-4 z-50 h-14 w-14 rounded-full shadow-xl flex items-center justify-center"
         style={{ backgroundColor: 'var(--color-brand-gold-raw)', color: '#fff' }}
         aria-label="New Client"
       >

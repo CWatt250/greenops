@@ -160,7 +160,7 @@ export function ClientTable({ data, globalFilter, onDeleted }: ClientTableProps)
                   onClick={(e) => e.stopPropagation()}
                   className={cn(
                     buttonVariants({ variant: 'ghost', size: 'sm' }),
-                    'gap-1.5 text-xs text-gray-700 h-8'
+                    'gap-1.5 text-xs text-gray-700 h-11'
                   )}
                 >
                   <Pencil className="h-3.5 w-3.5" /> Edit
@@ -172,7 +172,7 @@ export function ClientTable({ data, globalFilter, onDeleted }: ClientTableProps)
                   }}
                   className={cn(
                     buttonVariants({ variant: 'ghost', size: 'sm' }),
-                    'gap-1.5 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 h-8'
+                    'gap-1.5 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 h-11'
                   )}
                 >
                   <Trash2 className="h-3.5 w-3.5" /> Delete

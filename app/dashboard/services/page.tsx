@@ -283,7 +283,7 @@ export default function ServicesPage() {
             variant="ghost"
             size="sm"
             aria-label="Edit service"
-            className="flex-1 gap-1 text-xs h-8 text-gray-700 hover:bg-gray-100"
+            className="flex-1 gap-1 text-xs h-11 text-gray-700 hover:bg-gray-100"
             onClick={() => openEdit(service)}
           >
             <Pencil className="h-3 w-3" /> Edit
@@ -292,7 +292,7 @@ export default function ServicesPage() {
             variant="ghost"
             size="sm"
             aria-label="Delete service"
-            className="flex-1 gap-1 text-xs h-8 text-red-600 hover:text-red-600 hover:bg-red-50"
+            className="flex-1 gap-1 text-xs h-11 text-red-600 hover:text-red-600 hover:bg-red-50"
             onClick={() => setConfirmDelete(service)}
           >
             <Trash2 className="h-3 w-3" /> Delete

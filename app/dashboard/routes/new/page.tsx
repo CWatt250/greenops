@@ -971,12 +971,9 @@ export default function RouteBuilderPage() {
   );
 
   return (
-    <div
-      className="-m-4 md:-m-6 lg:-m-8 flex overflow-hidden"
-      style={{ height: 'calc(100svh - 3.5rem)' }}
-    >
-      {/* ─── LEFT PANEL ─── */}
-      <div className="w-[420px] shrink-0 flex flex-col border-r bg-background overflow-hidden">
+    <div className="-m-4 md:-m-6 lg:-m-8 flex flex-col md:flex-row md:h-[calc(100svh_-_3.5rem)] md:overflow-hidden">
+      {/* ─── LEFT PANEL ─── (stacks above map below md) */}
+      <div className="w-full md:w-[420px] md:shrink-0 flex flex-col border-r bg-background md:overflow-hidden">
 
         {/* Top: date + crew picker + (single) title */}
         <div className="p-4 border-b space-y-3 shrink-0">
@@ -1172,8 +1169,8 @@ export default function RouteBuilderPage() {
         <RouteSummaryBar stops={stops} />
       </div>
 
-      {/* ─── RIGHT PANEL — MAP ─── */}
-      <div className="flex-1 relative">
+      {/* ─── RIGHT PANEL — MAP ─── (full-width below the panel on mobile) */}
+      <div className="relative h-[60vh] md:h-auto md:flex-1">
         <RouteMap
           stops={mapStops}
           polylines={mapPolylines}

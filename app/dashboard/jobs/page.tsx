@@ -162,7 +162,7 @@ export default function JobsPage() {
       {/* Bulk action bar */}
       {selected.length > 0 && (
         <div
-          className="sticky top-0 z-30 mb-4 flex items-center gap-3 rounded-xl border bg-background/95 backdrop-blur-sm shadow-md px-4 py-2.5"
+          className="sticky top-14 z-30 mb-4 flex items-center gap-3 rounded-xl border bg-background/95 backdrop-blur-sm shadow-md px-4 py-2.5"
         >
           <span className="text-sm font-semibold">
             {selected.length} selected

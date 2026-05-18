@@ -188,7 +188,7 @@ export default function CrewsPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="flex-1 gap-1.5 text-xs h-8"
+                  className="flex-1 gap-1.5 text-xs h-11"
                   onClick={() => openEdit(crew)}
                 >
                   <Pencil className="h-3 w-3" /> Edit
@@ -196,7 +196,7 @@ export default function CrewsPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="flex-1 gap-1.5 text-xs h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  className="flex-1 gap-1.5 text-xs h-11 text-destructive hover:text-destructive hover:bg-destructive/10"
                   onClick={() => setConfirmDeactivate(crew)}
                 >
                   <PowerOff className="h-3 w-3" /> Deactivate

@@ -294,7 +294,7 @@ export function MobileDayView({
       <Link
         href="/dashboard/jobs/new"
         aria-label="New job"
-        className="fixed bottom-20 right-4 z-30 h-14 w-14 rounded-full shadow-lg flex items-center justify-center text-white"
+        className="fixed bottom-[calc(5rem_+_env(safe-area-inset-bottom))] right-4 z-30 h-14 w-14 rounded-full shadow-lg flex items-center justify-center text-white"
         style={{ backgroundColor: 'var(--orange)' }}
       >
         <Plus className="h-6 w-6" />

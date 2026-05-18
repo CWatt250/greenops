@@ -212,14 +212,14 @@ export default function FormsPage() {
                   <div className="flex items-center gap-1 mt-auto pt-2 border-t -mx-4 px-4 -mb-2 pb-1">
                     <Button
                       variant="ghost" size="sm"
-                      className="flex-1 gap-1.5 text-xs h-8"
+                      className="flex-1 gap-1.5 text-xs h-11"
                       onClick={() => setEditing(t)}
                     >
                       <Pencil className="h-3 w-3" /> Edit
                     </Button>
                     <Button
                       variant="ghost" size="sm"
-                      className="flex-1 gap-1.5 text-xs h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      className="flex-1 gap-1.5 text-xs h-11 text-destructive hover:text-destructive hover:bg-destructive/10"
                       onClick={() => setConfirmDelete(t)}
                     >
                       <Trash2 className="h-3 w-3" /> Archive

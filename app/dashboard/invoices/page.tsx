@@ -95,7 +95,7 @@ export default function InvoicesPage() {
       />
 
       {/* Summary strip */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="rounded-xl border bg-card p-4">
           <p className="text-xs text-muted-foreground">Outstanding</p>
           <p className="text-xl font-bold mt-1">{fmt(totalOutstanding)}</p>
