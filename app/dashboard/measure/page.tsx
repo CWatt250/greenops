@@ -9,9 +9,19 @@ import { HowMeasureWorks } from '@/components/help/how-page-works';
 export default async function StandaloneMeasurePage({
   searchParams,
 }: {
-  searchParams: Promise<{ address?: string; client_id?: string }>;
+  searchParams: Promise<{
+    address?: string;
+    client_id?: string;
+    return_to?: string;
+    client_name?: string;
+  }>;
 }) {
-  const { address, client_id: clientIdParam } = await searchParams;
+  const {
+    address,
+    client_id: clientIdParam,
+    return_to: returnTo,
+    client_name: clientNameParam,
+  } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
@@ -75,6 +85,9 @@ export default async function StandaloneMeasurePage({
         role={role}
         backHref={isCrew ? '/today' : '/dashboard'}
         standalone
+        returnTo={returnTo}
+        returnClientId={clientIdParam}
+        returnClientName={clientNameParam ? decodeURIComponent(clientNameParam) : undefined}
       />
     </>
   );

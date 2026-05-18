@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -13,9 +13,18 @@ import { Switch } from '@/components/ui/switch';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Home, Building2, Building } from 'lucide-react';
+import { Home, Building2, Building, Ruler } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import type { Client } from '@/types';
+import {
+  draftStorageKey,
+  saveFormDraft,
+  loadFormDraft,
+  clearFormDraft,
+  loadPendingMeasurement,
+  clearPendingMeasurement,
+} from '@/lib/hooks/use-client-form-draft';
 
 const clientSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -47,12 +56,16 @@ export function ClientForm({ initialData, companyId }: ClientFormProps) {
   const router = useRouter();
   const supabase = createClient();
   const [serverError, setServerError] = useState<string | null>(null);
+  const [lotSizeSource, setLotSizeSource] = useState<'measured' | null>(null);
+  const isEditMode = Boolean(initialData?.id);
+  const clientId = initialData?.id;
 
   const {
     register,
     handleSubmit,
     watch,
     setValue,
+    getValues,
     formState: { errors, isSubmitting },
   } = useForm<ClientFormData>({
     resolver: zodResolver(clientSchema),
@@ -76,6 +89,39 @@ export function ClientForm({ initialData, companyId }: ClientFormProps) {
 
   const billingSame = watch('billing_same_as_service');
   const propertyType = watch('property_type');
+  const lotSizeProps = register('lot_size_sqft', { valueAsNumber: true });
+
+  // On mount: restore draft (new client always; edit client only when returning from measure),
+  // then apply any pending measurement result.
+  useEffect(() => {
+    const pendingSqft = loadPendingMeasurement();
+    const hasPending = pendingSqft !== null;
+
+    // Restore draft if: new client OR returning from measure (has pending measurement)
+    if (!isEditMode || hasPending) {
+      const draft = loadFormDraft(clientId);
+      if (draft) {
+        for (const [key, value] of Object.entries(draft)) {
+          if (value !== undefined && value !== null) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            setValue(key as keyof ClientFormData, value as any);
+          }
+        }
+        clearFormDraft(clientId);
+      }
+    }
+
+    // Apply pending measurement (overwrites lot size from draft)
+    if (hasPending) {
+      setValue('lot_size_sqft', pendingSqft!);
+      setLotSizeSource('measured');
+      clearPendingMeasurement();
+      toast.success(
+        `Lot size set to ${pendingSqft!.toLocaleString()} sq ft from your measurement`
+      );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function onSubmit(data: ClientFormData) {
     setServerError(null);
@@ -99,6 +145,29 @@ export function ClientForm({ initialData, companyId }: ClientFormProps) {
     }
 
     router.push(`/dashboard/clients/${result.data.id}`);
+  }
+
+  function handleMeasureProperty() {
+    const address = getValues('service_address');
+    if (!address?.trim()) {
+      toast.error('Please fill in the Street Address first so we can find the property');
+      document.getElementById('service_address')?.focus();
+      return;
+    }
+
+    // Save current form state to localStorage so we can restore it on return.
+    const formSnapshot = getValues();
+    saveFormDraft(clientId, formSnapshot as Record<string, unknown>);
+
+    const params = new URLSearchParams({
+      return_to: 'client_form',
+      address,
+    });
+    if (clientId) params.set('client_id', clientId);
+    const name = getValues('name');
+    if (name) params.set('client_name', name);
+
+    router.push(`/dashboard/measure?${params.toString()}`);
   }
 
   const propertyTypes = [
@@ -243,8 +312,49 @@ export function ClientForm({ initialData, companyId }: ClientFormProps) {
         <h2 className="text-base font-semibold">Property Details</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="space-y-2">
-            <Label htmlFor="lot_size_sqft">Lot Size (sq ft)</Label>
-            <Input id="lot_size_sqft" type="number" {...register('lot_size_sqft')} />
+            <div className="flex items-center gap-2">
+              <Label htmlFor="lot_size_sqft">Lot Size (sq ft)</Label>
+              {lotSizeSource === 'measured' && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                  style={{
+                    backgroundColor: 'var(--orange-soft)',
+                    color: 'var(--orange-deep)',
+                    border: '1px solid var(--orange)',
+                  }}
+                >
+                  <Ruler className="h-2.5 w-2.5" /> Measured
+                </span>
+              )}
+            </div>
+            <Input
+              id="lot_size_sqft"
+              type="number"
+              {...lotSizeProps}
+              onChange={(e) => {
+                lotSizeProps.onChange(e);
+                setLotSizeSource(null);
+              }}
+            />
+            {/* Measure Property CTA */}
+            <div className="mt-1.5">
+              <button
+                type="button"
+                onClick={handleMeasureProperty}
+                className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-muted/50 w-full sm:w-auto"
+                style={{
+                  borderColor: 'var(--orange)',
+                  color: 'var(--orange-deep)',
+                  backgroundColor: 'var(--orange-soft)',
+                }}
+              >
+                <Ruler className="h-4 w-4 shrink-0" />
+                Measure Property on Map
+              </button>
+              <p className="text-xs text-muted-foreground mt-1">
+                Not sure of lot size? Trace the lawn on satellite imagery.
+              </p>
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="gate_code">Gate Code</Label>

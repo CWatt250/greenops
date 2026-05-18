@@ -57,6 +57,11 @@ interface Props {
   /** Caller's role. Crew sees a "Send to office" outcome instead of
    *  "Generate Proposal" (they can't set pricing). */
   role?: 'owner' | 'dispatcher' | 'crew' | 'customer';
+  /** When set to 'client_form', shows a "Use This Measurement" CTA that
+   *  writes the total sq ft to localStorage and navigates back. */
+  returnTo?: string;
+  returnClientId?: string;
+  returnClientName?: string;
 }
 
 type AddressInfo = {
@@ -79,6 +84,9 @@ export function MeasureView({
   backHref = '/dashboard',
   standalone = false,
   role = 'owner',
+  returnTo,
+  returnClientId,
+  returnClientName,
 }: Props) {
   const router = useRouter();
   const supabase = createClient();
@@ -427,6 +435,33 @@ export function MeasureView({
     }
   }
 
+  // ── Return to client form with measurement total ───────────────────────
+  async function useThisMeasurement() {
+    if (shapes.length === 0) {
+      toast.error('Draw at least one shape before using the measurement.');
+      return;
+    }
+    setSaving(true);
+    try {
+      // Persist to DB if we have a real (non-"new") client ID
+      if (returnClientId && returnClientId !== 'new') {
+        await persistMeasurement(returnClientId);
+      }
+      // Store the total so the client form can pick it up on mount
+      localStorage.setItem(
+        'client_form_pending_measurement',
+        JSON.stringify({ sqft: Math.round(totals.total) })
+      );
+      const dest =
+        returnClientId && returnClientId !== 'new'
+          ? `/dashboard/clients/${returnClientId}/edit`
+          : '/dashboard/clients/new';
+      router.push(dest);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   // ── Clear All ─────────────────────────────────────────────────────────
   async function doClearAll() {
     setShapes([]);
@@ -464,6 +499,27 @@ export function MeasureView({
       className="-m-4 md:-m-6 lg:-m-8 flex flex-col overflow-hidden"
       style={{ height: 'calc(100svh - 3.5rem)' }}
     >
+      {/* Return-to-client-form banner */}
+      {returnTo === 'client_form' && (
+        <div
+          className="shrink-0 flex items-start gap-2.5 px-4 py-2.5 text-sm border-b"
+          style={{
+            backgroundColor: 'var(--orange-soft)',
+            borderColor: 'var(--orange)',
+            color: 'var(--orange-deep)',
+          }}
+        >
+          <span className="text-base leading-none mt-0.5">📐</span>
+          <span>
+            <strong>
+              Measuring lot size{returnClientName ? ` for ${returnClientName}` : ''}
+            </strong>
+            {' '}— draw the property outline, then tap{' '}
+            <strong>&ldquo;Use This Measurement&rdquo;</strong> to return.
+          </span>
+        </div>
+      )}
+
       {/* Instructions — desktop only, hidden on mobile */}
       <div className="hidden md:block">
         <InstructionsBanner />
@@ -565,6 +621,21 @@ export function MeasureView({
 
           {/* Action buttons */}
           <div className="flex flex-col gap-2">
+            {returnTo === 'client_form' && (
+              <Button
+                onClick={() => void useThisMeasurement()}
+                disabled={saving || shapes.length === 0}
+                className="w-full gap-1.5 font-semibold"
+                style={{ backgroundColor: 'var(--color-brand-green-raw)', color: '#fff' }}
+              >
+                {saving
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : '✅'}
+                {shapes.length > 0
+                  ? `Use This Measurement (${Math.round(totals.total).toLocaleString()} sq ft)`
+                  : 'Use This Measurement'}
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={downloadPdf}
@@ -767,6 +838,21 @@ export function MeasureView({
 
               {/* Action buttons — compact for mobile */}
               <div className="flex flex-col gap-2">
+                {returnTo === 'client_form' && (
+                  <Button
+                    onClick={() => void useThisMeasurement()}
+                    disabled={saving || shapes.length === 0}
+                    className="w-full gap-1.5 text-xs h-10 font-semibold"
+                    style={{ backgroundColor: 'var(--color-brand-green-raw)', color: '#fff' }}
+                  >
+                    {saving
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : '✅'}
+                    {shapes.length > 0
+                      ? `Use This Measurement (${Math.round(totals.total).toLocaleString()} sq ft)`
+                      : 'Use This Measurement'}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   onClick={downloadPdf}
