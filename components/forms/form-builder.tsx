@@ -166,7 +166,7 @@ export function FormBuilder({ template, companyId, onSaved, onCancel }: Props) {
       <div className="rounded-xl border bg-card overflow-hidden">
         <div className="px-4 py-3 border-b flex items-center justify-between">
           <p className="text-sm font-semibold">Fields ({fields.length})</p>
-          <Button variant="outline" size="sm" onClick={addField} className="gap-1.5">
+          <Button variant="outline" size="sm" onClick={addField} className="gap-1.5 h-11">
             <Plus className="h-3.5 w-3.5" /> Add field
           </Button>
         </div>
@@ -205,13 +205,13 @@ export function FormBuilder({ template, companyId, onSaved, onCancel }: Props) {
                       value={f.label}
                       onChange={(e) => updateField(f.id, { label: e.target.value })}
                       placeholder="Field label"
-                      className="h-8 text-sm font-medium"
+                      className="h-11 text-sm font-medium"
                     />
                     <Select
                       value={f.type}
                       onValueChange={(v) => updateField(f.id, { type: (v ?? 'text') as FormFieldType })}
                     >
-                      <SelectTrigger className="h-8 text-xs">
+                      <SelectTrigger className="h-11 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -223,7 +223,7 @@ export function FormBuilder({ template, companyId, onSaved, onCancel }: Props) {
                   </div>
                   <Button
                     variant="ghost" size="sm"
-                    className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    className="h-11 w-11 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                     onClick={() => removeField(f.id)}
                     aria-label="Remove field"
                   >

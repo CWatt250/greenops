@@ -593,8 +593,13 @@ export function ProposalWizard({
   // ── Render ─────────────────────────────────────────────────────────────
   return (
     <div className="space-y-5">
-      {/* Step indicator */}
-      <ol className="flex items-center gap-2">
+      {/* Step indicator — compact label on mobile, full track on sm+ */}
+      <p className="sm:hidden text-xs font-bold uppercase tracking-wide text-muted-foreground">
+        <span className="text-foreground">Step {step} of 3</span>
+        {' · '}
+        {step === 1 ? 'Client' : step === 2 ? 'Services' : 'Review'}
+      </p>
+      <ol className="hidden sm:flex items-center gap-2">
         {[1, 2, 3].map((s) => (
           <li key={s} className="flex items-center gap-2">
             <span
@@ -683,7 +688,7 @@ export function ProposalWizard({
                   <Button
                     onClick={handleNewProspect}
                     disabled={!prospectName.trim() || creatingClient}
-                    className="gap-1.5"
+                    className="gap-1.5 h-11"
                     style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
                   >
                     {creatingClient
@@ -743,7 +748,7 @@ export function ProposalWizard({
                   <Button
                     onClick={handleExistingClientContinue}
                     disabled={!clientId}
-                    className="gap-1.5"
+                    className="gap-1.5 h-11"
                     style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
                   >
                     Continue <ChevronRight className="h-3.5 w-3.5" />
@@ -884,7 +889,7 @@ export function ProposalWizard({
             <Button
               onClick={handleFullCustomerSubmit}
               disabled={creatingClient || !fullName.trim()}
-              className="w-full gap-1.5"
+              className="w-full gap-1.5 h-11"
               style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
             >
               {creatingClient
@@ -1310,15 +1315,15 @@ export function ProposalWizard({
               </div>
             </div>
 
-            <div className="flex justify-between">
-              <Button variant="outline" onClick={() => setStep(1)} className="gap-1.5">
+            <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
+              <Button variant="outline" onClick={() => setStep(1)} className="gap-1.5 h-11 w-full sm:w-auto">
                 <ChevronLeft className="h-3.5 w-3.5" /> Back
               </Button>
               <Button
                 onClick={() => setStep(3)}
                 disabled={items.length === 0}
                 style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
-                className="gap-1.5"
+                className="gap-1.5 h-11 w-full sm:w-auto"
               >
                 Review <ChevronRight className="h-3.5 w-3.5" />
               </Button>
@@ -1502,7 +1507,7 @@ export function ProposalWizard({
             <Button
               variant="outline"
               onClick={() => setStep(2)}
-              className="w-full gap-1.5"
+              className="w-full gap-1.5 h-11"
             >
               <ChevronLeft className="h-3.5 w-3.5" /> Back to services
             </Button>
@@ -1510,7 +1515,7 @@ export function ProposalWizard({
               variant="outline"
               onClick={() => handleSave('draft')}
               disabled={saving !== null}
-              className="w-full gap-1.5"
+              className="w-full gap-1.5 h-11"
             >
               {saving === 'draft'
                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1521,7 +1526,7 @@ export function ProposalWizard({
               onClick={() => handleSave('sent')}
               disabled={saving !== null}
               style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
-              className="w-full gap-1.5"
+              className="w-full gap-1.5 h-11"
             >
               {saving === 'send'
                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />

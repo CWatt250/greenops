@@ -64,8 +64,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        {/* Bottom-nav clearance on mobile so content isn't hidden behind it. */}
-        <main className="flex-1 p-4 md:p-6 lg:p-8 pb-24 md:pb-8">{children}</main>
+        {/* Bottom-nav clearance on mobile — safe-area-aware so content isn't
+            hidden behind the fixed nav on notched iPhones. */}
+        <main className="flex-1 p-4 md:p-6 lg:p-8 pb-[calc(5rem_+_env(safe-area-inset-bottom))] md:pb-8">{children}</main>
       </div>
 
       <Suspense fallback={null}>

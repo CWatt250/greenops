@@ -65,7 +65,9 @@ export default async function CrewLayout({ children }: { children: React.ReactNo
           <NotificationBell />
         </div>
       </header>
-      <main className="flex-1 p-4 pb-24 max-w-lg mx-auto w-full">{children}</main>
+      {/* Safe-area-aware bottom padding so CTAs clear the fixed bottom nav
+          on notched iPhones (matches the b5d79cf FAB pattern). */}
+      <main className="flex-1 p-4 pb-[calc(5rem_+_env(safe-area-inset-bottom))] max-w-lg mx-auto w-full">{children}</main>
       <MobileBottomNav role="crew" />
     </div>
   );

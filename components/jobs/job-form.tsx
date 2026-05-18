@@ -454,7 +454,7 @@ export function JobForm({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="space-y-1.5">
               <Label htmlFor="scheduled_date">Date</Label>
-              <Input id="scheduled_date" type="date" {...register('scheduled_date')} />
+              <Input id="scheduled_date" type="date" className="h-11" {...register('scheduled_date')} />
             </div>
 
             <div className="space-y-1.5">
@@ -476,7 +476,7 @@ export function JobForm({
                   inputMode="numeric"
                   value={durationHours}
                   onChange={(e) => setDurationHours(e.target.value)}
-                  className="w-20"
+                  className="w-20 h-11"
                   aria-label="Hours"
                 />
                 <span className="text-xs text-muted-foreground">hr</span>
@@ -487,7 +487,7 @@ export function JobForm({
                   inputMode="numeric"
                   value={durationMinutes}
                   onChange={(e) => setDurationMinutes(e.target.value)}
-                  className="w-20"
+                  className="w-20 h-11"
                   aria-label="Minutes"
                   placeholder={String(calculatedDurationMinutes % 60)}
                 />
@@ -529,6 +529,7 @@ export function JobForm({
                       <Input
                         id="window_start"
                         type="time"
+                        className="h-11"
                         value={windowStart}
                         onChange={(e) => setWindowStart(e.target.value)}
                       />
@@ -538,6 +539,7 @@ export function JobForm({
                       <Input
                         id="window_end"
                         type="time"
+                        className="h-11"
                         value={windowEnd}
                         onChange={(e) => setWindowEnd(e.target.value)}
                       />
@@ -560,6 +562,7 @@ export function JobForm({
                   <Input
                     id="arrival_time"
                     type="time"
+                    className="h-11"
                     value={arrivalTime}
                     onChange={(e) => setArrivalTime(e.target.value)}
                   />
