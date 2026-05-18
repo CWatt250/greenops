@@ -51,7 +51,7 @@ export function HeroGreeting({ firstName, jobsToday, crewsActive, city, weather 
   return (
     <div>
       <p className="page-eyebrow">{eyebrow}</p>
-      <h1 className="page-title" style={{ fontSize: 38 }}>
+      <h1 className="page-title">
         {greeting}{firstName ? `, ${firstName}` : ''}
       </h1>
       <p className="text-sm text-muted-foreground mt-2">

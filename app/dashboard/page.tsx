@@ -333,7 +333,7 @@ export default async function DashboardPage() {
             ? { temp: weather.today.temp, unitSymbol: weather.today.unitSymbol, condition: weather.today.condition }
             : null}
         />
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="hidden sm:flex items-center gap-2 shrink-0">
           {companyId && <AnnounceButton companyId={companyId} />}
           <Link
             href="/dashboard/analytics"
