@@ -25,7 +25,7 @@ type ActivityEvent = {
 export default function PortalHomePage() {
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
-  const [firstName, setFirstName] = useState('there');
+  const [firstName, setFirstName] = useState('');
   const [companyName, setCompanyName] = useState('—');
   const [clientId, setClientId] = useState<string | null>(null);
   const [nextJob, setNextJob] = useState<(Job & { crew?: { name: string; color: string } | null }) | null>(null);
@@ -68,7 +68,7 @@ export default function PortalHomePage() {
 
       setClientId(row.client_id);
       setCompanyName(row.company?.name ?? '—');
-      setFirstName(row.full_name?.split(' ')[0] ?? 'there');
+      setFirstName(row.full_name?.split(' ')[0] ?? '');
 
       const c = row.company;
       if (c?.portal_banner_enabled && c?.portal_banner_message) {
@@ -191,7 +191,7 @@ export default function PortalHomePage() {
       <div className="flex items-start justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
-            Welcome back, {firstName} 👋
+            Welcome back{firstName ? `, ${firstName}` : ''} 👋
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">{companyName}</p>
         </div>

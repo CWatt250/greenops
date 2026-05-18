@@ -52,7 +52,7 @@ export function HeroGreeting({ firstName, jobsToday, crewsActive, city, weather 
     <div>
       <p className="page-eyebrow">{eyebrow}</p>
       <h1 className="page-title" style={{ fontSize: 38 }}>
-        {greeting}, {firstName}
+        {greeting}{firstName ? `, ${firstName}` : ''}
       </h1>
       <p className="text-sm text-muted-foreground mt-2">
         {jobsToday} job{jobsToday === 1 ? '' : 's'} scheduled across {crewsActive} crew{crewsActive === 1 ? '' : 's'}

@@ -70,7 +70,7 @@ export function EndOfDay({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const firstName = workerName.split(' ')[0] || 'crew';
+  const firstName = workerName.split(' ')[0] || '';
 
   async function handleClockOut() {
     setSubmitting(true);
@@ -139,7 +139,7 @@ export function EndOfDay({
       >
         <p className="text-3xl">🎉</p>
         <h2 className="text-xl font-bold mt-1">Day Complete</h2>
-        <p className="text-xs opacity-80 mt-1">Great work, {firstName}!</p>
+        <p className="text-xs opacity-80 mt-1">{firstName ? `Great work, ${firstName}!` : 'Great work today!'}</p>
       </div>
 
       <div className="px-5 py-4 space-y-4">

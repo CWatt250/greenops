@@ -34,7 +34,7 @@ export default async function PortalLayout({ children }: { children: React.React
   }
 
   const pu = portalUser as PortalUser | null;
-  const firstName = pu?.full_name?.split(' ')[0] ?? 'there';
+  const firstName = pu?.full_name?.split(' ')[0] ?? '';
 
   const { data: companyRow } = pu?.company_id
     ? await supabase.from('companies').select('*').eq('id', pu.company_id).single()

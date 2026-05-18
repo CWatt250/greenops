@@ -64,11 +64,12 @@ function weatherIcon(main: string) {
 }
 
 function greetingFor(hour: number, name: string, lateStart: boolean): string {
-  const firstName = name.split(' ')[0] || 'there';
-  if (lateStart) return `Hey, ${firstName}`;
-  if (hour < 12) return `Good morning, ${firstName}`;
-  if (hour < 17) return `Good afternoon, ${firstName}`;
-  return `Good evening, ${firstName}`;
+  const firstName = name.split(' ')[0] || '';
+  const suffix = firstName ? `, ${firstName}` : '';
+  if (lateStart) return `Hey${suffix}`;
+  if (hour < 12) return `Good morning${suffix}`;
+  if (hour < 17) return `Good afternoon${suffix}`;
+  return `Good evening${suffix}`;
 }
 
 function formatTime(t?: string | null): string | null {

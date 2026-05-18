@@ -239,7 +239,7 @@ export default async function TodayPage() {
         <MorningBrief
           profileId={user.id}
           companyId={profile.company_id}
-          workerName={profile.full_name ?? 'crew'}
+          workerName={profile.full_name ?? ''}
           todayDate={today}
           weather={{
             lat: company?.weather_latitude ?? company?.depot_latitude ?? null,
@@ -273,7 +273,7 @@ export default async function TodayPage() {
         <EndOfDay
           profileId={user.id}
           companyId={profile.company_id}
-          workerName={profile.full_name ?? 'crew'}
+          workerName={profile.full_name ?? ''}
           todayDate={today}
           stats={endOfDayStats}
           shiftStartAt={shiftStartedAt}

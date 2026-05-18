@@ -70,7 +70,7 @@ export default async function DashboardPage() {
   } | null } | null)?.company;
 
   const fullName = (profile as { full_name?: string } | null)?.full_name ?? '';
-  const firstName = fullName.split(' ')[0] || (user.email?.split('@')[0] ?? 'there');
+  const firstName = fullName.split(' ')[0] || '';
 
   const todayStr = toDateStr(new Date());
   const yesterday = new Date();
