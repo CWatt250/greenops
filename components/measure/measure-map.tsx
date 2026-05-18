@@ -35,6 +35,9 @@ interface MeasureMapProps {
   onClearAll?: () => void;
   /** Called when Area tool is tapped for the first time (mobile toast). */
   onFirstAreaTap?: () => void;
+  /** Optional CTA rendered above the drawing tools in the mobile toolbar
+   *  (e.g. "Use This Measurement" when returning to the client form). */
+  mobileCta?: React.ReactNode;
 }
 
 /**
@@ -43,7 +46,7 @@ interface MeasureMapProps {
  */
 export default function MeasureMap({
   center, shapes, onShapesChange, focusShapeRef, syncShapesRef,
-  onUndo, canUndo = false, onClearAll, onFirstAreaTap,
+  onUndo, canUndo = false, onClearAll, onFirstAreaTap, mobileCta,
 }: MeasureMapProps) {
   const mapRef = useRef<MapRef>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -579,11 +582,23 @@ export default function MeasureMap({
       </div>
 
       {/* ── MOBILE TOOLBAR (hidden on desktop) ── */}
-      <div className="md:hidden absolute inset-x-0 bottom-14 z-10 flex flex-col items-center gap-2 pointer-events-none">
+      {/* bottom uses env(safe-area-inset-bottom) so the toolbar clears the
+          mobile nav on notched iPhones regardless of safe-area size. */}
+      <div
+        className="md:hidden absolute inset-x-0 z-10 flex flex-col items-center gap-2 pointer-events-none"
+        style={{ bottom: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))' }}
+      >
         {/* Shape count — top of map area on mobile */}
         {shapes.length > 0 && (
           <div className="pointer-events-auto rounded-full border bg-background/95 backdrop-blur-sm shadow px-2.5 py-1 text-[10px] font-mono tabular-nums text-muted-foreground">
             {shapes.length} shape{shapes.length === 1 ? '' : 's'} drawn
+          </div>
+        )}
+
+        {/* CTA (e.g. "Use This Measurement") injected by parent */}
+        {mobileCta && (
+          <div className="pointer-events-auto w-full px-3">
+            {mobileCta}
           </div>
         )}
 

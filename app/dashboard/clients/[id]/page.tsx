@@ -45,53 +45,55 @@ export default async function ClientDetailPage({ params }: Props) {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-start justify-between mb-6 gap-4">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-2xl font-bold">{c.name}</h1>
-            <StatusBadge status={c.status} type="client" />
-          </div>
-          <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-            {c.phone && (
+      <div className="mb-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3 mb-1 flex-wrap">
+              <h1 className="text-2xl font-bold">{c.name}</h1>
+              <StatusBadge status={c.status} type="client" />
+            </div>
+            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+              {c.phone && (
+                <span className="flex items-center gap-1.5">
+                  <Phone className="h-3.5 w-3.5" /> {c.phone}
+                </span>
+              )}
+              {c.email && (
+                <span className="flex items-center gap-1.5">
+                  <Mail className="h-3.5 w-3.5" /> {c.email}
+                </span>
+              )}
               <span className="flex items-center gap-1.5">
-                <Phone className="h-3.5 w-3.5" /> {c.phone}
+                <MapPin className="h-3.5 w-3.5" /> {c.service_address}
               </span>
-            )}
-            {c.email && (
-              <span className="flex items-center gap-1.5">
-                <Mail className="h-3.5 w-3.5" /> {c.email}
-              </span>
-            )}
-            <span className="flex items-center gap-1.5">
-              <MapPin className="h-3.5 w-3.5" /> {c.service_address}
-            </span>
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <InviteToPortalButton
-            clientId={id}
-            clientName={c.name}
-            email={c.email ?? ''}
-            hasPortalUser={hasPortalUser}
-          />
-          <Link
-            href={`/dashboard/clients/${id}/measure`}
-            className={buttonVariants({ variant: 'outline' })}
-            title="Measure property"
-          >
-            <Ruler className="h-4 w-4 mr-1.5" /> Measure Property
-          </Link>
-          <Link
-            href={`/dashboard/clients/${id}/edit`}
-            className={buttonVariants({ variant: 'outline' })}
-          >
-            <Edit className="h-4 w-4 mr-1.5" /> Edit
-          </Link>
-          <DeleteClientButton
-            clientId={id}
-            clientName={c.name}
-            jobCount={clientJobs.length}
-          />
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <InviteToPortalButton
+              clientId={id}
+              clientName={c.name}
+              email={c.email ?? ''}
+              hasPortalUser={hasPortalUser}
+            />
+            <Link
+              href={`/dashboard/clients/${id}/measure`}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              title="Measure property"
+            >
+              <Ruler className="h-4 w-4 mr-1.5" /> Measure
+            </Link>
+            <Link
+              href={`/dashboard/clients/${id}/edit`}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            >
+              <Edit className="h-4 w-4 mr-1.5" /> Edit
+            </Link>
+            <DeleteClientButton
+              clientId={id}
+              clientName={c.name}
+              jobCount={clientJobs.length}
+            />
+          </div>
         </div>
       </div>
 
@@ -100,13 +102,15 @@ export default async function ClientDetailPage({ params }: Props) {
 
       {/* Tabs */}
       <Tabs defaultValue="overview">
-        <TabsList className="mb-6">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="jobs">Jobs ({clientJobs.length})</TabsTrigger>
-          <TabsTrigger value="forms">📋 Forms</TabsTrigger>
-          <TabsTrigger value="notes">Notes</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 mb-4">
+          <TabsList className="min-w-max">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="jobs">Jobs ({clientJobs.length})</TabsTrigger>
+            <TabsTrigger value="forms">📋 Forms</TabsTrigger>
+            <TabsTrigger value="notes">Notes</TabsTrigger>
+            <TabsTrigger value="activity">Activity</TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* Forms */}
         <TabsContent value="forms">

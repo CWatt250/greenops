@@ -567,6 +567,24 @@ export function MeasureView({
               onUndo={undo}
               canUndo={canUndo}
               onClearAll={() => setConfirmClearAll(true)}
+              mobileCta={returnTo === 'client_form' ? (
+                <Button
+                  onClick={() => void useThisMeasurement()}
+                  disabled={saving || shapes.length === 0}
+                  className="w-full gap-1.5 h-11 text-sm font-semibold shadow-lg"
+                  style={shapes.length > 0
+                    ? { backgroundColor: 'var(--color-brand-green-raw)', color: '#fff' }
+                    : undefined}
+                  variant={shapes.length > 0 ? undefined : 'secondary'}
+                >
+                  {saving
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : shapes.length > 0 ? '✅' : '←'}
+                  {shapes.length > 0
+                    ? `Use This Measurement (${Math.round(totals.total).toLocaleString()} sq ft)`
+                    : 'Draw the lot outline first'}
+                </Button>
+              ) : undefined}
             />
           </div>
         </div>
