@@ -5,6 +5,8 @@ import Map, {
   type MapRef,
   Marker,
   NavigationControl,
+  Source,
+  Layer,
 } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
@@ -18,6 +20,8 @@ import { Layers, Pentagon, Slash, Trash2, HelpCircle, Undo2, Eraser } from 'luci
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { ShapeEditPopup } from './shape-edit-popup';
+import { CrosshairOverlay } from './crosshair-overlay';
+import { DrawingControls } from './drawing-controls';
 
 const TRI_CITIES_FALLBACK = { longitude: -119.1734, latitude: 46.2087, zoom: 11 };
 
@@ -63,6 +67,10 @@ export default function MeasureMap({
   const [activeMode, setActiveMode] = useState<'simple_select' | 'draw_polygon' | 'draw_line_string'>('simple_select');
   const [helpOpen, setHelpOpen] = useState(false);
   const firstAreaTapRef = useRef(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobilePoints, setMobilePoints] = useState<[number, number][]>([]);
+  const [mobileTool, setMobileTool] = useState<'polygon' | 'line' | null>(null);
+  const handleChangeRef = useRef<() => void>(() => {});
 
   // Selected-shape editor state (popup positioned at the shape's centroid)
   const [editing, setEditing] = useState<{
@@ -73,6 +81,14 @@ export default function MeasureMap({
   useEffect(() => { shapesRef.current = shapes; }, [shapes]);
   useEffect(() => { onShapesRef.current = onShapesChange; }, [onShapesChange]);
   useEffect(() => { centerRef.current = center; }, [center]);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(hover: none)');
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   const initialViewState = useMemo(
     () => (center
@@ -275,6 +291,8 @@ export default function MeasureMap({
       // After create, Mapbox Draw auto-flips to simple_select.
     }
 
+    handleChangeRef.current = handleChange;
+
     map.on('draw.create', handleCreate);
     map.on('draw.update', handleChange);
     map.on('draw.delete', () => { setEditing(null); handleChange(); });
@@ -353,14 +371,40 @@ export default function MeasureMap({
 
   function setMode(mode: 'simple_select' | 'draw_polygon' | 'draw_line_string') {
     if (!drawRef.current) return;
+
+    if (isMobile) {
+      if (mode === 'draw_polygon') {
+        const next = mobileTool === 'polygon' ? null : 'polygon';
+        setMobileTool(next);
+        setMobilePoints([]);
+        if (next && !firstAreaTapRef.current) {
+          firstAreaTapRef.current = true;
+          onFirstAreaTap?.();
+        }
+        return;
+      }
+      if (mode === 'draw_line_string') {
+        const next = mobileTool === 'line' ? null : 'line';
+        setMobileTool(next);
+        setMobilePoints([]);
+        return;
+      }
+      // simple_select — cancel any in-progress drawing
+      setMobileTool(null);
+      setMobilePoints([]);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (drawRef.current as any).changeMode('simple_select');
+      setActiveMode('simple_select');
+      return;
+    }
+
+    // Desktop path — use Draw's native modes
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (drawRef.current as any).changeMode(mode);
     setActiveMode(mode);
-    // First-time Area tap: show intro toast + fire callback
     if (mode === 'draw_polygon' && !firstAreaTapRef.current) {
       firstAreaTapRef.current = true;
       onFirstAreaTap?.();
-      // Also check localStorage for global "seen before" flag
       try {
         if (!window.localStorage.getItem('mobile_measure_seen_intro')) {
           window.localStorage.setItem('mobile_measure_seen_intro', '1');
@@ -368,6 +412,44 @@ export default function MeasureMap({
         }
       } catch { /* localStorage not available */ }
     }
+  }
+
+  function addPointAtCenter() {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    const c = map.getCenter();
+    setMobilePoints((prev) => [...prev, [c.lng, c.lat]]);
+  }
+
+  function closeShape() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const draw = drawRef.current as any;
+    if (!draw || mobilePoints.length < 2) return;
+    let geometry: GeoJSON.Geometry;
+    if (mobileTool === 'polygon' && mobilePoints.length >= 3) {
+      geometry = {
+        type: 'Polygon',
+        coordinates: [[...mobilePoints, mobilePoints[0]]],
+      };
+    } else {
+      geometry = {
+        type: 'LineString',
+        coordinates: mobilePoints,
+      };
+    }
+    const fc: GeoJSON.FeatureCollection = {
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        id: String(Date.now()),
+        properties: {},
+        geometry,
+      }],
+    };
+    draw.add(fc);
+    handleChangeRef.current();
+    setMobilePoints([]);
+    setMobileTool(null);
   }
 
   function deleteSelected() {
@@ -438,7 +520,7 @@ export default function MeasureMap({
         mapStyle={styleUrl}
         onLoad={handleMapLoad}
       >
-        <NavigationControl position="bottom-right" />
+        {!isMobile && <NavigationControl position="bottom-right" />}
         {center && (
           <Marker longitude={center.lng} latitude={center.lat} anchor="bottom">
             <div className="flex flex-col items-center">
@@ -469,6 +551,42 @@ export default function MeasureMap({
             >
               {l.label}
             </div>
+          </Marker>
+        ))}
+
+        {/* Mobile in-progress drawing preview */}
+        {mobilePoints.length >= 2 && (
+          <Source
+            id="mobile-preview"
+            type="geojson"
+            data={({
+              type: 'Feature',
+              properties: {},
+              geometry: {
+                type: 'LineString',
+                coordinates: mobileTool === 'polygon' && mobilePoints.length >= 3
+                  ? [...mobilePoints, mobilePoints[0]]
+                  : mobilePoints,
+              },
+            }) as GeoJSON.Feature}
+          >
+            <Layer
+              id="mobile-preview-line"
+              type="line"
+              paint={{
+                'line-color': '#F15A24',
+                'line-width': 2.5,
+                'line-dasharray': [3, 2],
+              }}
+            />
+          </Source>
+        )}
+        {mobilePoints.map((pt, i) => (
+          <Marker key={`mp-${i}`} longitude={pt[0]} latitude={pt[1]} anchor="center">
+            <div
+              className="w-3 h-3 rounded-full border-2 border-white shadow"
+              style={{ backgroundColor: '#F15A24' }}
+            />
           </Marker>
         ))}
       </Map>
@@ -585,8 +703,12 @@ export default function MeasureMap({
       {/* bottom uses env(safe-area-inset-bottom) so the toolbar clears the
           mobile nav on notched iPhones regardless of safe-area size. */}
       <div
-        className="md:hidden absolute inset-x-0 z-10 flex flex-col items-center gap-2 pointer-events-none"
-        style={{ bottom: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))' }}
+        className="md:hidden absolute z-10 flex flex-col items-center gap-2 pointer-events-none"
+        style={{
+          bottom: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))',
+          left: 'env(safe-area-inset-left, 0px)',
+          right: 'env(safe-area-inset-right, 0px)',
+        }}
       >
         {/* Shape count — top of map area on mobile */}
         {shapes.length > 0 && (
@@ -602,16 +724,26 @@ export default function MeasureMap({
           </div>
         )}
 
+        {/* Mobile crosshair drawing controls */}
+        {isMobile && (
+          <DrawingControls
+            pointCount={mobilePoints.length}
+            tool={mobileTool}
+            onAddPoint={addPointAtCenter}
+            onCloseShape={closeShape}
+          />
+        )}
+
         {/* Horizontal compact toolbar */}
         <div className="pointer-events-auto flex items-center gap-2 rounded-xl border bg-background/95 backdrop-blur-sm shadow-lg px-2.5 py-1.5">
           <CompactToolButton
             label="Area"
-            active={activeMode === 'draw_polygon'}
+            active={isMobile ? mobileTool === 'polygon' : activeMode === 'draw_polygon'}
             onClick={() => setMode('draw_polygon')}
           />
           <CompactToolButton
             label="Line"
-            active={activeMode === 'draw_line_string'}
+            active={isMobile ? mobileTool === 'line' : activeMode === 'draw_line_string'}
             onClick={() => setMode('draw_line_string')}
           />
           <div className="w-px h-6 bg-border" aria-hidden />
@@ -675,6 +807,9 @@ export default function MeasureMap({
           onClose={() => setEditing(null)}
         />
       )}
+
+      {/* Crosshair overlay — mobile draw mode only */}
+      <CrosshairOverlay visible={isMobile && mobileTool !== null} />
     </div>
   );
 }
