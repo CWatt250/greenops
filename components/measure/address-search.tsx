@@ -104,9 +104,9 @@ export function AddressSearch({
   }
 
   return (
-    <div ref={containerRef} className="relative">
-      <div className="flex gap-2 items-stretch">
-        <div className="relative flex-1">
+    <div ref={containerRef} className="relative w-full min-w-0">
+      <div className="flex gap-2 items-stretch w-full min-w-0">
+        <div className="relative flex-1 min-w-0">
           <MapPin
             className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4"
             style={{ color: 'var(--orange)' }}
@@ -133,7 +133,7 @@ export function AddressSearch({
           onClick={() => void submit()}
           disabled={query.trim().length < 3 || submitting}
           style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
-          className="gap-1.5 h-11"
+          className="gap-1.5 h-11 shrink-0"
         >
           <Search className="h-4 w-4" />
           Search

@@ -496,7 +496,7 @@ export function MeasureView({
 
   return (
     <div
-      className="-m-4 md:-m-6 lg:-m-8 flex flex-col overflow-hidden"
+      className="-m-4 md:-m-6 lg:-m-8 flex flex-col overflow-hidden max-w-[100vw]"
       style={{ height: 'calc(100svh - 3.5rem)' }}
     >
       {/* Return-to-client-form banner */}
@@ -525,25 +525,26 @@ export function MeasureView({
         <InstructionsBanner />
       </div>
 
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-w-0">
         {/* MAP COLUMN */}
-        <div className="flex-1 relative min-h-[300px] flex flex-col">
+        <div className="flex-1 relative min-h-[300px] flex flex-col min-w-0">
           {/* Top bar — primary address search only */}
           {!lockedClientId && (
-            <div className="border-b bg-background p-3 space-y-2.5 shrink-0">
+            <div className="border-b bg-background p-3 space-y-2.5 shrink-0 min-w-0 w-full">
               <AddressSearch
                 onAddress={handleAddress}
                 autoFocus
                 initialValue={initialAddress ?? ''}
               />
-              {/* Status badge */}
+              {/* Status badge — caps at the available width so long addresses
+                  never push the page past the viewport on iPhone. */}
               {badgeAddress && (
-                <div className="inline-flex items-center gap-1.5 text-[11px] rounded-full bg-muted px-2.5 py-1">
-                  <MapPin className="h-3 w-3" style={{ color: 'var(--orange)' }} />
-                  <span className="font-medium truncate max-w-[280px]">
+                <div className="flex items-center gap-1.5 text-[11px] rounded-full bg-muted px-2.5 py-1 max-w-full min-w-0 w-fit">
+                  <MapPin className="h-3 w-3 shrink-0" style={{ color: 'var(--orange)' }} />
+                  <span className="font-medium truncate min-w-0">
                     Measuring: {badgeAddress}
                   </span>
-                  <span className="text-muted-foreground">
+                  <span className="text-muted-foreground shrink-0 hidden sm:inline">
                     {linkedName ? `· Linked to ${linkedName}` : '· No customer linked'}
                   </span>
                 </div>
