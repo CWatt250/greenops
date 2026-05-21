@@ -160,16 +160,17 @@ export function MeasurementBottomSheet({
 
       {/* Always-visible peek (sticky header). */}
       <div
-        className="px-4 pb-2 shrink-0 border-b border-border/50 cursor-pointer"
+        className="px-4 pb-2 shrink-0 border-b border-border/50 cursor-pointer min-w-0 max-w-full"
         onClick={cycleState}
       >
         {peek}
       </div>
 
       {/* Scrollable detail — only renders when expanded so collapsed sheet
-          stays light. */}
+          stays light. overflow-x-hidden guards against any flex child that
+          forgets min-w-0. */}
       {state !== 'collapsed' && (
-        <div className="flex-1 overflow-y-auto px-4 pt-3 pb-6 overscroll-contain">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-3 pb-6 overscroll-contain min-w-0 max-w-full">
           {detail}
         </div>
       )}

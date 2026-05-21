@@ -476,6 +476,15 @@ export default function MeasureMap({
     setMobileTool(null);
   }
 
+  function undoLastPoint() {
+    setMobilePoints((prev) => prev.slice(0, -1));
+  }
+
+  function cancelDrawing() {
+    setMobilePoints([]);
+    setMobileTool(null);
+  }
+
   function deleteSelected() {
     if (!drawRef.current) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -735,55 +744,61 @@ export default function MeasureMap({
           right: 'env(safe-area-inset-right, 0px)',
         }}
       >
-        {/* Shape count — top of map area on mobile */}
-        {shapes.length > 0 && (
+        {/* Shape count — hidden while drawing to keep map area maximal */}
+        {shapes.length > 0 && !mobileTool && (
           <div className="pointer-events-auto rounded-full border bg-background/95 backdrop-blur-sm shadow px-2.5 py-1 text-[10px] font-mono tabular-nums text-muted-foreground">
             {shapes.length} shape{shapes.length === 1 ? '' : 's'} drawn
           </div>
         )}
 
-        {/* CTA (e.g. "Use This Measurement") injected by parent */}
-        {mobileCta && (
+        {/* CTA (e.g. "Use This Measurement") injected by parent — also hidden
+            while drawing to maximise map area */}
+        {mobileCta && !mobileTool && (
           <div className="pointer-events-auto w-full px-3">
             {mobileCta}
           </div>
         )}
 
-        {/* Mobile crosshair drawing controls */}
-        {isMobile && (
+        {/* Mobile crosshair drawing controls — compact single-row bar */}
+        {isMobile && mobileTool && (
           <DrawingControls
             pointCount={mobilePoints.length}
             tool={mobileTool}
             onAddPoint={addPointAtCenter}
             onCloseShape={closeShape}
+            onUndoPoint={undoLastPoint}
+            onCancel={cancelDrawing}
           />
         )}
 
-        {/* Horizontal compact toolbar */}
-        <div className="pointer-events-auto flex items-center gap-2 rounded-xl border bg-background/95 backdrop-blur-sm shadow-lg px-2.5 py-1.5">
-          <CompactToolButton
-            label="Area"
-            active={isMobile ? mobileTool === 'polygon' : activeMode === 'draw_polygon'}
-            onClick={() => setMode('draw_polygon')}
-          />
-          <CompactToolButton
-            label="Line"
-            active={isMobile ? mobileTool === 'line' : activeMode === 'draw_line_string'}
-            onClick={() => setMode('draw_line_string')}
-          />
-          <div className="w-px h-6 bg-border" aria-hidden />
-          <CompactToolButton
-            label="Undo"
-            disabled={!canUndo}
-            onClick={() => onUndo?.()}
-            destructive
-          />
-          <CompactToolButton
-            label="Delete"
-            onClick={deleteSelected}
-            destructive
-          />
-        </div>
+        {/* Area/Line/Undo/Delete toolbar — hidden while drawing since the
+            compact bar above handles in-drawing actions. */}
+        {!mobileTool && (
+          <div className="pointer-events-auto flex items-center gap-2 rounded-xl border bg-background/95 backdrop-blur-sm shadow-lg px-2.5 py-1.5">
+            <CompactToolButton
+              label="Area"
+              active={isMobile ? mobileTool === 'polygon' : activeMode === 'draw_polygon'}
+              onClick={() => setMode('draw_polygon')}
+            />
+            <CompactToolButton
+              label="Line"
+              active={isMobile ? mobileTool === 'line' : activeMode === 'draw_line_string'}
+              onClick={() => setMode('draw_line_string')}
+            />
+            <div className="w-px h-6 bg-border" aria-hidden />
+            <CompactToolButton
+              label="Undo"
+              disabled={!canUndo}
+              onClick={() => onUndo?.()}
+              destructive
+            />
+            <CompactToolButton
+              label="Delete"
+              onClick={deleteSelected}
+              destructive
+            />
+          </div>
+        )}
 
         {/* Help button */}
         <div className="pointer-events-auto absolute bottom-0 right-3 translate-y-1/2">

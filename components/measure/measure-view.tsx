@@ -826,14 +826,16 @@ export function MeasureView({
         <MeasurementBottomSheet
           peek={
             shapes.length > 0 ? (
-              <div className="flex items-center justify-between text-xs">
-                <span>📐 {shapes.length} shape{shapes.length === 1 ? '' : 's'}</span>
-                <span className="font-mono tabular-nums">
+              <div className="flex items-center justify-between gap-2 text-xs min-w-0">
+                <span className="shrink-0">📐 {shapes.length}</span>
+                <span className="font-mono tabular-nums shrink-0 whitespace-nowrap">
                   {(
                     totals.turf + totals.hardscape + totals.bed + totals.other
                   ).toLocaleString()} sq ft
                 </span>
-                <span className="text-muted-foreground">Tap to label &amp; save</span>
+                <span className="text-muted-foreground truncate min-w-0 text-right">
+                  Tap to label &amp; save
+                </span>
               </div>
             ) : (
               <p className="text-xs text-muted-foreground text-center">

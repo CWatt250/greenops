@@ -100,7 +100,7 @@ function Row({
       style={style}
       className={`rounded-lg border bg-card p-3 space-y-2 ${isDragging ? 'opacity-60 shadow-xl' : ''}`}
     >
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 min-w-0">
         <button
           {...attributes}
           {...listeners}
@@ -119,7 +119,7 @@ function Row({
         <Input
           value={shape.label}
           onChange={(e) => onUpdate({ label: e.target.value })}
-          className="h-8 text-sm font-medium flex-1"
+          className="h-8 text-sm font-medium flex-1 min-w-0"
         />
         {onFocus && (
           <Button
@@ -144,12 +144,12 @@ function Row({
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
       </div>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 min-w-0">
         <Select
           value={shape.type}
           onValueChange={(v) => onUpdate({ type: v as ShapeType })}
         >
-          <SelectTrigger className="h-7 text-xs flex-1">
+          <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -160,7 +160,7 @@ function Row({
             ))}
           </SelectContent>
         </Select>
-        <span className="text-xs font-mono tabular-nums text-muted-foreground shrink-0">
+        <span className="text-xs font-mono tabular-nums text-muted-foreground shrink-0 whitespace-nowrap">
           {isLine
             ? `${shape.length_ft.toLocaleString()} ft`
             : `${shape.area_sqft.toLocaleString()} sq ft`}
