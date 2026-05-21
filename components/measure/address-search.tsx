@@ -72,6 +72,26 @@ export function AddressSearch({
     setQuery(place.placeName);
     setSuggestions([]);
     setOpen(false);
+    // Belt-and-suspenders against iOS Safari's "stuck zoom" after selecting a
+    // suggestion. The 16px input rule should prevent the zoom from firing in
+    // the first place, but on autocomplete tap iOS sometimes still scales —
+    // blurring the input and briefly clamping maximum-scale forces Safari to
+    // snap back to 1x. The viewport meta is restored so the user can still
+    // pinch-zoom the satellite map afterwards.
+    inputRef.current?.blur();
+    const viewport = document.querySelector('meta[name="viewport"]');
+    if (viewport) {
+      const original = viewport.getAttribute('content') ?? '';
+      if (original && !original.includes('maximum-scale=1')) {
+        viewport.setAttribute(
+          'content',
+          `${original}, maximum-scale=1.0`,
+        );
+        window.setTimeout(() => {
+          viewport.setAttribute('content', original);
+        }, 120);
+      }
+    }
     onAddress(place);
   }
 
@@ -119,7 +139,9 @@ export function AddressSearch({
             onFocus={() => setOpen(true)}
             onKeyDown={handleKey}
             placeholder={placeholder}
-            className="w-full h-11 pl-10 pr-3 text-sm font-medium rounded-lg border-2 bg-background focus:outline-none focus:ring-2 focus:ring-[var(--orange)] focus:border-[var(--orange)] transition-colors"
+            // text-base (16px) on mobile so iOS Safari doesn't auto-zoom.
+            // Above md, drop to text-sm to match the rest of the desktop UI.
+            className="w-full h-11 pl-10 pr-3 text-base md:text-sm font-medium rounded-lg border-2 bg-background focus:outline-none focus:ring-2 focus:ring-[var(--orange)] focus:border-[var(--orange)] transition-colors"
             aria-label="Address to measure"
           />
           {(searching || submitting) && (

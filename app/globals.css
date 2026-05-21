@@ -207,6 +207,19 @@
     font-family: var(--font-display), Impact, sans-serif;
     letter-spacing: -0.01em;
   }
+
+  /* iOS Safari auto-zooms into any input/textarea/select with font-size
+     under 16px on focus, and does NOT zoom back out on blur — leaving the
+     whole page stuck at the larger scale. Force ≥16px on phones so the
+     auto-zoom never fires. !important is needed because shadcn primitives
+     and Tailwind utilities like text-sm/text-xs override base styles. */
+  @media (max-width: 768px) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────
