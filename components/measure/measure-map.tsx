@@ -58,6 +58,7 @@ export default function MeasureMap({
   const shapesRef = useRef<MeasuredShape[]>(shapes);
   const onShapesRef = useRef(onShapesChange);
   const centerRef = useRef(center);
+  const crosshairRef = useRef<HTMLDivElement | null>(null);
   // When true, the next handleChange callback is ignored. Used by the
   // imperative sync path (undo / clear all) to avoid event echo.
   const suppressNextChangeRef = useRef(false);
@@ -417,8 +418,31 @@ export default function MeasureMap({
   function addPointAtCenter() {
     const map = mapRef.current?.getMap();
     if (!map) return;
-    const c = map.getCenter();
-    setMobilePoints((prev) => [...prev, [c.lng, c.lat]]);
+    // Unproject the crosshair's actual on-screen position to map coords.
+    // Using map.getCenter() returns the geographic center of the map canvas,
+    // which drifts from the visual crosshair by the height of any header or
+    // address banner above the map — so points landed below where the user
+    // was aiming. unproject() with the crosshair's bounding rect lands the
+    // point exactly under the visual aim point.
+    const canvas = map.getCanvas();
+    const mapRect = canvas.getBoundingClientRect();
+    const ch = crosshairRef.current;
+    let lng: number;
+    let lat: number;
+    if (ch) {
+      const chRect = ch.getBoundingClientRect();
+      const screenX = chRect.left + chRect.width / 2 - mapRect.left;
+      const screenY = chRect.top + chRect.height / 2 - mapRect.top;
+      const coord = map.unproject([screenX, screenY]);
+      lng = coord.lng;
+      lat = coord.lat;
+    } else {
+      // Fallback: unproject the canvas center.
+      const coord = map.unproject([mapRect.width / 2, mapRect.height / 2]);
+      lng = coord.lng;
+      lat = coord.lat;
+    }
+    setMobilePoints((prev) => [...prev, [lng, lat]]);
   }
 
   function closeShape() {
@@ -700,12 +724,13 @@ export default function MeasureMap({
       </div>
 
       {/* ── MOBILE TOOLBAR (hidden on desktop) ── */}
-      {/* bottom uses env(safe-area-inset-bottom) so the toolbar clears the
-          mobile nav on notched iPhones regardless of safe-area size. */}
+      {/* Bottom = bottom-nav (3.5rem + safe-area) + sheet peek (~5rem)
+          + 0.5rem breathing room. Z-index sits below the bottom sheet (z-40)
+          and below the bottom nav (z-50). */}
       <div
-        className="md:hidden absolute z-10 flex flex-col items-center gap-2 pointer-events-none"
+        className="md:hidden fixed z-30 flex flex-col items-center gap-2 pointer-events-none"
         style={{
-          bottom: 'calc(3.5rem + env(safe-area-inset-bottom, 0px))',
+          bottom: 'calc(9rem + env(safe-area-inset-bottom, 0px))',
           left: 'env(safe-area-inset-left, 0px)',
           right: 'env(safe-area-inset-right, 0px)',
         }}
@@ -809,7 +834,10 @@ export default function MeasureMap({
       )}
 
       {/* Crosshair overlay — mobile draw mode only */}
-      <CrosshairOverlay visible={isMobile && mobileTool !== null} />
+      <CrosshairOverlay
+        ref={crosshairRef}
+        visible={isMobile && mobileTool !== null}
+      />
     </div>
   );
 }
