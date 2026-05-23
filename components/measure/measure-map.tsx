@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { ShapeEditPopup } from './shape-edit-popup';
 import { CrosshairOverlay } from './crosshair-overlay';
 import { DrawingControls } from './drawing-controls';
+import { useTouchDevice } from '@/lib/hooks/use-touch-device';
 
 const TRI_CITIES_FALLBACK = { longitude: -119.1734, latitude: 46.2087, zoom: 11 };
 
@@ -68,7 +69,7 @@ export default function MeasureMap({
   const [activeMode, setActiveMode] = useState<'simple_select' | 'draw_polygon' | 'draw_line_string'>('simple_select');
   const [helpOpen, setHelpOpen] = useState(false);
   const firstAreaTapRef = useRef(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useTouchDevice();
   const [mobilePoints, setMobilePoints] = useState<[number, number][]>([]);
   const [mobileTool, setMobileTool] = useState<'polygon' | 'line' | null>(null);
   const handleChangeRef = useRef<() => void>(() => {});
@@ -82,14 +83,6 @@ export default function MeasureMap({
   useEffect(() => { shapesRef.current = shapes; }, [shapes]);
   useEffect(() => { onShapesRef.current = onShapesChange; }, [onShapesChange]);
   useEffect(() => { centerRef.current = center; }, [center]);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(hover: none)');
-    setIsMobile(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
 
   const initialViewState = useMemo(
     () => (center
