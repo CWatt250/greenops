@@ -21,12 +21,14 @@ interface ParentRow {
   recurrence_end_date: string | null;
 }
 
-interface LineItem {
+interface JobServiceRow {
   service_id: string | null;
-  description: string | null;
+  custom_name: string | null;
   quantity: number | null;
-  unit_price: number | null;
-  total: number | null;
+  duration_minutes: number | null;
+  price: number | null;
+  notes: string | null;
+  sort_order: number | null;
 }
 
 export interface MaterializeResult {
@@ -148,12 +150,12 @@ export async function materializeRecurringJob(
     return { parentId: parent.id, inserted: 0, throughDate: toDateOnly(throughDate) };
   }
 
-  // Pull line items once; copy onto every new occurrence.
+  // Pull the parent's services spine once; copy onto every new occurrence.
   const { data: itemsRaw } = await supabase
-    .from('job_line_items')
-    .select('service_id, description, quantity, unit_price, total')
+    .from('job_services')
+    .select('service_id, custom_name, quantity, duration_minutes, price, notes, sort_order')
     .eq('job_id', parent.id);
-  const items = (itemsRaw ?? []) as LineItem[];
+  const items = (itemsRaw ?? []) as JobServiceRow[];
 
   // Insert occurrences in one round-trip.
   const occurrenceRows = newDates.map((dateStr) => ({
@@ -183,28 +185,30 @@ export async function materializeRecurringJob(
     throw new Error(insertErr?.message ?? 'Failed to insert occurrences');
   }
 
-  // Copy line items onto each new occurrence row.
+  // Copy the services spine onto each new occurrence row.
   if (items.length > 0) {
-    const lineRows: Array<Record<string, unknown>> = [];
+    const serviceRows: Array<Record<string, unknown>> = [];
     for (const occ of inserted as Array<{ id: string }>) {
-      for (const li of items) {
-        lineRows.push({
+      for (const js of items) {
+        serviceRows.push({
           job_id: occ.id,
-          service_id: li.service_id,
-          description: li.description,
-          quantity: li.quantity ?? 1,
-          unit_price: li.unit_price ?? 0,
-          total: li.total ?? 0,
+          service_id: js.service_id,
+          custom_name: js.custom_name,
+          quantity: js.quantity ?? 1,
+          duration_minutes: js.duration_minutes,
+          price: js.price ?? 0,
+          notes: js.notes,
+          sort_order: js.sort_order ?? 0,
         });
       }
     }
-    if (lineRows.length > 0) {
-      const { error: liErr } = await supabase.from('job_line_items').insert(lineRows);
-      if (liErr) {
-        // Best-effort cleanup so we don't leave childless line items.
+    if (serviceRows.length > 0) {
+      const { error: jsErr } = await supabase.from('job_services').insert(serviceRows);
+      if (jsErr) {
+        // Best-effort cleanup so we don't leave childless service rows.
         const newIds = (inserted as Array<{ id: string }>).map((r) => r.id);
         await supabase.from('jobs').delete().in('id', newIds);
-        throw new Error(`Line item copy failed: ${liErr.message}`);
+        throw new Error(`Service copy failed: ${jsErr.message}`);
       }
     }
   }

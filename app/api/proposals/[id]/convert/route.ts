@@ -9,7 +9,10 @@ import { materializeRecurringJob, defaultMaterializeHorizon } from '@/lib/recurr
  * Converts an accepted proposal (estimate) into one or more jobs:
  *   - Reads the proposal + line items
  *   - Inserts a `jobs` row with title, client, status='unscheduled', estimate_id back-pointer
- *   - Copies estimate_line_items → job_line_items 1:1 (price + quantity)
+ *   - Snapshots estimate_line_items → job_services (the services spine): name,
+ *     quantity, per-unit price (from unit_price), and per-unit on-site duration
+ *     (from the catalog service's estimated_duration_minutes). Fully editable
+ *     afterward; never live-linked back to the proposal.
  *   - Marks the proposal as status='converted', sets converted_at + converted_by
  *
  * Recurring expansion (RRULE → 26 weekly jobs etc.) is intentionally NOT
@@ -78,6 +81,7 @@ export async function POST(
     quantity: number;
     unit_price: number;
     total: number;
+    notes?: string | null;
     frequency?: string | null;
     service?: { estimated_duration_minutes?: number | null; category?: string | null } | null;
   }>;
@@ -94,18 +98,10 @@ export async function POST(
   const rruleStr = frequencyToRRule(topFreq, today);
   const isRecurring = !!rruleStr;
 
-  // Sum line-item service durations so the job carries a real time estimate
-  // through to VROOM. Falls back to null when no line item maps to a service
-  // with a duration — lib/vroom.ts will still pick up the category default.
-  const summedDuration = rawItems.reduce((sum, li) => {
-    const d = li.service?.estimated_duration_minutes;
-    return typeof d === 'number' && d > 0 ? sum + d : sum;
-  }, 0);
-  const estimatedDurationMinutes = summedDuration > 0 ? summedDuration : null;
-
-  // Create the job (or recurring parent). For recurring proposals we
-  // schedule the anchor to today so materializeRecurringJob has a seed;
-  // dispatcher can drag it to a real start date afterward.
+  // Leave the job-row duration override NULL: the snapshotted job_services
+  // durations (× quantity) are the authoritative VROOM source, resolved at
+  // optimize-time. That keeps the spine editable — bump a service's duration on
+  // the job and the route timing follows, with no stale override on the row.
   const nowIso = new Date().toISOString();
   const { data: job, error: jobErr } = await supabase
     .from('jobs')
@@ -115,7 +111,7 @@ export async function POST(
       title: proposal.title,
       status: isRecurring ? 'scheduled' : 'unscheduled',
       scheduled_date: isRecurring ? todayStr : null,
-      estimated_duration_minutes: estimatedDurationMinutes,
+      estimated_duration_minutes: null,
       notes: proposal.notes ?? null,
       is_recurring: isRecurring,
       recurrence_rule: rruleStr,
@@ -136,29 +132,27 @@ export async function POST(
     );
   }
 
-  // Copy line items into job_line_items.
-  const items = (lineItems ?? []) as Array<{
-    service_id: string | null;
-    description: string;
-    quantity: number;
-    unit_price: number;
-    total: number;
-  }>;
-  if (items.length > 0) {
-    const { error: liErr } = await supabase.from('job_line_items').insert(
-      items.map((li) => ({
+  // Snapshot the proposal's line items into the job_services spine. custom_name
+  // captures the proposal description; duration_minutes is seeded from the
+  // catalog service default (editable afterward); price is the per-unit
+  // unit_price (per_month lines already store the monthly rate as unit_price).
+  if (rawItems.length > 0) {
+    const { error: jsErr } = await supabase.from('job_services').insert(
+      rawItems.map((li, i) => ({
         job_id: job.id,
         service_id: li.service_id,
-        description: li.description,
+        custom_name: li.description,
         quantity: li.quantity,
-        unit_price: li.unit_price,
-        total: li.total,
+        duration_minutes: li.service?.estimated_duration_minutes ?? null,
+        price: li.unit_price,
+        notes: li.notes ?? null,
+        sort_order: i,
       })),
     );
-    if (liErr) {
-      // Best-effort cleanup — drop the orphan job if line items failed.
+    if (jsErr) {
+      // Best-effort cleanup — drop the orphan job if the spine copy failed.
       await supabase.from('jobs').delete().eq('id', job.id);
-      return NextResponse.json({ error: liErr.message }, { status: 500 });
+      return NextResponse.json({ error: jsErr.message }, { status: 500 });
     }
   }
 
