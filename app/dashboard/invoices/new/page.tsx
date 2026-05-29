@@ -46,27 +46,58 @@ function NewInvoiceContent() {
     });
   }, []);
 
-  // Prefill from job
+  // Prefill from job — seed the invoice's line items from the job_services
+  // spine (migration 043), using job_services.price as the billable per-unit
+  // amount. Snapshot only: editing the invoice never rewrites the job.
   useEffect(() => {
     if (!jobIdParam) return;
     async function prefillFromJob() {
       const { data: job } = await supabase
         .from('jobs')
-        .select('*, client:clients(*), job_line_items(*)')
+        .select('*, client:clients(*), job_services(*, service:services(name))')
         .eq('id', jobIdParam!)
         .single();
 
       if (job) {
+        type SvcRow = {
+          id: string;
+          service_id: string | null;
+          custom_name: string | null;
+          quantity: number | null;
+          price: number | null;
+          sort_order: number | null;
+          service?: { name: string | null } | null;
+        };
+        const rows = ((job.job_services ?? []) as unknown as SvcRow[])
+          .slice()
+          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+        const items = rows.map((s) => {
+          const quantity = Number(s.quantity ?? 1);
+          const unit_price = Number(s.price ?? 0);
+          return {
+            id: s.id,
+            service_id: s.service_id ?? undefined,
+            description: s.custom_name || s.service?.name || 'Service',
+            quantity,
+            unit_price,
+            total: unit_price * quantity,
+          } as unknown as JobLineItem;
+        });
         setPrefilled({
           clientId: job.client_id ?? null,
           client: (job.client as Client) ?? null,
           jobId: job.id,
-          items: (job.job_line_items ?? []) as unknown as JobLineItem[],
+          items,
         });
         setPreviewData((prev) => ({
           ...prev,
           invoice: { ...prev.invoice, client: job.client as Client },
-          lineItems: (job.job_line_items ?? []) as unknown as Array<{ description: string; quantity: number; unit_price: number; total?: number }>,
+          lineItems: items.map((i) => ({
+            description: i.description ?? 'Service',
+            quantity: i.quantity,
+            unit_price: i.unit_price,
+            total: i.total,
+          })),
         }));
       }
       setLoadingPrefill(false);

@@ -112,21 +112,32 @@ async function run(req: Request) {
 
   for (const s of due) {
     try {
-      // Resolve line items: prefer the linked job's line items; otherwise
+      // Resolve line items: prefer the linked job's services spine; otherwise
       // create a single placeholder line item using template_notes.
       type LineItemSeed = { description: string; quantity: number; unit_price: number; total: number };
       let seedItems: LineItemSeed[] = [];
       if (s.job_id) {
-        const { data: jobLines } = await admin
-          .from('job_line_items')
-          .select('description, quantity, unit_price, total')
-          .eq('job_id', s.job_id);
-        seedItems = ((jobLines ?? []) as LineItemSeed[]).map((li) => ({
-          description: li.description,
-          quantity: Number(li.quantity ?? 1),
-          unit_price: Number(li.unit_price ?? 0),
-          total: Number(li.total ?? 0),
-        }));
+        const { data: jobServices } = await admin
+          .from('job_services')
+          .select('custom_name, quantity, price, service:services(name)')
+          .eq('job_id', s.job_id)
+          .order('sort_order');
+        type SvcRow = {
+          custom_name: string | null;
+          quantity: number | null;
+          price: number | null;
+          service?: { name: string | null } | null;
+        };
+        seedItems = ((jobServices ?? []) as unknown as SvcRow[]).map((js) => {
+          const quantity = Number(js.quantity ?? 1);
+          const unit_price = Number(js.price ?? 0);
+          return {
+            description: js.custom_name || js.service?.name || 'Recurring service',
+            quantity,
+            unit_price,
+            total: unit_price * quantity,
+          };
+        });
       }
       if (seedItems.length === 0) {
         seedItems = [{
@@ -172,7 +183,7 @@ async function run(req: Request) {
         .single();
       if (invErr || !invoice) throw new Error(invErr?.message ?? 'invoice insert failed');
 
-      // Insert line items.
+      // Insert line items. `total` is a generated column — never write it.
       if (seedItems.length > 0) {
         await admin.from('invoice_line_items').insert(
           seedItems.map((li, idx) => ({
@@ -180,7 +191,6 @@ async function run(req: Request) {
             description: li.description,
             quantity: li.quantity,
             unit_price: li.unit_price,
-            total: li.total,
             sort_order: idx,
           })),
         );
