@@ -1,9 +1,9 @@
 import type {
   Company, Profile, Client, Service, Crew, CrewMember,
-  Job, JobLineItem, ActivityLog
+  Job, JobLineItem, JobService, ActivityLog
 } from '@/types';
 
-export type { Company, Profile, Client, Service, Crew, CrewMember, Job, JobLineItem, ActivityLog };
+export type { Company, Profile, Client, Service, Crew, CrewMember, Job, JobLineItem, JobService, ActivityLog };
 
 export type Tables = {
   companies: Company;
@@ -14,5 +14,6 @@ export type Tables = {
   crew_members: CrewMember;
   jobs: Job;
   job_line_items: JobLineItem;
+  job_services: JobService;
   activity_log: ActivityLog;
 };

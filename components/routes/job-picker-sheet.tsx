@@ -34,6 +34,14 @@ export interface PickerJob {
     latitude: number | null;
     longitude: number | null;
   } | null;
+  job_services?: Array<{
+    duration_minutes: number | null;
+    quantity: number | null;
+    service: {
+      estimated_duration_minutes: number | null;
+      category: string | null;
+    } | null;
+  }>;
   line_items: Array<{
     service_id: string | null;
     service: {
@@ -168,6 +176,11 @@ export function JobPickerSheet({
           id, title, status, crew_id, scheduled_date, scheduled_start, scheduled_end,
           estimated_duration_minutes, time_window_start, time_window_end,
           client:clients(id, name, service_address, service_city, latitude, longitude),
+          job_services(
+            duration_minutes,
+            quantity,
+            service:services(estimated_duration_minutes, category)
+          ),
           line_items:job_line_items(
             service_id,
             service:services(id, name, estimated_duration_minutes, category)

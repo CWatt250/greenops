@@ -40,9 +40,10 @@ export function timeOfDayToEpochSeconds(
 // the priority order documented in the audit:
 //   1. jobs.estimated_duration_minutes (explicit override on the job row)
 //   2. scheduled_end − scheduled_start (when both `time`s are set)
-//   3. sum of line-item services' estimated_duration_minutes
-//   4. category default for the dominant line-item service
-//   5. 30-minute fallback (and warn so we can spot un-tagged jobs)
+//   3. sum of job_services durations × quantity (the services spine)
+//   4. sum of legacy line-item services' estimated_duration_minutes
+//   5. category default for the dominant service
+//   6. 30-minute fallback (and warn so we can spot un-tagged jobs)
 
 const CATEGORY_DEFAULTS: Record<string, number> = {
   mowing: 45,
@@ -64,6 +65,17 @@ export interface DurationSource {
   estimated_duration_minutes?: number | null;
   scheduled_start?: string | null;
   scheduled_end?: string | null;
+  /** The services spine (migration 043). Preferred source: each row carries an
+   *  explicit per-unit duration that VROOM multiplies by quantity. */
+  job_services?: Array<{
+    duration_minutes?: number | null;
+    quantity?: number | null;
+    service?: {
+      estimated_duration_minutes?: number | null;
+      category?: string | null;
+    } | null;
+  }> | null;
+  /** Legacy fallback for jobs created before the services spine existed. */
   line_items?: Array<{
     service?: {
       estimated_duration_minutes?: number | null;
@@ -96,7 +108,17 @@ export function resolveJobDurationMinutes(
   const end = parseTimeOfDayMinutes(job.scheduled_end);
   if (start !== null && end !== null && end > start) return end - start;
 
-  // 3. Sum of line-item service durations.
+  // 3. Sum of job_services durations × quantity (the services spine).
+  const jobServices = job.job_services ?? [];
+  let svcSum = 0;
+  for (const js of jobServices) {
+    const d = js.duration_minutes ?? js.service?.estimated_duration_minutes;
+    const qty = typeof js.quantity === 'number' && js.quantity > 0 ? js.quantity : 1;
+    if (typeof d === 'number' && d > 0) svcSum += d * qty;
+  }
+  if (svcSum > 0) return svcSum;
+
+  // 4. Legacy fallback — sum of line-item service durations.
   const items = job.line_items ?? [];
   let sum = 0;
   for (const li of items) {
@@ -105,8 +127,10 @@ export function resolveJobDurationMinutes(
   }
   if (sum > 0) return sum;
 
-  // 4. Dominant category default.
-  const firstCategory = items.find((li) => li.service?.category)?.service?.category;
+  // 5. Dominant category default — check the spine first, then legacy items.
+  const firstCategory =
+    jobServices.find((js) => js.service?.category)?.service?.category
+    ?? items.find((li) => li.service?.category)?.service?.category;
   if (firstCategory && firstCategory in CATEGORY_DEFAULTS) {
     return CATEGORY_DEFAULTS[firstCategory];
   }

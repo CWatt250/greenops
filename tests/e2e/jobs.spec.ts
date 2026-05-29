@@ -38,3 +38,71 @@ test('create a job → it appears on the schedule', async ({ page }) => {
     page.getByText(unique).filter({ visible: true }).first(),
   ).toBeVisible({ timeout: 15_000 });
 });
+
+/**
+ * Services spine (migration 043): add a custom service to a job, watch the
+ * running totals (price + on-site duration), save, and confirm the row + totals
+ * survive a reload — then edit the price inline and confirm the new total
+ * persists too. Exercises the shared ServicePicker create + edit paths.
+ */
+test('add + edit a custom service on a job → totals persist on reload', async ({ page }) => {
+  const stamp = Date.now();
+  const title = `E2E Services Job ${stamp}`;
+  const svcName = `E2E Hedge Trim ${stamp}`;
+
+  await page.goto('/dashboard/jobs/new');
+  await page.locator('#title').fill(title);
+
+  await page.getByRole('button', { name: /search clients/i }).click();
+  await page.getByPlaceholder(/search by name, phone, address/i).fill('John Smith');
+  await page.getByRole('option', { name: /John Smith/i }).first().click();
+
+  await page.locator('#scheduled_date').fill(todayStr());
+
+  // Add a one-off custom service and fill its row.
+  await page.getByRole('button', { name: /add custom service/i }).click();
+  await page.getByLabel('Service name').fill(svcName);
+  await page.getByLabel('Quantity').fill('2');
+  await page.getByLabel('Duration in minutes').fill('45');
+  await page.getByLabel('Price').fill('60');
+
+  // Running totals: 2 × $60 = $120, 2 × 45 min = 1h 30m.
+  await expect(page.getByTestId('services-total-price')).toContainText('120');
+  await expect(page.getByTestId('services-total-duration')).toContainText('1h 30m');
+
+  await page.getByRole('button', { name: /^create job$/i }).click();
+  await page.waitForURL(/\/dashboard\/jobs\/[0-9a-f-]{36}/, { timeout: 30_000 });
+  const jobUrl = page.url();
+
+  // Detail page shows the service + total under the Services card.
+  await expect(page.getByText(svcName).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText('$120.00').first()).toBeVisible();
+
+  // Reload via the edit page → the persisted row rehydrates, still editable.
+  await page.goto(`${jobUrl}/edit`);
+  await expect(page.getByLabel('Service name')).toHaveValue(svcName, { timeout: 15_000 });
+  await expect(page.getByTestId('services-total-price')).toContainText('120');
+
+  // Edit the price inline → total updates → save → persists on the detail page.
+  await page.getByLabel('Price').fill('100');
+  await expect(page.getByTestId('services-total-price')).toContainText('200');
+  await page.getByRole('button', { name: /^update job$/i }).click();
+  await page.waitForURL(jobUrl, { timeout: 30_000 });
+  await expect(page.getByText('$200.00').first()).toBeVisible({ timeout: 15_000 });
+});
+
+/**
+ * The searchable catalog dropdown seeds a row with the service's default price
+ * and duration (snapshot — editable thereafter).
+ */
+test('add a catalog service to a job via the searchable dropdown', async ({ page }) => {
+  await page.goto('/dashboard/jobs/new');
+
+  await page.getByRole('button', { name: /^add service$/i }).click();
+  await page.getByPlaceholder(/search services/i).fill('Edging');
+  await page.getByRole('option', { name: /Edging/i }).first().click();
+
+  // The row seeds the service name and a non-zero price/duration from the catalog.
+  await expect(page.getByLabel('Service name')).toHaveValue(/Edging/i);
+  await expect(page.getByTestId('services-total-price')).toBeVisible();
+});

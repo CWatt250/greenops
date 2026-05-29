@@ -14,7 +14,7 @@ import { rruleToText } from '@/lib/rrule-helpers';
 import {
   Edit, Calendar, Users, MapPin, Repeat2, FileText, Clock, Activity,
 } from 'lucide-react';
-import type { Job, JobLineItem, ActivityLog } from '@/types';
+import type { Job, JobLineItem, JobService, ActivityLog } from '@/types';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -24,12 +24,18 @@ export default async function JobDetailPage({ params }: Props) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const [jobRes, lineItemsRes, activityRes, photosRes] = await Promise.all([
+  const [jobRes, jobServicesRes, lineItemsRes, activityRes, photosRes] = await Promise.all([
     supabase
       .from('jobs')
       .select('*, client:clients(id,name,service_address,phone), crew:crews(id,name,color)')
       .eq('id', id)
       .single(),
+    supabase
+      .from('job_services')
+      .select('*, service:services(name,category)')
+      .eq('job_id', id)
+      .order('sort_order')
+      .order('created_at'),
     supabase
       .from('job_line_items')
       .select('*, service:services(name,category)')
@@ -89,7 +95,29 @@ export default async function JobDetailPage({ params }: Props) {
     ? invoiceRevenue
     : Number((job.revenue as number | undefined) ?? 0);
 
-  const lineItems = (lineItemsRes.data ?? []) as (JobLineItem & { service: { name: string; category: string } | null })[];
+  const jobServices = (jobServicesRes.data ?? []) as (JobService & { service: { name: string; category: string } | null })[];
+  const legacyLineItems = (lineItemsRes.data ?? []) as (JobLineItem & { service: { name: string; category: string } | null })[];
+
+  // The services spine is the source of truth; fall back to legacy line items
+  // for jobs created before migration 043. Normalize both into one shape.
+  const serviceRows = jobServices.length > 0
+    ? jobServices.map((s) => ({
+        id: s.id,
+        name: s.custom_name || s.service?.name || '—',
+        category: s.service?.category ?? null,
+        quantity: Number(s.quantity ?? 1),
+        duration_minutes: s.duration_minutes ?? null,
+        total: Number(s.price ?? 0) * Number(s.quantity ?? 1),
+      }))
+    : legacyLineItems.map((li) => ({
+        id: li.id,
+        name: li.description || li.service?.name || '—',
+        category: li.service?.category ?? null,
+        quantity: Number(li.quantity ?? 1),
+        duration_minutes: null as number | null,
+        total: Number(li.total ?? 0),
+      }));
+
   const activity = (activityRes.data ?? []) as (ActivityLog & { actor: { full_name: string | null } | null })[];
 
   type PhotoRow = { id: string; storage_path: string; caption: string | null; created_at: string };
@@ -99,7 +127,7 @@ export default async function JobDetailPage({ params }: Props) {
     publicUrl: supabase.storage.from('job-photos').getPublicUrl(p.storage_path).data.publicUrl,
   }));
 
-  const grandTotal = lineItems.reduce((sum, li) => sum + (li.total ?? 0), 0);
+  const grandTotal = serviceRows.reduce((sum, s) => sum + (s.total ?? 0), 0);
 
   function actionLabel(action: string): string {
     return action.replace(/_/g, ' ').replace('status changed to', 'Status →');
@@ -233,28 +261,28 @@ export default async function JobDetailPage({ params }: Props) {
           </div>
         )}
 
-        {/* Line items */}
-        {lineItems.length > 0 && (
+        {/* Services */}
+        {serviceRows.length > 0 && (
           <div className="rounded-xl border bg-card p-5">
-            <h2 className="text-sm font-semibold mb-4">Line Items</h2>
+            <h2 className="text-sm font-semibold mb-4">Services</h2>
             <div className="space-y-2">
-              {lineItems.map((li) => (
+              {serviceRows.map((s) => (
                 <div
-                  key={li.id}
-                  className="grid grid-cols-[1fr_60px_90px_90px] gap-3 items-center text-sm"
+                  key={s.id}
+                  className="grid grid-cols-[1fr_60px_70px_90px] gap-3 items-center text-sm"
                 >
                   <div>
-                    <p className="font-medium">{li.description ?? li.service?.name ?? '—'}</p>
-                    {li.service?.category && (
-                      <p className="text-xs text-muted-foreground capitalize">{li.service.category}</p>
+                    <p className="font-medium">{s.name}</p>
+                    {s.category && (
+                      <p className="text-xs text-muted-foreground capitalize">{s.category}</p>
                     )}
                   </div>
-                  <span className="text-muted-foreground text-center tabular-nums">×{li.quantity}</span>
+                  <span className="text-muted-foreground text-center tabular-nums">×{s.quantity}</span>
                   <span className="text-right tabular-nums text-muted-foreground">
-                    {formatCurrency(li.unit_price)}
+                    {s.duration_minutes != null ? `${s.duration_minutes} min` : '—'}
                   </span>
                   <span className="text-right tabular-nums font-semibold">
-                    {formatCurrency(li.total ?? 0)}
+                    {formatCurrency(s.total ?? 0)}
                   </span>
                 </div>
               ))}

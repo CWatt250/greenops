@@ -273,6 +273,28 @@ export interface JobLineItem {
   service?: Service;
 }
 
+/**
+ * One service performed on a job — the unified services spine (migration 043).
+ * Snapshotted forward from a proposal's line items on convert, and onward to an
+ * invoice's line items when one is generated. `duration_minutes` × `quantity`
+ * feeds VROOM route timing; `price` × `quantity` feeds the invoice total.
+ */
+export interface JobService {
+  id: string;
+  job_id: string;
+  service_id?: string | null;
+  /** Snapshot name / freeform name for one-offs. Falls back to service.name. */
+  custom_name?: string | null;
+  quantity: number;
+  duration_minutes?: number | null;
+  /** Per-unit billable price. Line total = price × quantity. */
+  price: number;
+  notes?: string | null;
+  sort_order: number;
+  created_at: string;
+  service?: Service;
+}
+
 export interface ActivityLog {
   id: string;
   company_id?: string;

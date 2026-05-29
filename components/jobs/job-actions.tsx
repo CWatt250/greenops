@@ -46,10 +46,10 @@ export function JobActions({ jobId, jobTitle, status, clientId, crewId }: Props)
   async function handleDuplicate() {
     setDuplicating(true);
 
-    // Pull line items
+    // Pull the services spine
     const { data: items } = await supabase
-      .from('job_line_items')
-      .select('service_id, description, quantity, unit_price')
+      .from('job_services')
+      .select('service_id, custom_name, quantity, duration_minutes, price, notes, sort_order')
       .eq('job_id', jobId);
 
     // Get the source job's company_id
@@ -80,7 +80,7 @@ export function JobActions({ jobId, jobTitle, status, clientId, crewId }: Props)
     }
 
     if (items && items.length > 0) {
-      await supabase.from('job_line_items').insert(
+      await supabase.from('job_services').insert(
         items.map((i) => ({ ...i, job_id: newJob.id }))
       );
     }

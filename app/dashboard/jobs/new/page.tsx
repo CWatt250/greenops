@@ -7,7 +7,7 @@ import { JobForm } from '@/components/jobs/job-form';
 import { PageHeader } from '@/components/shared/page-header';
 import { templateToJobDraft } from '@/lib/job-templates';
 import { Lightbulb } from 'lucide-react';
-import type { Crew, JobTemplate, JobLineItem } from '@/types';
+import type { Crew, JobTemplate, JobService } from '@/types';
 
 interface Props {
   // Next 16: searchParams is a Promise.
@@ -96,18 +96,22 @@ export default async function NewJobPage({ searchParams }: Props) {
       ? { client_id: clientIdParam }
       : undefined;
 
-  const initialLineItems: JobLineItem[] = draft
-    ? draft.line_items.map((li, i) => ({
-        id: '', // unsaved drafts
+  // Seed the services spine from the template's saved line items. Templates
+  // predate per-row durations, so duration_minutes stays null — VROOM falls
+  // back to the catalog/category default until the user sets one.
+  const initialServices: JobService[] = draft
+    ? draft.line_items.map((li) => ({
+        id: '', // unsaved drafts — JobForm treats empty id as new
         job_id: '',
-        service_id: li.service_id ?? undefined,
-        description: li.description ?? '',
+        service_id: li.service_id ?? null,
+        custom_name: li.description ?? '',
         quantity: li.quantity,
-        unit_price: li.unit_price,
-        total: li.quantity * li.unit_price,
+        duration_minutes: null,
+        price: li.unit_price,
+        notes: null,
+        sort_order: 0,
         created_at: new Date().toISOString(),
-        // intentionally drop a synthetic key so JobForm treats these as unsaved
-      } as unknown as JobLineItem))
+      }))
     : [];
 
   return (
@@ -148,7 +152,7 @@ export default async function NewJobPage({ searchParams }: Props) {
         companyId={profile.company_id}
         crews={(crews ?? []) as Crew[]}
         initialData={initialData}
-        initialLineItems={initialLineItems}
+        initialServices={initialServices}
         spawnedFromTemplateId={template?.id}
         clientName={clientName ?? undefined}
       />

@@ -13,7 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { ClientCombobox } from '@/components/clients/client-combobox';
-import { LineItemsTable, type LineItemDraft } from '@/components/jobs/line-items-table';
+import { ServicePicker, persistJobServices, type ServiceDraft } from '@/components/shared/service-picker';
 import { RecurrencePicker } from '@/components/jobs/recurrence-picker';
 import { NoteTemplatePicker } from '@/components/jobs/note-template-picker';
 import { Separator } from '@/components/ui/separator';
@@ -21,7 +21,7 @@ import { resolveJobDurationMinutes } from '@/lib/vroom';
 import { saveJobAsTemplate } from '@/lib/job-templates';
 import { toast } from 'sonner';
 import { BookmarkPlus, Calendar, Clock, Hourglass, Target } from 'lucide-react';
-import type { Job, Crew, Service } from '@/types';
+import type { Job, Crew, JobService } from '@/types';
 
 const jobSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -72,7 +72,7 @@ interface JobFormProps {
   initialData?: Partial<Job>;
   companyId: string;
   crews: Crew[];
-  initialLineItems?: import('@/types').JobLineItem[];
+  initialServices?: JobService[];
   /** Template that seeded this form (used to bump its usage counter after a
    *  successful save). Only set when /dashboard/jobs/new was opened with
    *  ?template_id=…. */
@@ -86,7 +86,7 @@ export function JobForm({
   initialData,
   companyId,
   crews,
-  initialLineItems = [],
+  initialServices = [],
   spawnedFromTemplateId,
   clientName,
 }: JobFormProps) {
@@ -113,15 +113,16 @@ export function JobForm({
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [resolvedClientName, setResolvedClientName] = useState<string | null>(clientName ?? null);
-  const [lineItems, setLineItems] = useState<LineItemDraft[]>(
-    initialLineItems.map((li) => ({
-      id: li.id,
-      service_id: li.service_id ?? null,
-      description: li.description ?? '',
-      quantity: li.quantity,
-      unit_price: li.unit_price,
-      total: li.total,
-      _key: li.id,
+  const [serviceItems, setServiceItems] = useState<ServiceDraft[]>(
+    initialServices.map((s) => ({
+      id: s.id || undefined,
+      service_id: s.service_id ?? null,
+      custom_name: s.custom_name ?? s.service?.name ?? '',
+      quantity: Number(s.quantity ?? 1),
+      duration_minutes: s.duration_minutes ?? null,
+      price: Number(s.price ?? 0),
+      notes: s.notes ?? null,
+      _key: s.id || crypto.randomUUID(),
     }))
   );
   const [serverError, setServerError] = useState<string | null>(null);
@@ -165,39 +166,22 @@ export function JobForm({
     return () => { cancelled = true; };
   }, [clientId, clientName, initialData?.client_id]);
 
-  // Load the company's services so we can look up estimated_duration_minutes
-  // for whatever line items the user selects. Small list, fetched once.
-  const [services, setServices] = useState<Service[]>([]);
-  useEffect(() => {
-    supabase
-      .from('services')
-      .select('id, category, estimated_duration_minutes')
-      .eq('is_active', true)
-      .then(({ data }) => setServices((data ?? []) as Service[]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Live "default" duration the resolver would pick — used only to render
-  // the placeholder "30 min (from service category)" hint. The actual
-  // VROOM duration comes from the override-if-set / resolve-at-optimize
-  // chain in lib/vroom.ts.
+  // Live "default" duration the resolver would pick — used only to render the
+  // placeholder hint. The actual VROOM duration comes from the override-if-set
+  // / resolve-at-optimize chain in lib/vroom.ts, which reads the same spine.
   const calculatedDurationMinutes = useMemo(() => {
-    const servicesById = new Map(services.map((s) => [s.id, s]));
     return resolveJobDurationMinutes(
       {
         scheduled_start: null,
         scheduled_end: null,
-        line_items: lineItems.map((li) => ({
-          service: li.service_id ? {
-            estimated_duration_minutes:
-              servicesById.get(li.service_id)?.estimated_duration_minutes ?? null,
-            category: servicesById.get(li.service_id)?.category ?? null,
-          } : null,
+        job_services: serviceItems.map((s) => ({
+          duration_minutes: s.duration_minutes,
+          quantity: s.quantity,
         })),
       },
       { jobTitle: initialData?.title ?? '(new job)' },
     );
-  }, [lineItems, services, initialData?.title]);
+  }, [serviceItems, initialData?.title]);
 
   const overrideMinutes = (() => {
     const h = Number(durationHours.trim() || '0');
@@ -220,8 +204,8 @@ export function JobForm({
     return `${h}h ${m}m`;
   }, [calculatedDurationMinutes]);
 
-  const calculatedSource = lineItems.some((li) => li.service_id)
-    ? 'line-item services' : 'service category';
+  const calculatedSource = serviceItems.some((s) => (s.duration_minutes ?? 0) > 0)
+    ? 'service durations' : 'category default';
 
   async function onSubmit(data: JobFormData) {
     setServerError(null);
@@ -325,19 +309,12 @@ export function JobForm({
       jobId = job.id;
     }
 
-    // Persist new line items and read back generated totals
-    const newItems = lineItems.filter((i) => !i.id);
-    if (newItems.length) {
-      const { error } = await supabase.from('job_line_items').insert(
-        newItems.map((i) => ({
-          job_id: jobId,
-          service_id: i.service_id && i.service_id !== '__custom__' ? i.service_id : null,
-          description: i.description || null,
-          quantity: i.quantity,
-          unit_price: i.unit_price,
-        }))
-      );
-      if (error) { setServerError(error.message); return; }
+    // Persist the services spine — inserts new rows, updates edited ones.
+    try {
+      await persistJobServices(supabase, jobId, serviceItems);
+    } catch (err) {
+      setServerError((err as Error).message);
+      return;
     }
 
     // Save-as-template — fire-and-forget after the job lands. The job
@@ -351,7 +328,7 @@ export function JobForm({
           company_id: companyId,
           client_id: clientId,
           name: finalTemplateName,
-          service_id: lineItems.find((li) => li.service_id && li.service_id !== '__custom__')?.service_id ?? null,
+          service_id: serviceItems.find((s) => s.service_id)?.service_id ?? null,
           title: data.title,
           notes: data.notes ?? null,
           customer_notes: data.customer_notes ?? null,
@@ -359,11 +336,11 @@ export function JobForm({
           time_window_start: payload.time_window_start,
           time_window_end:   payload.time_window_end,
           default_crew_id: crewId || null,
-          default_line_items: lineItems.map((li) => ({
-            service_id: li.service_id && li.service_id !== '__custom__' ? li.service_id : null,
-            description: li.description ?? null,
-            quantity: li.quantity,
-            unit_price: li.unit_price,
+          default_line_items: serviceItems.map((s) => ({
+            service_id: s.service_id,
+            description: s.custom_name || null,
+            quantity: s.quantity,
+            unit_price: s.price,
           })),
           created_by: user?.id ?? null,
         });
@@ -612,13 +589,15 @@ export function JobForm({
 
       <Separator />
 
-      {/* --- Line Items --- */}
+      {/* --- Services --- */}
       <div className="space-y-3">
-        <h2 className="text-sm font-semibold">Line Items</h2>
-        <LineItemsTable
-          jobId={initialData?.id}
-          initialItems={initialLineItems}
-          onChange={setLineItems}
+        <h2 className="text-sm font-semibold">Services</h2>
+        <p className="text-xs text-muted-foreground">
+          What gets done on this job. Durations feed route timing; prices feed the invoice.
+        </p>
+        <ServicePicker
+          initialItems={initialServices}
+          onChange={setServiceItems}
         />
       </div>
 
