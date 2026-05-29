@@ -88,7 +88,7 @@ export function StopCard({
 
       {/* Content */}
       <div className="flex-1 min-w-0 space-y-1">
-        <p className="text-sm font-semibold leading-tight truncate">{clientName}</p>
+        <p data-testid="stop-client-name" className="text-sm font-semibold leading-tight truncate">{clientName}</p>
         {address && (
           <div className="flex items-center gap-1">
             <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
