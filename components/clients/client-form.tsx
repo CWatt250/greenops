@@ -89,7 +89,17 @@ export function ClientForm({ initialData, companyId }: ClientFormProps) {
 
   const billingSame = watch('billing_same_as_service');
   const propertyType = watch('property_type');
-  const lotSizeProps = register('lot_size_sqft', { valueAsNumber: true });
+  // An empty number input under `valueAsNumber` yields NaN, which fails
+  // `z.number().optional()` and silently blocks the whole form — even though
+  // lot size is optional. Coerce blanks/NaN to undefined so the field is truly
+  // optional. (Found by the clients e2e spec.)
+  const lotSizeProps = register('lot_size_sqft', {
+    setValueAs: (v) => {
+      if (v === '' || v === null || v === undefined) return undefined;
+      const n = Number(v);
+      return Number.isNaN(n) ? undefined : n;
+    },
+  });
 
   // On mount: restore draft (new client always; edit client only when returning from measure),
   // then apply any pending measurement result.

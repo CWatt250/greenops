@@ -32,6 +32,11 @@ begin
     execute format('alter table jobs drop constraint %I', v_constraint);
   end if;
 
+  -- On Postgres 17 the inline check from 001 is auto-named `jobs_status_check`,
+  -- which the `status in (...)` pattern above misses (it is normalized to
+  -- `= ANY (ARRAY[...])`). Drop it explicitly so the re-add can't collide.
+  execute 'alter table jobs drop constraint if exists jobs_status_check';
+
   alter table jobs
     add constraint jobs_status_check
     check (status in (
@@ -57,6 +62,8 @@ begin
   if v_constraint is not null then
     execute format('alter table clock_events drop constraint %I', v_constraint);
   end if;
+
+  execute 'alter table clock_events drop constraint if exists clock_events_event_type_check';
 
   alter table clock_events
     add constraint clock_events_event_type_check
