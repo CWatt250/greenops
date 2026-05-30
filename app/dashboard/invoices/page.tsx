@@ -1,74 +1,56 @@
-'use client';
+export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/client';
+import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/server';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
+import { InvoicesView } from '@/components/billing/invoices-view';
 import { buttonVariants } from '@/components/ui/button';
-import { InvoiceTable } from '@/components/billing/invoice-table';
 import { cn } from '@/lib/utils';
 import { Plus } from 'lucide-react';
-import type { Invoice, InvoiceStatus } from '@/types';
+import type { Invoice } from '@/types';
 
 type InvoiceWithClient = Invoice & { client: { name: string } | null };
-
-const STATUS_TABS: Array<{ label: string; value: InvoiceStatus | 'all' }> = [
-  { label: 'All', value: 'all' },
-  { label: 'Draft', value: 'draft' },
-  { label: 'Sent', value: 'sent' },
-  { label: 'Overdue', value: 'overdue' },
-  { label: 'Partial', value: 'partial' },
-  { label: 'Paid', value: 'paid' },
-];
 
 function fmt(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
 }
 
-export default function InvoicesPage() {
-  const supabase = createClient();
-  const [invoices, setInvoices] = useState<InvoiceWithClient[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<InvoiceStatus | 'all'>('all');
+export default async function InvoicesPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
 
-  const loadInvoices = useCallback(async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from('invoices')
-      .select('*, client:clients(name)')
-      .order('created_at', { ascending: false });
+  // Server-side fetch via the cookie-based SSR client: RLS scopes rows to the
+  // user's company (idx_invoices_company_id). Same shape the table renders.
+  const { data } = await supabase
+    .from('invoices')
+    .select('*, client:clients(name)')
+    .order('created_at', { ascending: false });
 
-    // Mark overdue invoices
-    const now = new Date().toISOString().split('T')[0];
-    const processed = (data ?? []).map((inv) => ({
-      ...inv,
-      status: (
-        inv.status !== 'paid' &&
-        inv.status !== 'cancelled' &&
-        inv.due_date &&
-        inv.due_date < now
-      ) ? 'overdue' : inv.status,
-    })) as InvoiceWithClient[];
+  // Mark overdue invoices (UTC date cutoff, same as before — no tz drift).
+  const now = new Date().toISOString().split('T')[0];
+  const invoices = (data ?? []).map((inv) => ({
+    ...inv,
+    status: (
+      inv.status !== 'paid' &&
+      inv.status !== 'cancelled' &&
+      inv.due_date &&
+      inv.due_date < now
+    ) ? 'overdue' : inv.status,
+  })) as InvoiceWithClient[];
 
-    setInvoices(processed);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { loadInvoices(); }, [loadInvoices]);
-
-  // Summary strip
+  // Summary strip — derived from the full set, rendered server-side.
   const totalOutstanding = invoices
     .filter((i) => i.status !== 'paid' && i.status !== 'cancelled')
     .reduce((s, i) => s + i.balance_due, 0);
   const totalOverdue = invoices
     .filter((i) => i.status === 'overdue')
     .reduce((s, i) => s + i.balance_due, 0);
+  const thisMonth = new Date().toISOString().slice(0, 7);
   const totalPaidThisMonth = invoices
-    .filter((i) => {
-      const thisMonth = new Date().toISOString().slice(0, 7);
-      return i.status === 'paid' && i.paid_at?.startsWith(thisMonth);
-    })
+    .filter((i) => i.status === 'paid' && i.paid_at?.startsWith(thisMonth))
     .reduce((s, i) => s + i.total, 0);
 
   return (
@@ -112,43 +94,7 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex items-center gap-1 mb-4 flex-wrap">
-        {STATUS_TABS.map((tab) => {
-          const count = tab.value === 'all'
-            ? invoices.length
-            : invoices.filter((i) => i.status === tab.value).length;
-          return (
-            <button
-              key={tab.value}
-              onClick={() => setActiveTab(tab.value)}
-              className={cn(
-                'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
-                activeTab === tab.value
-                  ? 'text-white'
-                  : 'bg-muted text-muted-foreground hover:text-foreground'
-              )}
-              style={activeTab === tab.value ? { backgroundColor: 'var(--color-brand-green-raw)' } : {}}
-            >
-              {tab.label}
-              {count > 0 && (
-                <span className={cn(
-                  'rounded-full px-1.5 py-0.5 text-[10px] font-bold',
-                  activeTab === tab.value ? 'bg-white/20' : 'bg-background'
-                )}>
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {loading ? (
-        <p className="text-sm text-muted-foreground text-center py-16">Loading invoices…</p>
-      ) : (
-        <InvoiceTable invoices={invoices} statusFilter={activeTab} />
-      )}
+      <InvoicesView invoices={invoices} />
     </div>
   );
 }
