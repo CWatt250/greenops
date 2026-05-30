@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/select';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { MemberRateRow } from '@/components/crews/member-rate-row';
+import { CrewCertifications } from '@/components/crews/crew-certifications';
 import { toast } from 'sonner';
 import type { Crew, CrewMember, Profile } from '@/types';
 
@@ -231,6 +232,8 @@ export default function CrewDetailPage() {
           </div>
         )}
       </div>
+
+      <CrewCertifications crewId={crew.id} />
 
       <ConfirmDialog
         open={!!confirmRemove}

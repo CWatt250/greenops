@@ -57,6 +57,10 @@ const serviceSchema = z.object({
   ]),
   unit: z.enum(['per_visit','per_sqft','per_hour','flat','per_unit','per_yard']),
   base_price: z.number().min(0, 'Price must be 0 or more'),
+  // Migration 045: when on, only crews certified for this service can be
+  // assigned jobs that include it (a VROOM skill lock). Always provided by the
+  // form's defaultValues / reset, so no schema default is needed.
+  restricted: z.boolean(),
 });
 
 type ServiceFormData = z.infer<typeof serviceSchema>;
@@ -90,7 +94,7 @@ export default function ServicesPage() {
     formState: { errors, isSubmitting },
   } = useForm<ServiceFormData>({
     resolver: zodResolver(serviceSchema),
-    defaultValues: { category: 'mowing', unit: 'per_visit', base_price: 0 },
+    defaultValues: { category: 'mowing', unit: 'per_visit', base_price: 0, restricted: false },
   });
 
   async function load() {
@@ -120,7 +124,7 @@ export default function ServicesPage() {
   function openCreate() {
     setEditingId(null);
     setServerError(null);
-    reset({ name: '', description: '', category: 'mowing', unit: 'per_visit', base_price: 0 });
+    reset({ name: '', description: '', category: 'mowing', unit: 'per_visit', base_price: 0, restricted: false });
     setSheetOpen(true);
   }
 
@@ -133,6 +137,7 @@ export default function ServicesPage() {
       category: service.category,
       unit: service.unit,
       base_price: Number(service.base_price),
+      restricted: (service as { restricted?: boolean | null }).restricted ?? false,
     });
     setSheetOpen(true);
   }
@@ -458,6 +463,27 @@ export default function ServicesPage() {
               />
               {errors.base_price && <p className="text-xs text-destructive">{errors.base_price.message}</p>}
             </div>
+
+            {/* Migration 045 — skill gate. Only restricted services require a
+                certified crew; the rest stay doable by anyone. */}
+            <label
+              htmlFor="svc-restricted"
+              className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30"
+            >
+              <input
+                id="svc-restricted"
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 rounded border-input accent-[var(--orange)] cursor-pointer"
+                {...register('restricted')}
+              />
+              <span className="space-y-0.5">
+                <span className="block text-sm font-medium">Restrict to certified crews</span>
+                <span className="block text-xs text-muted-foreground">
+                  Only crews certified for this service can be routed jobs that include it.
+                  Manage certifications on each crew&apos;s page.
+                </span>
+              </span>
+            </label>
 
             {serverError && (
               <div className="rounded-md bg-destructive/10 px-3 py-2">
