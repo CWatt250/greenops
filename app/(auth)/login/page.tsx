@@ -51,11 +51,11 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="flex justify-center mb-8">
           <Image
-            src="https://tlclandscapemanagement.com/wp-content/uploads/2022/07/TLC-Logo-1.png"
+            src="/tlc-logo.png"
             alt="TLC Landscape Management"
-            width={160}
-            height={80}
-            className="object-contain"
+            width={275}
+            height={120}
+            className="h-auto w-40 object-contain"
             priority
           />
         </div>

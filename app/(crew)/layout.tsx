@@ -32,8 +32,8 @@ export default async function CrewLayout({ children }: { children: React.ReactNo
           <Image
             src="/tlc-logo.png"
             alt="TLC"
-            width={36}
-            height={36}
+            width={275}
+            height={120}
             className="h-9 w-auto"
           />
           <div>

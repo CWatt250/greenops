@@ -95,7 +95,7 @@ export function Sidebar() {
         <Image
           src="/tlc-logo.png"
           alt="TLC Landscape Management"
-          width={200}
+          width={275}
           height={120}
           className="mx-auto mb-2 h-auto w-full max-w-[200px]"
           priority

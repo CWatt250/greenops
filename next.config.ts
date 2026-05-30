@@ -1,15 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'tlclandscapemanagement.com',
-        pathname: '/**',
-      },
-    ],
-  },
+  // The TLC logo is now served locally from /public/tlc-logo.png, so no
+  // remote image hosts need to be allow-listed.
 };
 
 export default nextConfig;
