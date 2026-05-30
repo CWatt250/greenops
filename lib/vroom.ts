@@ -7,6 +7,11 @@ export interface VroomStop {
    *  within this window; when omitted, the vehicle's workday window
    *  governs. */
   time_window?: [number, number];
+  /** VROOM skills required to serve this stop (migration 045) — the stable
+   *  `services.skill_id` of each RESTRICTED service on the job. A vehicle can
+   *  only take the stop if its skill set is a superset of these. Empty/omitted
+   *  = no certification required (any crew can take it). */
+  skills?: number[];
 }
 
 /** Convert a "HH:MM" or "HH:MM:SS" time-of-day on the given local route date
@@ -170,19 +175,24 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
 
 export async function optimizeRoute(
   stops: VroomStop[],
-  startLocation: [number, number]
+  startLocation: [number, number],
+  /** Skills the single crew is certified for (migration 045). A restricted
+   *  stop whose required skills aren't a subset of this lands in `unassigned`
+   *  rather than being forced onto an uncertified crew. */
+  vehicleSkills?: number[],
 ): Promise<number[] | null> {
   if (stops.length < 2) return stops.map((s) => s.id);
 
+  const vehicle: Record<string, unknown> = {
+    id: 1,
+    start: startLocation,
+    end: startLocation,
+    profile: VROOM_PROFILE,
+  };
+  if (vehicleSkills && vehicleSkills.length > 0) vehicle.skills = vehicleSkills;
+
   const payload = {
-    vehicles: [
-      {
-        id: 1,
-        start: startLocation,
-        end: startLocation,
-        profile: VROOM_PROFILE,
-      },
-    ],
+    vehicles: [vehicle],
     jobs: stops.map((s) => {
       const j: Record<string, unknown> = {
         id: s.id,
@@ -190,6 +200,7 @@ export async function optimizeRoute(
         service: s.service,
       };
       if (s.time_window) j.time_windows = [s.time_window];
+      if (s.skills && s.skills.length > 0) j.skills = s.skills;
       return j;
     }),
   };
@@ -214,11 +225,36 @@ export async function optimizeRoute(
 }
 
 // ---------------------------------------------------------------------------
+// Skills (migration 045)
+// ---------------------------------------------------------------------------
+
+/** The distinct VROOM skill_ids a job requires: the `services.skill_id` of each
+ *  of its RESTRICTED services. Unrestricted services contribute nothing, so a
+ *  job with only unrestricted (or no) services stays doable by any crew. */
+export function requiredSkillsFromJobServices(
+  jobServices:
+    | Array<{ service?: { skill_id?: number | null; restricted?: boolean | null } | null } | null>
+    | null
+    | undefined,
+): number[] {
+  const set = new Set<number>();
+  for (const js of jobServices ?? []) {
+    const svc = js?.service;
+    if (svc?.restricted && typeof svc.skill_id === 'number') set.add(svc.skill_id);
+  }
+  return [...set];
+}
+
+// ---------------------------------------------------------------------------
 // Multi-crew optimization
 // ---------------------------------------------------------------------------
 
 export interface CrewVehicle {
   crew_id: string;
+  /** VROOM skills this crew holds (migration 045) — the `services.skill_id` of
+   *  each restricted service the crew is certified for via crew_skills. A crew
+   *  with no skills can only take stops that require none. */
+  skills?: number[];
 }
 
 export interface MultiCrewAssignment {
@@ -353,7 +389,7 @@ function buildPayload(
 ) {
   void options; // reserved for future flags
   return {
-    vehicles: crews.map((_, i) => {
+    vehicles: crews.map((c, i) => {
       const v: Record<string, unknown> = {
         id: i + 1,
         start: startLocation,
@@ -362,6 +398,10 @@ function buildPayload(
       };
       if (typeof capacity === 'number') v.capacity = [capacity];
       if (timeWindow) v.time_window = timeWindow;
+      // Skills the crew is certified for (migration 045). Only emit when
+      // non-empty — a vehicle with no skills field is treated by VROOM as an
+      // empty skill set, so it can still serve any stop that requires none.
+      if (c.skills && c.skills.length > 0) v.skills = c.skills;
       return v;
     }),
     jobs: stops.map((s) => {
@@ -375,6 +415,9 @@ function buildPayload(
       // We always emit a single window when the dispatcher set one on the
       // job; omitting the field falls back to the vehicle's workday.
       if (s.time_window) j.time_windows = [s.time_window];
+      // Required skills (migration 045): only crews whose skill set is a
+      // superset can be assigned this stop. Omit when none are required.
+      if (s.skills && s.skills.length > 0) j.skills = s.skills;
       return j;
     }),
     options: {
