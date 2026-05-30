@@ -7,8 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { StopList, type StopDraft } from '@/components/routes/stop-list';
-import { GroupedStopList } from '@/components/routes/grouped-stop-list';
+import type { StopDraft } from '@/components/routes/stop-list';
 import { RouteSummaryBar } from '@/components/routes/route-summary-bar';
 import { OptimizeButton } from '@/components/routes/optimize-button';
 import { WeatherBanner } from '@/components/routes/weather-banner';
@@ -32,6 +31,19 @@ import type { Crew } from '@/types';
 import type { MapStop, MapPolyline, MapLegendItem } from '@/components/routes/route-map';
 
 const RouteMap = dynamic(() => import('@/components/routes/route-map'), { ssr: false });
+
+// dnd-kit (~75 KB across the stop-list components) only matters once stops have
+// loaded — and stops can't render until jobs are fetched + geocoded. Defer the
+// drag-and-drop lists so their chunk downloads in parallel with that data fetch
+// instead of sitting in this route's First Load JS.
+const StopList = dynamic(
+  () => import('@/components/routes/stop-list').then((m) => m.StopList),
+  { ssr: false },
+);
+const GroupedStopList = dynamic(
+  () => import('@/components/routes/grouped-stop-list').then((m) => m.GroupedStopList),
+  { ssr: false },
+);
 
 const TRI_CITIES_DEFAULT: [number, number] = [-119.1734, 46.2087];
 const UNASSIGNED_COLOR = '#9CA3AF'; // gray-400
