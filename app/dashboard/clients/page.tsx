@@ -33,7 +33,11 @@ export default function ClientsPage() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      let query = supabase.from('clients').select('*').order('name');
+      // Only the columns the list + ClientTable actually render.
+      let query = supabase
+        .from('clients')
+        .select('id, name, property_type, service_address, status, phone, email')
+        .order('name');
       if (statusFilter !== 'all') query = query.eq('status', statusFilter);
       const { data } = await query;
       setClients((data ?? []) as Client[]);

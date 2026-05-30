@@ -41,16 +41,17 @@ export default function JobsPage() {
   useEffect(() => {
     async function load() {
       setLoading(true);
+      // Only the columns JobCard + the bulk-action bar render, not the whole row.
       let query = supabase
         .from('jobs')
-        .select('*, client:clients(name), crew:crews(id,name,color)')
+        .select('id, title, status, scheduled_date, scheduled_start, crew_id, client:clients(name), crew:crews(id,name,color)')
         .order('scheduled_date', { ascending: false });
       if (statusFilter !== 'all') query = query.eq('status', statusFilter);
       const [{ data }, { data: crewList }] = await Promise.all([
         query,
         supabase.from('crews').select('*').eq('is_active', true).order('name'),
       ]);
-      setJobs((data ?? []) as Job[]);
+      setJobs((data ?? []) as unknown as Job[]);
       setCrews((crewList ?? []) as Crew[]);
       setLoading(false);
     }
