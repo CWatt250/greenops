@@ -68,6 +68,8 @@ export function GroupedStopList({
           return (
             <div
               key={crew.id}
+              data-testid="crew-group"
+              data-crew-name={crew.name}
               className="rounded-xl border bg-card overflow-hidden"
             >
               <button

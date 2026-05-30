@@ -36,6 +36,9 @@ export interface StopDraft {
   // Multi-crew mode: which crew VROOM (or the user) assigned this stop to.
   // Null = unassigned (waiting on optimization).
   assigned_crew_id?: string | null;
+  // VROOM skills this stop requires (migration 045) — the skill_id of each
+  // RESTRICTED service on the job. Empty/undefined = any crew can take it.
+  skills?: number[];
 }
 
 interface StopListProps {

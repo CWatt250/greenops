@@ -19,6 +19,7 @@ import {
 } from '@/lib/mapbox';
 import {
   optimizeMultiCrewRoute,
+  requiredSkillsFromJobServices,
   resolveJobDurationMinutes,
   routeCentroid,
   timeOfDayToEpochSeconds,
@@ -69,6 +70,9 @@ type JobWithClient = {
     service: {
       estimated_duration_minutes?: number | null;
       category?: string | null;
+      skill_id?: number | null;
+      restricted?: boolean | null;
+      name?: string | null;
     } | null;
   }> | null;
   line_items?: Array<{
@@ -81,6 +85,15 @@ type JobWithClient = {
 
 function toDateStr(d: Date) {
   return d.toISOString().split('T')[0];
+}
+
+/** Human label for a stop, used in the unroutable banner. */
+function stopLabel(s: StopDraft | undefined | null): string {
+  if (!s) return 'Unknown stop';
+  const client = (s.job?.client as { name?: string } | null | undefined)?.name ?? null;
+  const title = s.job?.title ?? null;
+  const joined = [client, title].filter(Boolean).join(' — ');
+  return joined || s.label || s.address || 'Stop';
 }
 
 function makeKey() {
@@ -120,6 +133,16 @@ export default function RouteBuilderPage() {
   const [stops, setStops] = useState<StopDraft[]>([]);
   const [selectedStopKey, setSelectedStopKey] = useState<string | null>(null);
   const [optimized, setOptimized] = useState(false);
+
+  // Skills (migration 045). crewSkillMap: crew_id -> granted skill_ids.
+  // skillIdToName: restricted-service skill_id -> display name (for the banner).
+  const [crewSkillMap, setCrewSkillMap] = useState<Map<string, number[]>>(new Map());
+  const [skillIdToName, setSkillIdToName] = useState<Map<number, string>>(new Map());
+  // Jobs VROOM couldn't route under the current crew certifications. Never
+  // silently dropped — surfaced in a loud banner.
+  const [unroutable, setUnroutable] = useState<
+    Array<{ key: string; label: string; missing: string[] }>
+  >([]);
 
   // Polylines: keyed by crew_id (or 'single' in single-crew mode).
   const [polylinesByGroup, setPolylinesByGroup] = useState<Record<string, GeoJSON.LineString>>({});
@@ -182,6 +205,44 @@ export default function RouteBuilderPage() {
     });
     supabase.from('crews').select('*').eq('is_active', true).order('name')
       .then(({ data }) => setCrews((data ?? []) as Crew[]));
+
+    // Skill certifications (migration 045): which restricted-service skill_ids
+    // each crew holds, and the skill_id -> name map for the unroutable banner.
+    supabase
+      .from('crew_skills')
+      .select('crew_id, service:services(skill_id, restricted, name)')
+      .then(({ data }) => {
+        const map = new Map<string, number[]>();
+        const names = new Map<number, string>();
+        for (const row of (data ?? []) as unknown as Array<{
+          crew_id: string;
+          service: { skill_id: number | null; restricted: boolean | null; name: string | null } | null;
+        }>) {
+          const svc = row.service;
+          if (!svc || !svc.restricted || typeof svc.skill_id !== 'number') continue;
+          const list = map.get(row.crew_id) ?? [];
+          if (!list.includes(svc.skill_id)) list.push(svc.skill_id);
+          map.set(row.crew_id, list);
+          if (svc.name) names.set(svc.skill_id, svc.name);
+        }
+        setCrewSkillMap(map);
+        setSkillIdToName((prev) => new Map([...prev, ...names]));
+      });
+    // Also map every restricted service's skill_id -> name so the banner can
+    // name a missing certification even when no crew holds it yet.
+    supabase
+      .from('services')
+      .select('skill_id, name')
+      .eq('restricted', true)
+      .then(({ data }) => {
+        setSkillIdToName((prev) => {
+          const next = new Map(prev);
+          for (const s of (data ?? []) as Array<{ skill_id: number | null; name: string | null }>) {
+            if (typeof s.skill_id === 'number' && s.name) next.set(s.skill_id, s.name);
+          }
+          return next;
+        });
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -289,6 +350,7 @@ export default function RouteBuilderPage() {
     let cancelled = false;
     (async () => {
       setLoadingJobs(true);
+      setUnroutable([]);
       setAutoLoaded(false);
       setOptimized(false);
 
@@ -298,7 +360,7 @@ export default function RouteBuilderPage() {
         'id, title, status, crew_id, scheduled_date, scheduled_start, scheduled_end, ' +
         'estimated_duration_minutes, time_window_start, time_window_end, ' +
         'client:clients(id,name,service_address,latitude,longitude), ' +
-        'job_services(duration_minutes,quantity,service:services(estimated_duration_minutes,category)), ' +
+        'job_services(duration_minutes,quantity,service:services(estimated_duration_minutes,category,skill_id,restricted,name)), ' +
         'line_items:job_line_items(service:services(estimated_duration_minutes,category))';
       const [assignedRes, unassignedRes] = await Promise.all([
         supabase
@@ -380,6 +442,7 @@ export default function RouteBuilderPage() {
             lat,
             lng,
             assigned_crew_id: initialCrew,
+            skills: requiredSkillsFromJobServices(job.job_services),
           };
         })
       );
@@ -432,6 +495,25 @@ export default function RouteBuilderPage() {
     setStops(reorderedStops);
     setPolylinesByGroup({});
     void handleReorderSingle(reorderedStops);
+  }
+
+  // Single-crew unroutable: the one selected crew isn't certified for these
+  // stops' restricted services. Maps to the same banner as the multi path.
+  function handleSingleUnroutable(blocked: StopDraft[]) {
+    if (blocked.length === 0) {
+      setUnroutable([]);
+      return;
+    }
+    const crewSkills = new Set(crewSkillMap.get(selectedCrewIds[0]) ?? []);
+    setUnroutable(
+      blocked.map((s) => ({
+        key: s._key,
+        label: stopLabel(s),
+        missing: (s.skills ?? [])
+          .filter((sk) => !crewSkills.has(sk))
+          .map((sk) => skillIdToName.get(sk) ?? `skill #${sk}`),
+      })),
+    );
   }
 
   /**
@@ -589,6 +671,7 @@ export default function RouteBuilderPage() {
     }
 
     setOptimizingMulti(true);
+    setUnroutable([]);
 
     const toastId = toast.loading(`Calling VROOM API… (${geocodedStops.length} stops × ${selectedCrewIds.length} crews)`);
 
@@ -620,6 +703,9 @@ export default function RouteBuilderPage() {
           stop.time_window = [startEpoch, endEpoch];
         }
       }
+      // Required certifications (migration 045) — locks the stop to crews that
+      // hold every one of these skills.
+      if (s.skills && s.skills.length > 0) stop.skills = s.skills;
       return stop;
     });
 
@@ -635,7 +721,11 @@ export default function RouteBuilderPage() {
         : '— (anytime)',
     })));
 
-    const crewVehicles = selectedCrewIds.map((id) => ({ crew_id: id }));
+    // Each crew carries the skill_ids it's certified for (migration 045).
+    const crewVehicles = selectedCrewIds.map((id) => ({
+      crew_id: id,
+      skills: crewSkillMap.get(id) ?? [],
+    }));
 
     const origDrive = stops.reduce((sum, s) => sum + (s.drive_minutes_from_prev ?? 0), 0);
 
@@ -723,9 +813,35 @@ export default function RouteBuilderPage() {
     }
 
     if (result.unassigned.length > 0) {
+      // Never silently drop jobs. Surface every unrouted stop and, when the
+      // cause is certification, name the skills no selected crew holds.
+      const heldByAnyCrew = new Set<number>();
+      for (const id of selectedCrewIds) {
+        for (const sk of crewSkillMap.get(id) ?? []) heldByAnyCrew.add(sk);
+      }
+      const items = result.unassigned.map((vroomId) => {
+        const sourceStop = geocodedStops[vroomId];
+        const missing = (sourceStop?.skills ?? [])
+          .filter((sk) => !heldByAnyCrew.has(sk))
+          .map((sk) => skillIdToName.get(sk) ?? `skill #${sk}`);
+        return {
+          key: sourceStop?._key ?? `vroom-${vroomId}`,
+          label: stopLabel(sourceStop),
+          missing,
+        };
+      });
+      setUnroutable(items);
+
+      const allMissing = [...new Set(items.flatMap((i) => i.missing))];
+      const n = result.unassigned.length;
       toast.warning(
-        `${result.unassigned.length} stop${result.unassigned.length === 1 ? '' : 's'} couldn't fit any crew — left unassigned.`
+        `${n} job${n === 1 ? '' : 's'} couldn't be routed` +
+        (allMissing.length > 0
+          ? ` — no selected crew is certified for: ${allMissing.join(', ')}.`
+          : ' — left unassigned.'),
       );
+    } else {
+      setUnroutable([]);
     }
   }
 
@@ -1061,6 +1177,8 @@ export default function RouteBuilderPage() {
             <OptimizeButton
               stops={stops}
               onOptimized={handleOptimizedSingle}
+              vehicleSkills={crewSkillMap.get(selectedCrewIds[0]) ?? []}
+              onUnroutable={handleSingleUnroutable}
               disabled={loadingJobs}
             />
           ) : (
@@ -1108,6 +1226,38 @@ export default function RouteBuilderPage() {
 
         {/* Weather banner */}
         {weatherInfo?.flag && <WeatherBanner summary={weatherInfo.summary} />}
+
+        {/* Unroutable banner — jobs no selected crew is certified for
+            (migration 045). Loud + lists each job so nothing vanishes. */}
+        {unroutable.length > 0 && (
+          <div
+            data-testid="unroutable-banner"
+            className="mx-3 mt-3 rounded-lg border-l-4 border-red-500 bg-red-50 px-3 py-2.5"
+          >
+            <p className="text-sm font-semibold text-red-700">
+              {unroutable.length} job{unroutable.length === 1 ? '' : 's'} couldn&apos;t be routed
+              {(() => {
+                const certs = [...new Set(unroutable.flatMap((u) => u.missing))];
+                return certs.length > 0
+                  ? ` — no selected crew is certified for: ${certs.join(', ')}.`
+                  : '.';
+              })()}
+            </p>
+            <ul className="mt-1.5 space-y-0.5 text-xs text-red-700/90">
+              {unroutable.map((u) => (
+                <li key={u.key}>
+                  • {u.label}
+                  {u.missing.length > 0 && (
+                    <span className="text-red-600"> — needs {u.missing.join(', ')}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1.5 text-[11px] text-red-700/80">
+              Certify a selected crew for the missing service(s) on the crew edit screen, or add a crew that is.
+            </p>
+          </div>
+        )}
 
         {/* Stops — single or grouped */}
         <div className="flex-1 overflow-y-auto min-h-0">

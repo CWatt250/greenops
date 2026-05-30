@@ -11,10 +11,15 @@ import type { StopDraft } from './stop-list';
 interface OptimizeButtonProps {
   stops: StopDraft[];
   onOptimized: (reorderedStops: StopDraft[]) => void;
+  /** Skills the single selected crew is certified for (migration 045). */
+  vehicleSkills?: number[];
+  /** Called with the stops VROOM couldn't assign to this crew (skill lock).
+   *  Empty array = everything routed. Drives the unroutable banner. */
+  onUnroutable?: (blocked: StopDraft[]) => void;
   disabled?: boolean;
 }
 
-export function OptimizeButton({ stops, onOptimized, disabled }: OptimizeButtonProps) {
+export function OptimizeButton({ stops, onOptimized, vehicleSkills, onUnroutable, disabled }: OptimizeButtonProps) {
   const [state, setState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
   async function handleOptimize() {
@@ -30,6 +35,8 @@ export function OptimizeButton({ stops, onOptimized, disabled }: OptimizeButtonP
       id: i,
       location: [s.lng!, s.lat!],
       service: (s.estimated_duration_minutes ?? 30) * 60,
+      // Restricted-service certifications required for this stop (migration 045).
+      ...(s.skills && s.skills.length > 0 ? { skills: s.skills } : {}),
     }));
 
     const depot = routeCentroid(vroomStops.map((s) => s.location));
@@ -37,7 +44,7 @@ export function OptimizeButton({ stops, onOptimized, disabled }: OptimizeButtonP
     // Calculate original total drive time
     const origDrive = stops.reduce((sum, s) => sum + (s.drive_minutes_from_prev ?? 0), 0);
 
-    const orderedIds = await optimizeRoute(vroomStops, depot);
+    const orderedIds = await optimizeRoute(vroomStops, depot, vehicleSkills);
 
     if (!orderedIds) {
       setState('error');
@@ -52,9 +59,20 @@ export function OptimizeButton({ stops, onOptimized, disabled }: OptimizeButtonP
       stop_order: position + 1,
     }));
 
-    // Re-add any non-geocoded stops at the end
+    // Any geocoded stop VROOM didn't place is skill-blocked for this crew —
+    // never drop it: keep it in the list (at the end) and surface it.
+    const assignedIdx = new Set(orderedIds);
+    const blocked: StopDraft[] = geocodedStops.filter((_, i) => !assignedIdx.has(i));
+    onUnroutable?.(blocked);
+    if (blocked.length > 0) {
+      toast.warning(
+        `${blocked.length} stop${blocked.length === 1 ? '' : 's'} couldn't be routed — this crew isn't certified for the required service(s).`,
+      );
+    }
+
+    // Re-add blocked + non-geocoded stops at the end so nothing vanishes.
     const nonGeocoded = stops.filter((s) => s.lat === null || s.lng === null);
-    const finalStops = [...reordered, ...nonGeocoded].map((s, i) => ({
+    const finalStops = [...reordered, ...blocked, ...nonGeocoded].map((s, i) => ({
       ...s,
       stop_order: i + 1,
     }));
