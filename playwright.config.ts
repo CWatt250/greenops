@@ -17,14 +17,15 @@ const env = loadEnvTest();
 // collide with a dev server you already have running on 3000. See TESTING.md.
 const PORT = Number(process.env.E2E_PORT ?? 3000);
 const baseURL = `http://localhost:${PORT}`;
+const isCI = !!process.env.CI;
 
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: process.env.CI ? [['html'], ['github'], ['list']] : [['html'], ['list']],
+  forbidOnly: isCI,
+  retries: isCI ? 2 : 0,
+  workers: isCI ? 1 : undefined,
+  reporter: isCI ? [['html'], ['github'], ['list']] : [['html'], ['list']],
 
   use: {
     baseURL,
@@ -61,10 +62,17 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: `npm run dev -- -p ${PORT}`,
+    // In CI, serve a production build (`next build` then `next start`) so routes
+    // are pre-compiled — `next dev` compiles each route on first hit, and the
+    // heavy /dashboard/routes/new route (mapbox-gl + turf + dnd-kit) blows the
+    // per-test timeouts when hit cold. Locally we keep `next dev` for fast HMR.
+    command: isCI
+      ? `npm run build && npm run start -- -p ${PORT}`
+      : `npm run dev -- -p ${PORT}`,
     url: baseURL,
-    timeout: 120_000,
-    reuseExistingServer: !process.env.CI,
+    // A cold `next build` adds ~20s before the server is reachable.
+    timeout: isCI ? 240_000 : 120_000,
+    reuseExistingServer: !isCI,
     // Inject local-Supabase config. These override the production values in
     // `.env.local` because process.env wins in Next's env load order.
     env: {
