@@ -1,8 +1,12 @@
 'use client';
 
-import { LineChart, Line, ResponsiveContainer } from 'recharts';
+import dynamic from 'next/dynamic';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+// Recharts is heavy (~310 KB chunk). Load the sparkline only on the client,
+// after first paint, so it never lands in this route's First Load JS.
+const Sparkline = dynamic(() => import('@/components/shared/sparkline'), { ssr: false });
 
 interface StatCardProps {
   title: string;
@@ -17,8 +21,6 @@ interface StatCardProps {
 const SPARK_COLOR = '#3D6B2C';
 
 export function StatCard({ title, value, prefix, suffix, trend, trendLabel, sparklineData }: StatCardProps) {
-  const sparkData = (sparklineData ?? []).map((v) => ({ v }));
-
   return (
     <div className="rounded-xl bg-card border overflow-hidden" style={{ borderTop: '4px solid #3D6B2C' }}>
       <div className="px-5 pt-4 pb-3">
@@ -31,17 +33,7 @@ export function StatCard({ title, value, prefix, suffix, trend, trendLabel, spar
           </p>
           {sparklineData && sparklineData.length > 0 && (
             <div className="h-[50px] w-[80px] shrink-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={sparkData}>
-                  <Line
-                    type="monotone"
-                    dataKey="v"
-                    stroke={SPARK_COLOR}
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <Sparkline data={sparklineData} color={SPARK_COLOR} strokeWidth={2} />
             </div>
           )}
         </div>

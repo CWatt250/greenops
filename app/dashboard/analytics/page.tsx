@@ -1,18 +1,35 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
 import { StatCard } from '@/components/analytics/stat-card';
-import { RevenueChart } from '@/components/analytics/revenue-chart';
-import { JobStatusDonut } from '@/components/analytics/job-status-donut';
-import { CrewPerformanceChart } from '@/components/analytics/crew-performance-chart';
 import { ClientRevenueTable } from '@/components/analytics/client-revenue-table';
 import type { ClientRevenueRow } from '@/components/analytics/client-revenue-table';
-import { BarChart2, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import type { Crew } from '@/types';
+
+// Recharts is ~310 KB. Load each chart client-side after first paint so it
+// stays out of this route's First Load JS. Placeholders match chart heights
+// to avoid layout shift.
+const chartFallback = (h: number) => () => (
+  <div className="animate-pulse rounded-md bg-muted/50" style={{ height: h }} />
+);
+const RevenueChart = dynamic(
+  () => import('@/components/analytics/revenue-chart').then((m) => m.RevenueChart),
+  { ssr: false, loading: chartFallback(260) },
+);
+const JobStatusDonut = dynamic(
+  () => import('@/components/analytics/job-status-donut').then((m) => m.JobStatusDonut),
+  { ssr: false, loading: chartFallback(260) },
+);
+const CrewPerformanceChart = dynamic(
+  () => import('@/components/analytics/crew-performance-chart').then((m) => m.CrewPerformanceChart),
+  { ssr: false, loading: chartFallback(240) },
+);
 
 function fmtCurrency(n: number) {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
