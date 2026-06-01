@@ -69,6 +69,67 @@ export function lineLengthFt(geometry: GeoJSON.LineString): number {
   }
 }
 
+// ── Live per-segment distance helpers ──────────────────────────────────────
+// Shared by the desktop (mouse cursor) and mobile (centre crosshair) measure
+// paths so live rubber-band distances and static edge labels are computed and
+// formatted identically in both contexts.
+
+export type LngLat = [number, number];
+
+/** Great-circle length of a single segment, in feet (rounded). */
+export function segmentLengthFt(a: LngLat, b: LngLat): number {
+  try {
+    const km = turf.distance(turf.point(a), turf.point(b), { units: 'kilometers' });
+    return Math.round(km * 1000 * METERS_TO_FEET);
+  } catch {
+    return 0;
+  }
+}
+
+/** Map label for a distance in feet, matching the tool's existing "1,234 ft". */
+export function formatFeetLabel(ft: number): string {
+  return `${Math.round(ft).toLocaleString()} ft`;
+}
+
+/** Arithmetic midpoint of a segment — at property scale this is visually
+ *  identical to a geodesic midpoint but exact and cheap to place a label. */
+export function segmentMidpoint(a: LngLat, b: LngLat): LngLat {
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+}
+
+export interface SegmentLabel {
+  /** Midpoint to anchor the label marker. */
+  mid: LngLat;
+  /** Segment length in feet. */
+  ft: number;
+}
+
+/**
+ * Per-segment labels for an ordered list of points. When `closeRing` is set the
+ * final point connects back to the first (used to label a polygon's closing
+ * edge). Used for in-progress drawings where points are a raw array.
+ */
+export function segmentLabels(points: LngLat[], closeRing = false): SegmentLabel[] {
+  const path = closeRing && points.length >= 3 ? [...points, points[0]] : points;
+  const out: SegmentLabel[] = [];
+  for (let i = 0; i + 1 < path.length; i++) {
+    out.push({ mid: segmentMidpoint(path[i], path[i + 1]), ft: segmentLengthFt(path[i], path[i + 1]) });
+  }
+  return out;
+}
+
+/**
+ * Per-edge labels for a completed shape's geometry. Polygon rings stored by the
+ * tool are already closed (first === last), so every consecutive pair — including
+ * the closing edge — is labelled. Lines label each segment between vertices.
+ */
+export function shapeSegmentLabels(geometry: GeoJSON.Polygon | GeoJSON.LineString): SegmentLabel[] {
+  const points = geometry.type === 'Polygon'
+    ? (geometry.coordinates[0] as LngLat[])
+    : (geometry.coordinates as LngLat[]);
+  return segmentLabels(points, false);
+}
+
 export interface AreaTotals {
   turf: number;
   hardscape: number;
