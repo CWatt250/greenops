@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import type { Notification } from '@/types';
 
-export function NotificationBell() {
+export function NotificationBell({ className }: { className?: string } = {}) {
   const supabase = createClient();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
@@ -85,9 +85,13 @@ export function NotificationBell() {
   return (
     <Popover open={open} onOpenChange={handleOpen}>
       <PopoverTrigger
+        aria-label="Notifications"
         className={cn(
           buttonVariants({ variant: 'ghost', size: 'icon' }),
-          'relative text-white hover:bg-white/10 hover:text-white'
+          // Default tone suits the crew's black bar; the dashboard's light bar
+          // passes `className` to override to a visible, bordered circle.
+          'relative text-white hover:bg-white/10 hover:text-white',
+          className
         )}
       >
         <Bell className="h-5 w-5" />

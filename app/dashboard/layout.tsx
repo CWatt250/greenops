@@ -1,14 +1,14 @@
 'use client';
 
-import Link from 'next/link';
 import { Suspense, useState } from 'react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { MobileNav } from '@/components/layout/mobile-nav';
 import { MobileBottomNav } from '@/components/layout/mobile-bottom-nav';
 import { QuickAddMenu } from '@/components/layout/quick-add-menu';
 import { NotificationBell } from '@/components/shared/notification-bell';
+import { AnnounceButton } from '@/components/dashboard/announce-button';
 import { Button } from '@/components/ui/button';
-import { Menu, Ruler } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { WelcomeTour } from '@/components/help/welcome-tour';
 import { HelpButton } from '@/components/help/help-button';
 
@@ -27,8 +27,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Main content */}
       <div className="flex flex-1 flex-col md:ml-64">
-        {/* Mobile top bar */}
-        <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-2 border-b bg-background px-3 md:hidden">
+        {/* Mobile top bar. Horizontal padding respects the safe-area insets so
+            the right-edge controls (notification bell) are never clipped on
+            notched / rounded-corner phones. */}
+        <header
+          className="sticky top-0 z-40 flex h-14 items-center justify-between gap-2 border-b bg-background px-3 md:hidden"
+          style={{
+            paddingLeft: 'max(0.75rem, env(safe-area-inset-left))',
+            paddingRight: 'max(0.75rem, env(safe-area-inset-right))',
+          }}
+        >
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
@@ -50,17 +58,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            <Link
-              href="/dashboard/measure"
-              aria-label="Measure property"
-              title="Measure property"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border"
-              style={{ backgroundColor: 'var(--orange-soft)', color: 'var(--orange-deep)', borderColor: 'var(--orange)' }}
-            >
-              <Ruler className="h-4 w-4" />
-            </Link>
+            {/* Announcement composer — the icon variant renders the orange
+                megaphone tap target and self-resolves the company. */}
+            <AnnounceButton variant="icon" />
             <QuickAddMenu />
-            <NotificationBell />
+            {/* Light bar → override the bell's default white tone to a visible,
+                bordered circle matching the other top-bar tap targets. */}
+            <NotificationBell className="h-9 w-9 rounded-full border bg-background text-foreground hover:bg-accent hover:text-foreground" />
           </div>
         </header>
 

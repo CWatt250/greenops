@@ -19,11 +19,18 @@ import type { Crew } from '@/types';
 type Audience = 'all_crew' | 'crew_specific' | 'all_customers';
 
 interface Props {
-  companyId: string;
+  /** The owner's company. Omit to self-resolve from the signed-in profile —
+   *  used by the dashboard top-bar megaphone, which has no company in scope. */
+  companyId?: string;
+  /** `button` (default) renders the labelled outline button used on the
+   *  dashboard; `icon` renders the orange circular megaphone tap target used
+   *  in the mobile top bar. */
+  variant?: 'button' | 'icon';
 }
 
-export function AnnounceButton({ companyId }: Props) {
+export function AnnounceButton({ companyId: companyIdProp, variant = 'button' }: Props) {
   const supabase = createClient();
+  const [companyId, setCompanyId] = useState<string | null>(companyIdProp ?? null);
   const [open, setOpen] = useState(false);
   const [crews, setCrews] = useState<Crew[]>([]);
   const [audience, setAudience] = useState<Audience>('all_crew');
@@ -33,8 +40,25 @@ export function AnnounceButton({ companyId }: Props) {
   const [sending, setSending] = useState(false);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
 
+  // When no company is passed in (top-bar usage), resolve it from the
+  // signed-in user's profile so audience queries can be scoped.
   useEffect(() => {
-    if (!open) return;
+    if (companyId) return;
+    let cancelled = false;
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('company_id')
+        .eq('id', user.id)
+        .single();
+      if (!cancelled && data?.company_id) setCompanyId(data.company_id as string);
+    });
+    return () => { cancelled = true; };
+  }, [companyId, supabase]);
+
+  useEffect(() => {
+    if (!open || !companyId) return;
     supabase
       .from('crews')
       .select('*')
@@ -46,7 +70,7 @@ export function AnnounceButton({ companyId }: Props) {
 
   // Refresh recipient count whenever the audience picker changes.
   useEffect(() => {
-    if (!open) return;
+    if (!open || !companyId) return;
     let cancelled = false;
     (async () => {
       let count: number | null = null;
@@ -86,6 +110,7 @@ export function AnnounceButton({ companyId }: Props) {
   }
 
   async function send() {
+    if (!companyId) { toast.error('Still loading — try again in a moment.'); return; }
     if (!title.trim()) { toast.error('Add a title.'); return; }
     if (audience === 'crew_specific' && !crewId) {
       toast.error('Pick a crew.');
@@ -163,15 +188,28 @@ export function AnnounceButton({ companyId }: Props) {
 
   return (
     <>
-      <Button
-        variant="outline"
-        onClick={() => setOpen(true)}
-        className="gap-1.5"
-        title="Send a message to crews or customers"
-      >
-        <Megaphone className="h-4 w-4" />
-        Announce
-      </Button>
+      {variant === 'icon' ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Announcements"
+          title="Send an announcement"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full border"
+          style={{ backgroundColor: 'var(--orange-soft)', color: 'var(--orange-deep)', borderColor: 'var(--orange)' }}
+        >
+          <Megaphone className="h-4 w-4" />
+        </button>
+      ) : (
+        <Button
+          variant="outline"
+          onClick={() => setOpen(true)}
+          className="gap-1.5"
+          title="Send a message to crews or customers"
+        >
+          <Megaphone className="h-4 w-4" />
+          Announce
+        </Button>
+      )}
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent>

@@ -115,11 +115,59 @@ async function ensureUser({ email, password, role, full_name }) {
   return user;
 }
 
+/**
+ * Ensures the e2e crew user is a member of an active crew in the e2e company.
+ * Migration 020 seeds crews but no `crew_members`, so an `all_crew` broadcast
+ * would otherwise reach nobody — the announce e2e relies on this membership to
+ * deliver a notification to the seeded crew recipient. Idempotent.
+ */
+async function ensureCrewMembership() {
+  const crewUser = await findUserByEmail(process.env.E2E_CREW_EMAIL);
+  if (!crewUser) throw new Error('Crew user missing — cannot seed crew membership');
+
+  // Reuse an existing active crew (seeded by migration 020); create a fallback
+  // so the seed is self-contained on a DB without the demo crews.
+  let { data: crew } = await admin
+    .from('crews')
+    .select('id, name')
+    .eq('company_id', companyId)
+    .eq('is_active', true)
+    .order('name')
+    .limit(1)
+    .maybeSingle();
+  if (!crew) {
+    const { data: created, error } = await admin
+      .from('crews')
+      .insert({ company_id: companyId, name: 'E2E Crew', is_active: true })
+      .select('id, name')
+      .single();
+    if (error) throw error;
+    crew = created;
+  }
+
+  const { data: existing } = await admin
+    .from('crew_members')
+    .select('id')
+    .eq('crew_id', crew.id)
+    .eq('profile_id', crewUser.id)
+    .maybeSingle();
+  if (existing) {
+    console.log(`✓ member ${process.env.E2E_CREW_EMAIL}  (already on ${crew.name})`);
+    return;
+  }
+  const { error } = await admin
+    .from('crew_members')
+    .insert({ crew_id: crew.id, profile_id: crewUser.id, role: 'member' });
+  if (error) throw error;
+  console.log(`✓ member ${process.env.E2E_CREW_EMAIL}  (added to ${crew.name})`);
+}
+
 (async () => {
   console.log(`Seeding e2e users into ${url} (company ${companyId})`);
   for (const u of USERS) {
     await ensureUser(u);
   }
+  await ensureCrewMembership();
   console.log('Done.');
 })().catch((err) => {
   console.error('Seed failed:', err.message ?? err);
