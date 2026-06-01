@@ -14,7 +14,8 @@ import { MAPBOX_TOKEN } from '@/lib/mapbox';
 import {
   lineLengthFt, polygonAreaSqFt, suggestLabel, SHAPE_TYPE_COLORS,
   isAreaType, isLineType,
-  type MeasuredShape, type ShapeType,
+  segmentLengthFt, formatFeetLabel, segmentMidpoint, segmentLabels, shapeSegmentLabels,
+  type MeasuredShape, type ShapeType, type LngLat,
 } from '@/lib/measurement';
 import { Layers, Pentagon, Slash, Trash2, HelpCircle, Undo2, Eraser } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -24,6 +25,30 @@ import { CrosshairOverlay } from './crosshair-overlay';
 import { DrawingControls } from './drawing-controls';
 
 const TRI_CITIES_FALLBACK = { longitude: -119.1734, latitude: 46.2087, zoom: 11 };
+
+/**
+ * requestAnimationFrame throttle — coalesces a flood of map-move / draw.render
+ * callbacks into at most one update per frame so live distances stay smooth.
+ * Returns a callable with a `.cancel()` to drop a pending frame on cleanup.
+ */
+function rafThrottle<A extends unknown[]>(fn: (...args: A) => void) {
+  let raf = 0;
+  let lastArgs: A | null = null;
+  const wrapped = (...args: A) => {
+    lastArgs = args;
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      if (lastArgs) fn(...lastArgs);
+    });
+  };
+  wrapped.cancel = () => {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    lastArgs = null;
+  };
+  return wrapped;
+}
 
 interface MeasureMapProps {
   center: { lng: number; lat: number } | null;
@@ -73,6 +98,19 @@ export default function MeasureMap({
   const [mobileTool, setMobileTool] = useState<'polygon' | 'line' | null>(null);
   const handleChangeRef = useRef<() => void>(() => {});
 
+  // ── Live distance state ──────────────────────────────────────────────────
+  // Mobile: the geographic coord under the fixed centre crosshair, recomputed
+  // as the map pans beneath it. Desktop: the in-progress Draw feature (committed
+  // vertices + the cursor-tracking trailing coordinate), read on draw.render.
+  const [crosshairCoord, setCrosshairCoord] = useState<LngLat | null>(null);
+  const [desktopDraft, setDesktopDraft] = useState<
+    { tool: 'polygon' | 'line'; committed: LngLat[]; cursor: LngLat | null } | null
+  >(null);
+  // Refs so the map event handlers (bound once in handleMapLoad) read live values.
+  const isMobileRef = useRef(false);
+  const activeModeRef = useRef(activeMode);
+  const mobileToolRef = useRef(mobileTool);
+
   // Selected-shape editor state (popup positioned at the shape's centroid)
   const [editing, setEditing] = useState<{
     shapeId: string;
@@ -82,6 +120,9 @@ export default function MeasureMap({
   useEffect(() => { shapesRef.current = shapes; }, [shapes]);
   useEffect(() => { onShapesRef.current = onShapesChange; }, [onShapesChange]);
   useEffect(() => { centerRef.current = center; }, [center]);
+  useEffect(() => { isMobileRef.current = isMobile; }, [isMobile]);
+  useEffect(() => { activeModeRef.current = activeMode; }, [activeMode]);
+  useEffect(() => { mobileToolRef.current = mobileTool; }, [mobileTool]);
 
   useEffect(() => {
     const mq = window.matchMedia('(hover: none)');
@@ -286,11 +327,46 @@ export default function MeasureMap({
     // draw_polygon and the next click would start another shape.
     function handleModeChange(e: { mode: string }) {
       setActiveMode(e.mode as typeof activeMode);
+      // Leaving a draw mode (finish / cancel / escape) tears down the live
+      // rubber-band — the completed-shape edge labels take over from here.
+      if (e.mode !== 'draw_polygon' && e.mode !== 'draw_line_string') {
+        setDesktopDraft(null);
+      }
     }
     function handleCreate() {
+      setDesktopDraft(null);
       handleChange();
       // After create, Mapbox Draw auto-flips to simple_select.
     }
+
+    // Desktop live distance: on every render while a draw tool is active, read
+    // the in-progress feature. Mapbox GL Draw stores it as the committed
+    // vertices followed by a trailing coordinate that tracks the cursor
+    // (updated on mousemove), so we split it into committed points + cursor.
+    function readDesktopDraft() {
+      if (isMobileRef.current) return;
+      const mode = activeModeRef.current;
+      if (mode !== 'draw_polygon' && mode !== 'draw_line_string') return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const all = (drawRef.current as any)?.getAll?.() as GeoJSON.FeatureCollection | undefined;
+      if (!all) return;
+      const draftFeature = all.features.find((f) =>
+        (f.geometry.type === 'LineString' || f.geometry.type === 'Polygon') &&
+        !shapesRef.current.some((s) => s.id === String(f.id ?? '')));
+      if (!draftFeature) { setDesktopDraft(null); return; }
+      const geom = draftFeature.geometry;
+      if (geom.type === 'LineString') {
+        const coords = geom.coordinates as LngLat[];
+        if (coords.length === 0) { setDesktopDraft(null); return; }
+        setDesktopDraft({ tool: 'line', committed: coords.slice(0, -1), cursor: coords[coords.length - 1] });
+      } else if (geom.type === 'Polygon') {
+        // Polygon ring from getAll() is closed: [...committed, cursor, first].
+        const ring = (geom.coordinates[0] ?? []) as LngLat[];
+        if (ring.length < 2) { setDesktopDraft(null); return; }
+        setDesktopDraft({ tool: 'polygon', committed: ring.slice(0, ring.length - 2), cursor: ring[ring.length - 2] });
+      }
+    }
+    const handleRender = rafThrottle(readDesktopDraft);
 
     handleChangeRef.current = handleChange;
 
@@ -299,6 +375,7 @@ export default function MeasureMap({
     map.on('draw.delete', () => { setEditing(null); handleChange(); });
     map.on('draw.selectionchange', handleSelectionChange);
     map.on('draw.modechange', handleModeChange);
+    map.on('draw.render', handleRender);
   }, []);
 
   // Re-position the editor popup as the user pans/zooms.
@@ -415,35 +492,53 @@ export default function MeasureMap({
     }
   }
 
-  function addPointAtCenter() {
+  // Unproject the crosshair's actual on-screen position to map coords.
+  // Using map.getCenter() returns the geographic center of the map canvas,
+  // which drifts from the visual crosshair by the height of any header or
+  // address banner above the map — so points landed below where the user
+  // was aiming. unproject() with the crosshair's bounding rect lands the
+  // point exactly under the visual aim point.
+  const crosshairLngLat = useCallback((): LngLat | null => {
     const map = mapRef.current?.getMap();
-    if (!map) return;
-    // Unproject the crosshair's actual on-screen position to map coords.
-    // Using map.getCenter() returns the geographic center of the map canvas,
-    // which drifts from the visual crosshair by the height of any header or
-    // address banner above the map — so points landed below where the user
-    // was aiming. unproject() with the crosshair's bounding rect lands the
-    // point exactly under the visual aim point.
+    if (!map) return null;
     const canvas = map.getCanvas();
     const mapRect = canvas.getBoundingClientRect();
     const ch = crosshairRef.current;
-    let lng: number;
-    let lat: number;
     if (ch) {
       const chRect = ch.getBoundingClientRect();
       const screenX = chRect.left + chRect.width / 2 - mapRect.left;
       const screenY = chRect.top + chRect.height / 2 - mapRect.top;
       const coord = map.unproject([screenX, screenY]);
-      lng = coord.lng;
-      lat = coord.lat;
-    } else {
-      // Fallback: unproject the canvas center.
-      const coord = map.unproject([mapRect.width / 2, mapRect.height / 2]);
-      lng = coord.lng;
-      lat = coord.lat;
+      return [coord.lng, coord.lat];
     }
-    setMobilePoints((prev) => [...prev, [lng, lat]]);
+    // Fallback: unproject the canvas center.
+    const coord = map.unproject([mapRect.width / 2, mapRect.height / 2]);
+    return [coord.lng, coord.lat];
+  }, []);
+
+  function addPointAtCenter() {
+    const coord = crosshairLngLat();
+    if (!coord) return;
+    setMobilePoints((prev) => [...prev, coord]);
   }
+
+  // Mobile live distance: while a draw tool is active, track the geographic
+  // coord under the fixed centre crosshair as the map pans beneath it. The
+  // rubber-band segment runs from the last placed point to this coord. When no
+  // tool is active the stale value is never read — `live` and the preview both
+  // gate on `mobileTool` / a freshly-cleared `mobilePoints`.
+  useEffect(() => {
+    if (!isMobile || !mobileTool) return;
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    const update = rafThrottle(() => setCrosshairCoord(crosshairLngLat()));
+    update(); // seed (async via rAF) so the label shows before the first pan
+    map.on('move', update);
+    return () => {
+      map.off('move', update);
+      update.cancel();
+    };
+  }, [isMobile, mobileTool, crosshairLngLat]);
 
   function closeShape() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -521,14 +616,45 @@ export default function MeasureMap({
     ? 'mapbox://styles/mapbox/satellite-streets-v12'
     : 'mapbox://styles/mapbox/streets-v12';
 
-  // Distance labels for line shapes — placed at each line's midpoint.
-  const lineLabels = shapes
-    .filter((s) => s.kind === 'line')
-    .map((s) => {
-      const midpoint = lineMidpoint(s.geometry as GeoJSON.LineString);
-      return midpoint ? { id: s.id, lng: midpoint[0], lat: midpoint[1], label: `${s.length_ft.toLocaleString()} ft` } : null;
-    })
-    .filter((x): x is { id: string; lng: number; lat: number; label: string } => x !== null);
+  // Static distance labels for every completed shape — one per edge. Lines get
+  // a label on each segment; polygons get one on each edge (including the
+  // closing edge). The area total still lives in the measurements sheet.
+  const completedSegmentLabels = shapes.flatMap((s) =>
+    shapeSegmentLabels(s.geometry).map((seg, i) => ({
+      key: `${s.id}-${i}`,
+      lng: seg.mid[0],
+      lat: seg.mid[1],
+      label: formatFeetLabel(seg.ft),
+    })));
+
+  // Unified in-progress drawing state. Both input paths feed the SAME live
+  // renderer: mobile supplies the crosshair coord as the pointer; desktop
+  // supplies the cursor read from the Draw feature.
+  const live: { tool: 'polygon' | 'line'; committed: LngLat[]; cursor: LngLat | null } | null =
+    isMobile
+      ? (mobileTool ? { tool: mobileTool, committed: mobilePoints as LngLat[], cursor: crosshairCoord } : null)
+      : desktopDraft;
+
+  // Labels for segments already placed in the in-progress shape.
+  const liveCommittedLabels = live && live.committed.length >= 2
+    ? segmentLabels(live.committed, false).map((seg, i) => ({
+        key: `live-${i}`,
+        lng: seg.mid[0],
+        lat: seg.mid[1],
+        label: formatFeetLabel(seg.ft),
+      }))
+    : [];
+
+  // The live rubber-band segment: last placed point → current pointer.
+  const lastPlaced = live && live.committed.length >= 1
+    ? live.committed[live.committed.length - 1]
+    : null;
+  const liveSeg = lastPlaced && live?.cursor
+    ? (() => {
+        const mid = segmentMidpoint(lastPlaced, live.cursor!);
+        return { lng: mid[0], lat: mid[1], label: formatFeetLabel(segmentLengthFt(lastPlaced, live.cursor!)) };
+      })()
+    : null;
 
   // Polygon order badges — sequential numbers at centroids.
   const orderBadges = shapes.map((s, i) => {
@@ -575,20 +701,31 @@ export default function MeasureMap({
             </span>
           </Marker>
         ))}
-        {/* Line distance labels */}
-        {lineLabels.map((l) => (
-          <Marker key={`d-${l.id}`} longitude={l.lng} latitude={l.lat} anchor="center">
-            <div
-              className="rounded-full bg-background/95 backdrop-blur-sm border shadow px-2 py-0.5 text-[10px] font-mono tabular-nums"
-              style={{ color: 'var(--orange-deep)', borderColor: 'var(--orange)' }}
-            >
-              {l.label}
-            </div>
+        {/* Completed-shape edge distance labels (lines + polygons) */}
+        {completedSegmentLabels.map((l) => (
+          <Marker key={`d-${l.key}`} longitude={l.lng} latitude={l.lat} anchor="center">
+            <DistanceLabel>{l.label}</DistanceLabel>
           </Marker>
         ))}
 
-        {/* Mobile in-progress drawing preview */}
-        {mobilePoints.length >= 2 && (
+        {/* In-progress: static labels for segments already placed */}
+        {liveCommittedLabels.map((l) => (
+          <Marker key={l.key} longitude={l.lng} latitude={l.lat} anchor="center">
+            <DistanceLabel>{l.label}</DistanceLabel>
+          </Marker>
+        ))}
+
+        {/* In-progress: live rubber-band distance (last point → pointer) */}
+        {liveSeg && (
+          <Marker key="live-seg" longitude={liveSeg.lng} latitude={liveSeg.lat} anchor="center">
+            <DistanceLabel live>{liveSeg.label}</DistanceLabel>
+          </Marker>
+        )}
+
+        {/* Mobile in-progress drawing preview — committed polyline extended to
+            the crosshair so the last segment reads as a live rubber band.
+            (Desktop draws its own in-progress line via Mapbox GL Draw.) */}
+        {isMobile && (mobilePoints.length + (crosshairCoord ? 1 : 0)) >= 2 && (
           <Source
             id="mobile-preview"
             type="geojson"
@@ -597,9 +734,7 @@ export default function MeasureMap({
               properties: {},
               geometry: {
                 type: 'LineString',
-                coordinates: mobileTool === 'polygon' && mobilePoints.length >= 3
-                  ? [...mobilePoints, mobilePoints[0]]
-                  : mobilePoints,
+                coordinates: crosshairCoord ? [...mobilePoints, crosshairCoord] : mobilePoints,
               },
             }) as GeoJSON.Feature}
           >
@@ -857,6 +992,33 @@ export default function MeasureMap({
   );
 }
 
+/**
+ * Distance pill rendered over satellite imagery. Static placed-segment labels
+ * use a light pill with a dark-bordered outline for legibility; the `live`
+ * variant (the in-progress rubber-band reading) uses a solid orange fill so the
+ * updating measurement stands out from the frozen ones.
+ */
+function DistanceLabel({ children, live = false }: { children: React.ReactNode; live?: boolean }) {
+  if (live) {
+    return (
+      <div
+        className="rounded-full border-2 border-white shadow-md px-2 py-0.5 text-[11px] font-mono font-bold tabular-nums text-white whitespace-nowrap"
+        style={{ backgroundColor: '#F15A24' }}
+      >
+        {children}
+      </div>
+    );
+  }
+  return (
+    <div
+      className="rounded-full bg-background/95 backdrop-blur-sm border shadow px-2 py-0.5 text-[10px] font-mono tabular-nums whitespace-nowrap"
+      style={{ color: 'var(--orange-deep)', borderColor: 'var(--orange)' }}
+    >
+      {children}
+    </div>
+  );
+}
+
 function CompactToolButton({
   label, active, onClick, disabled = false, destructive = false,
 }: {
@@ -940,17 +1102,6 @@ function computeCentroid(geom: GeoJSON.Polygon | GeoJSON.LineString): [number, n
     if (!line || line.length === 0) return null;
     const mid = line[Math.floor(line.length / 2)];
     return [mid[0], mid[1]];
-  } catch {
-    return null;
-  }
-}
-
-function lineMidpoint(geom: GeoJSON.LineString): [number, number] | null {
-  try {
-    const coords = geom.coordinates as [number, number][];
-    if (!coords || coords.length < 2) return null;
-    const mid = Math.floor(coords.length / 2);
-    return coords[mid];
   } catch {
     return null;
   }
