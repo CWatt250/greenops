@@ -1,3 +1,5 @@
+import type { WeatherSuggestionInput } from './weather-suggestion';
+
 const OWM_KEY = process.env.NEXT_PUBLIC_OWM_KEY ?? '';
 
 const BAD_CONDITIONS = ['Rain', 'Snow', 'Thunderstorm', 'Drizzle'];
@@ -145,7 +147,7 @@ function fallbackWeather(
 
 interface ForecastQueryByCoords { lat: number; lng: number }
 interface ForecastQueryByCity { city: string; state?: string | null; country?: string }
-type ForecastQuery = ForecastQueryByCoords | ForecastQueryByCity;
+export type ForecastQuery = ForecastQueryByCoords | ForecastQueryByCity;
 
 interface DashboardWeatherOptions {
   /** 3, 5, or 7. Defaults to 3. 7 requires a OneCall-enabled key; we
@@ -276,6 +278,133 @@ export async function getDashboardWeather(
   } catch {
     return fallbackWeather(days, units, locationLabel);
   }
+}
+
+// ── Announcement weather ──────────────────────────────────────────────────
+//
+// Builds the normalized input for `suggestAnnouncement` (lib/weather-suggestion)
+// from the FREE OpenWeatherMap endpoints already in use by this app — current
+// conditions from /data/2.5/weather, morning timing from the /data/2.5/forecast
+// 3-hour forecast. It deliberately does NOT touch One Call 3.0 (paid). This is
+// the only weather path that needs feels-like / wind / gust, which the
+// dashboard's daily forecast (getDashboardWeather) doesn't carry, so it makes
+// its own (free) calls rather than reusing that aggregated shape.
+
+/** Working-day window (local hours) used to scope morning rain + dry-hour search. */
+const MORNING_START_HOUR = 6;
+const MORNING_END_HOUR = 11; // inclusive — last "morning" forecast hour considered
+const WORK_END_HOUR = 17;
+/** A forecast slot counts as "dry" below this precip probability and clear of rain/snow. */
+const DRY_POP_THRESHOLD = 0.3;
+
+function hourLabel(hour: number): string {
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12} ${period}`;
+}
+
+interface OwmCurrent {
+  main?: { temp?: number; feels_like?: number };
+  wind?: { speed?: number; gust?: number };
+  weather?: Array<{ main?: string }>;
+  rain?: Record<string, number>;
+  snow?: Record<string, number>;
+}
+
+interface OwmForecastSlot {
+  dt: number;
+  main?: { temp?: number };
+  weather?: Array<{ main?: string }>;
+  pop?: number;
+}
+
+/**
+ * Fetch + normalize the weather inputs the announcement suggester needs.
+ *
+ * Returns null only when no API key is configured or current conditions can't
+ * be fetched; a missing forecast just zeroes out the morning-timing fields so
+ * the heat/wind/frost/rain-now rules still work.
+ */
+export async function getAnnouncementWeather(
+  query: ForecastQuery,
+): Promise<WeatherSuggestionInput | null> {
+  if (!OWM_KEY || OWM_KEY === 'placeholder') return null;
+
+  // ── Current conditions (free /weather endpoint). ─────────────────────────
+  let current: OwmCurrent;
+  try {
+    const url = 'lat' in query
+      ? `https://api.openweathermap.org/data/2.5/weather?lat=${query.lat}&lon=${query.lng}&units=imperial&appid=${OWM_KEY}`
+      : `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(
+          [query.city, query.state, query.country ?? 'US'].filter(Boolean).join(','),
+        )}&units=imperial&appid=${OWM_KEY}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    current = (await res.json()) as OwmCurrent;
+  } catch {
+    return null;
+  }
+
+  const conditionMain = current.weather?.[0]?.main ?? 'Clear';
+  const rainNow = Object.values(current.rain ?? {}).some((v) => v > 0)
+    || Object.values(current.snow ?? {}).some((v) => v > 0);
+  const isRainingNow = rainNow || BAD_CONDITIONS.includes(conditionMain);
+
+  // ── Morning timing (free 3-hour /forecast endpoint). Best-effort. ────────
+  let morningPrecipProb = 0;
+  let firstDryHourLabel: string | null = null;
+  try {
+    const url = 'lat' in query
+      ? `https://api.openweathermap.org/data/2.5/forecast?lat=${query.lat}&lon=${query.lng}&units=imperial&cnt=12&appid=${OWM_KEY}`
+      : `https://api.openweathermap.org/data/2.5/forecast?q=${encodeURIComponent(
+          [query.city, query.state, query.country ?? 'US'].filter(Boolean).join(','),
+        )}&units=imperial&cnt=12&appid=${OWM_KEY}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = (await res.json()) as { list?: OwmForecastSlot[] };
+      const todayStr = localDateStr(new Date());
+      const slots = (data.list ?? []).map((s) => {
+        const when = new Date(s.dt * 1000);
+        return {
+          date: localDateStr(when),
+          hour: when.getHours(),
+          pop: s.pop ?? 0,
+          main: s.weather?.[0]?.main ?? 'Clear',
+        };
+      });
+
+      // Max precip probability across today's morning hours.
+      const morning = slots.filter(
+        (s) => s.date === todayStr && s.hour >= MORNING_START_HOUR && s.hour <= MORNING_END_HOUR,
+      );
+      morningPrecipProb = morning.reduce((max, s) => Math.max(max, s.pop), 0);
+
+      // First dry working hour still ahead of us today.
+      const nowHour = new Date().getHours();
+      const dry = slots.find(
+        (s) =>
+          s.date === todayStr &&
+          s.hour >= Math.max(MORNING_START_HOUR, nowHour) &&
+          s.hour <= WORK_END_HOUR &&
+          s.pop < DRY_POP_THRESHOLD &&
+          !BAD_CONDITIONS.includes(s.main),
+      );
+      firstDryHourLabel = dry ? hourLabel(dry.hour) : null;
+    }
+  } catch {
+    // Leave morning fields at their dry defaults.
+  }
+
+  return {
+    tempF: Math.round(current.main?.temp ?? 0),
+    feelsLikeF: Math.round(current.main?.feels_like ?? current.main?.temp ?? 0),
+    windMph: Math.round(current.wind?.speed ?? 0),
+    gustMph: typeof current.wind?.gust === 'number' ? Math.round(current.wind.gust) : null,
+    conditionMain,
+    isRainingNow,
+    morningPrecipProb,
+    firstDryHourLabel,
+  };
 }
 
 function forecastUrl(query: ForecastQuery, units: WeatherUnits): string {

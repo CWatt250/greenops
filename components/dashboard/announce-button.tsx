@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Megaphone, Loader2, Send } from 'lucide-react';
+import { Megaphone, Loader2, Send, CloudSun } from 'lucide-react';
 import {
   Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet';
@@ -12,9 +12,14 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { createClient } from '@/lib/supabase/client';
+import { getAnnouncementWeather, type ForecastQuery } from '@/lib/weather';
+import { suggestAnnouncement } from '@/lib/weather-suggestion';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { Crew } from '@/types';
+
+/** Tri-Cities, WA — matches the dashboard weather fallback. */
+const FALLBACK_LOCATION: ForecastQuery = { lat: 46.2087, lng: -119.1734 };
 
 type Audience = 'all_crew' | 'crew_specific' | 'all_customers';
 
@@ -38,6 +43,7 @@ export function AnnounceButton({ companyId: companyIdProp, variant = 'button' }:
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
 
   // When no company is passed in (top-bar usage), resolve it from the
@@ -107,6 +113,49 @@ export function AnnounceButton({ companyId: companyIdProp, variant = 'button' }:
     setTitle('');
     setBody('');
     setRecipientCount(null);
+  }
+
+  // Fill the composer from current conditions at the company location. The
+  // owner edits freely before sending — it's a starting point, not a send.
+  async function suggestFromWeather() {
+    setSuggesting(true);
+    try {
+      // Resolve the company's weather location the same way the dashboard does:
+      // explicit lat/lng → city/state → Tri-Cities fallback.
+      let query: ForecastQuery = FALLBACK_LOCATION;
+      if (companyId) {
+        const { data } = await supabase
+          .from('companies')
+          .select('weather_latitude, weather_longitude, city, state')
+          .eq('id', companyId)
+          .single();
+        if (data?.weather_latitude != null && data?.weather_longitude != null) {
+          query = { lat: Number(data.weather_latitude), lng: Number(data.weather_longitude) };
+        } else if (data?.city) {
+          query = { city: data.city as string, state: (data.state as string) ?? undefined };
+        }
+      }
+
+      const input = await getAnnouncementWeather(query);
+      if (!input) {
+        toast.error('Weather unavailable — add a title manually.');
+        return;
+      }
+      const suggestion = suggestAnnouncement(input);
+      if (!suggestion) {
+        toast('Conditions look clear — no weather suggestion. Schedule as normal.');
+        return;
+      }
+      // Weather-ops messages default to crew; manual selection still works.
+      setAudience(suggestion.audience);
+      setTitle(suggestion.title);
+      setBody(suggestion.body);
+      toast.success('Filled from current weather — edit before sending.');
+    } catch {
+      toast.error('Could not fetch weather — add a title manually.');
+    } finally {
+      setSuggesting(false);
+    }
   }
 
   async function send() {
@@ -272,7 +321,21 @@ export function AnnounceButton({ companyId: companyIdProp, variant = 'button' }:
             )}
 
             <div className="space-y-1.5">
-              <Label htmlFor="ann-title" className="text-xs">Title *</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="ann-title" className="text-xs">Title *</Label>
+                <button
+                  type="button"
+                  onClick={suggestFromWeather}
+                  disabled={suggesting}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--orange-deep)] hover:underline disabled:opacity-50"
+                  title="Fill from current conditions at your location"
+                >
+                  {suggesting
+                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                    : <CloudSun className="h-3 w-3" />}
+                  Suggest from weather
+                </button>
+              </div>
               <Input
                 id="ann-title"
                 value={title}
