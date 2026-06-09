@@ -1,4 +1,4 @@
-import type { WeatherSuggestionInput } from './weather-suggestion';
+import type { WeatherAlert, WeatherSuggestionInput } from './weather-suggestion';
 
 const OWM_KEY = process.env.NEXT_PUBLIC_OWM_KEY ?? '';
 
@@ -283,12 +283,14 @@ export async function getDashboardWeather(
 // ── Announcement weather ──────────────────────────────────────────────────
 //
 // Builds the normalized input for `suggestAnnouncement` (lib/weather-suggestion)
-// from the FREE OpenWeatherMap endpoints already in use by this app — current
-// conditions from /data/2.5/weather, morning timing from the /data/2.5/forecast
-// 3-hour forecast. It deliberately does NOT touch One Call 3.0 (paid). This is
-// the only weather path that needs feels-like / wind / gust, which the
-// dashboard's daily forecast (getDashboardWeather) doesn't carry, so it makes
-// its own (free) calls rather than reusing that aggregated shape.
+// from the OpenWeatherMap endpoints already in use by this app — current
+// conditions from the FREE /data/2.5/weather, morning timing from the FREE
+// /data/2.5/forecast 3-hour forecast, plus active official alerts from the SAME
+// One Call 3.0 fetch the dashboard's 7-day forecast already makes (shared via a
+// short TTL cache, so it adds no meaningful API usage). This is the only weather
+// path that needs feels-like / wind / gust, which the dashboard's daily forecast
+// (getDashboardWeather) doesn't carry, so it makes its own current/forecast
+// calls rather than reusing that aggregated shape.
 
 /** Working-day window (local hours) used to scope morning rain + dry-hour search. */
 const MORNING_START_HOUR = 6;
@@ -395,6 +397,23 @@ export async function getAnnouncementWeather(
     // Leave morning fields at their dry defaults.
   }
 
+  // ── Official alerts (One Call 3.0 `alerts[]`, shared/cached). Best-effort. ─
+  // An active, crew-relevant alert outranks the raw thresholds in the suggester.
+  // Any failure here leaves `alerts` undefined, so the suggestion silently falls
+  // back to v1 — "Suggest from weather" must never break on the alerts path.
+  let alerts: WeatherAlert[] | undefined;
+  try {
+    const coords = 'lat' in query
+      ? { lat: query.lat, lng: query.lng }
+      : await geocodeViaOwm(query);
+    if (coords) {
+      const active = await fetchActiveAlerts(coords, 'imperial');
+      if (active.length > 0) alerts = active;
+    }
+  } catch {
+    // Ignore — fall back to threshold-only suggestion.
+  }
+
   return {
     tempF: Math.round(current.main?.temp ?? 0),
     feelsLikeF: Math.round(current.main?.feels_like ?? current.main?.temp ?? 0),
@@ -404,6 +423,7 @@ export async function getAnnouncementWeather(
     isRainingNow,
     morningPrecipProb,
     firstDryHourLabel,
+    alerts,
   };
 }
 
@@ -436,6 +456,106 @@ async function geocodeViaOwm(
   }
 }
 
+interface OneCallAlert {
+  sender_name?: string;
+  event?: string;
+  /** Unix seconds. */
+  start?: number;
+  /** Unix seconds. */
+  end?: number;
+  description?: string;
+  tags?: string[];
+}
+
+interface OneCallResponse {
+  daily?: Array<{
+    dt: number;
+    temp: { max: number };
+    weather: Array<{ main: string; description: string }>;
+    pop?: number;
+  }>;
+  alerts?: OneCallAlert[];
+}
+
+/**
+ * Shared in-memory TTL cache for One Call 3.0 responses, keyed by location +
+ * units. Both the dashboard's 7-day forecast and the announcement suggester read
+ * the same window, so a single fetch every ~12 minutes covers both — no
+ * meaningful extra API usage on top of what the dashboard already spends. (We
+ * also pass `next.revalidate` so the server render path dedupes too; this memo
+ * is what dedupes when the call runs client-side, where `next` is ignored.)
+ */
+const ONECALL_TTL_MS = 12 * 60 * 1000;
+const oneCallCache = new Map<string, { at: number; data: OneCallResponse }>();
+
+/**
+ * Fetch + cache One Call 3.0. Includes `alerts[]` (only current/minutely/hourly
+ * are excluded), so callers get both the daily forecast and active alerts from a
+ * single request. Returns null on any error so callers degrade gracefully.
+ */
+async function fetchOneCall(
+  query: ForecastQueryByCoords,
+  units: WeatherUnits,
+): Promise<OneCallResponse | null> {
+  const key = `${query.lat.toFixed(3)},${query.lng.toFixed(3)},${units}`;
+  const cached = oneCallCache.get(key);
+  const nowMs = Date.now();
+  if (cached && nowMs - cached.at < ONECALL_TTL_MS) return cached.data;
+
+  try {
+    const url =
+      `https://api.openweathermap.org/data/3.0/onecall?lat=${query.lat}&lon=${query.lng}` +
+      `&exclude=current,minutely,hourly&units=${units}&appid=${OWM_KEY}`;
+    const res = await fetch(url, { next: { revalidate: 720 } });
+    if (!res.ok) return null;
+    const data = (await res.json()) as OneCallResponse;
+    oneCallCache.set(key, { at: nowMs, data });
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Format a One Call alert end time (unix seconds) into a short local label, e.g.
+ * "11 PM", "11:30 PM", or "Tue 6 AM" when it spills into another day. Lives here
+ * (not in the pure suggester) so the timezone math stays in the I/O layer.
+ */
+function alertEndLabel(endUnix: number): string {
+  const d = new Date(endUnix * 1000);
+  const now = new Date();
+  const hour = d.getHours();
+  const minute = d.getMinutes();
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  const time = minute === 0 ? `${h12} ${period}` : `${h12}:${String(minute).padStart(2, '0')} ${period}`;
+  return localDateStr(d) !== localDateStr(now) ? `${DAY_LABELS[d.getDay()]} ${time}` : time;
+}
+
+/**
+ * Pull the active, normalized alerts for a coordinate from One Call. "Active" =
+ * the current moment sits within [start, end]. Returns [] when none are active;
+ * never throws (One Call errors surface as an empty list upstream).
+ */
+async function fetchActiveAlerts(
+  query: ForecastQueryByCoords,
+  units: WeatherUnits,
+): Promise<WeatherAlert[]> {
+  const data = await fetchOneCall(query, units);
+  if (!data?.alerts?.length) return [];
+  const nowSec = Math.floor(Date.now() / 1000);
+  return data.alerts
+    .filter(
+      (a) =>
+        (a.start == null || a.start <= nowSec) && (a.end == null || a.end >= nowSec),
+    )
+    .map((a) => ({
+      event: a.event ?? 'Weather alert',
+      endLabel: typeof a.end === 'number' ? alertEndLabel(a.end) : null,
+      tags: a.tags ?? [],
+    }));
+}
+
 async function tryOneCall(
   query: ForecastQueryByCoords,
   units: WeatherUnits,
@@ -443,19 +563,8 @@ async function tryOneCall(
 ): Promise<DashboardWeatherResult | null> {
   const symbol = unitSymbolFor(units);
   try {
-    const url =
-      `https://api.openweathermap.org/data/3.0/onecall?lat=${query.lat}&lon=${query.lng}` +
-      `&exclude=current,minutely,hourly,alerts&units=${units}&appid=${OWM_KEY}`;
-    const res = await fetch(url, { next: { revalidate: 1800 } });
-    if (!res.ok) return null;
-    const data = await res.json() as {
-      daily?: Array<{
-        dt: number;
-        temp: { max: number };
-        weather: Array<{ main: string; description: string }>;
-        pop?: number;
-      }>;
-    };
+    const data = await fetchOneCall(query, units);
+    if (!data) return null;
     const daily = (data.daily ?? []).slice(0, 7);
     if (daily.length === 0) return null;
 

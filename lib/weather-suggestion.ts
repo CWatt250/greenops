@@ -16,6 +16,26 @@
 /** Audience all weather-ops suggestions default to. */
 export type SuggestionAudience = 'all_crew';
 
+/**
+ * A normalized, *active* weather alert as surfaced by One Call 3.0's `alerts[]`
+ * (event, end time, tags). The I/O layer (`lib/weather.ts`) is responsible for
+ * dropping expired/not-yet-started alerts and for formatting `endLabel` into a
+ * local time string — that keeps the time math (and its timezone pitfalls) out
+ * of this pure module so the classification + copy logic stays deterministic
+ * and trivially unit-testable.
+ */
+export interface WeatherAlert {
+  /** Official alert name, e.g. "Wind Advisory", "Excessive Heat Warning". */
+  event: string;
+  /**
+   * Local-time label for when the alert ends, e.g. "11 PM" or "Tue 6 AM", or
+   * null when no end time is known. Drives the "until …" copy.
+   */
+  endLabel: string | null;
+  /** Alert tags from the provider, e.g. ["Wind"]; used to aid classification. */
+  tags?: string[];
+}
+
 export interface WeatherSuggestionInput {
   /** Current air temperature, °F. */
   tempF: number;
@@ -41,6 +61,13 @@ export interface WeatherSuggestionInput {
    * delay title's "start at …" copy.
    */
   firstDryHourLabel: string | null;
+  /**
+   * Active, official weather alerts for the location (from One Call 3.0's
+   * `alerts[]`), or undefined when none were available or the alerts fetch
+   * failed. An active, crew-relevant alert takes priority over the raw
+   * threshold rules below; anything else falls through to v1 unchanged.
+   */
+  alerts?: WeatherAlert[];
 }
 
 export interface WeatherSuggestionThresholds {
@@ -76,6 +103,106 @@ export interface WeatherSuggestion {
   audience: SuggestionAudience;
 }
 
+/**
+ * Crew-relevant alert categories, most schedule-disruptive first. The order is
+ * the tie-breaker when several active alerts apply at once.
+ */
+type AlertCategory = 'severe' | 'heat' | 'winter' | 'wind' | 'air';
+
+const ALERT_PRIORITY: AlertCategory[] = ['severe', 'heat', 'winter', 'wind', 'air'];
+
+/**
+ * Operational guidance per alert category. `titleSuffix` completes the headline
+ * ("{event} until {end} — {suffix}"); `body` expands it into crew copy.
+ */
+const ALERT_GUIDANCE: Record<
+  AlertCategory,
+  { titleSuffix: string; body: (event: string, untilClause: string) => string }
+> = {
+  severe: {
+    titleSuffix: 'rain delay',
+    body: (event, until) =>
+      `A ${event} is in effect${until}. Hold the start — expect downpours, lightning, ` +
+      'and wet, slick ground. Resume once it clears.',
+  },
+  heat: {
+    titleSuffix: 'hydrate, shade breaks, start early',
+    body: (event, until) =>
+      `A ${event} is in effect${until}. Keep water close, take shade breaks, and ` +
+      'front-load the heavy work before the afternoon peak.',
+  },
+  winter: {
+    titleSuffix: 'delayed start, watch for ice',
+    body: (event, until) =>
+      `A ${event} is in effect${until}. Delay the start until things thaw, and watch ` +
+      'for ice on walks, ramps, and steps.',
+  },
+  wind: {
+    titleSuffix: 'hold spraying/blowing, secure equipment',
+    body: (event, until) =>
+      `A ${event} is in effect${until}. Hold off on spraying and blowing — drift and ` +
+      'flying debris are the risk — and tie down loose gear, bags, and trailer gates.',
+  },
+  air: {
+    titleSuffix: 'masks, limit exertion',
+    body: (event, until) =>
+      `A ${event} is in effect${until}. Wear masks and limit heavy exertion outdoors ` +
+      'until air quality improves.',
+  },
+};
+
+/**
+ * Classify an official alert into a crew guidance category, or null when it is
+ * not relevant to a landscaping crew (marine/coastal/surf, or anything we don't
+ * map). Matching is keyword-based against the event name plus any tags, and is
+ * intentionally tolerant — provider wording varies.
+ *
+ * Order matters: crew-irrelevant alerts are filtered first, then the most
+ * specific categories. "Wind Chill" must classify as winter, not wind, so the
+ * winter check runs before the wind check.
+ */
+function classifyAlert(event: string, tags: string[]): AlertCategory | null {
+  const hay = `${event} ${tags.join(' ')}`.toLowerCase();
+
+  // Crew-irrelevant — on the water or the shore. Ignore outright.
+  if (/marine|coastal|rip current|small craft|beach|surf|tsunami|seiche|lakeshore/.test(hay)) {
+    return null;
+  }
+  if (/thunderstorm|tornado|flash flood|flood|heavy rain/.test(hay)) return 'severe';
+  if (/heat/.test(hay)) return 'heat';
+  if (/winter|ice|icy|freez|frost|snow|blizzard|cold|chill|sleet/.test(hay)) return 'winter';
+  if (/wind|gale|dust/.test(hay)) return 'wind';
+  if (/air quality|smoke/.test(hay)) return 'air';
+  return null;
+}
+
+/**
+ * Build a suggestion from the highest-priority active, crew-relevant alert, or
+ * null when there are no alerts or none are relevant (→ caller falls back to the
+ * threshold rules).
+ */
+function suggestFromAlerts(alerts: WeatherAlert[] | undefined): WeatherSuggestion | null {
+  if (!alerts || alerts.length === 0) return null;
+
+  let best: { category: AlertCategory; alert: WeatherAlert } | null = null;
+  for (const alert of alerts) {
+    const category = classifyAlert(alert.event, alert.tags ?? []);
+    if (!category) continue;
+    if (!best || ALERT_PRIORITY.indexOf(category) < ALERT_PRIORITY.indexOf(best.category)) {
+      best = { category, alert };
+    }
+  }
+  if (!best) return null;
+
+  const guidance = ALERT_GUIDANCE[best.category];
+  const untilClause = best.alert.endLabel ? ` until ${best.alert.endLabel}` : '';
+  return {
+    title: `${best.alert.event}${untilClause} — ${guidance.titleSuffix}`,
+    body: guidance.body(best.alert.event, untilClause),
+    audience: 'all_crew',
+  };
+}
+
 function rainBody(input: WeatherSuggestionInput): string {
   const pct = Math.round(input.morningPrecipProb * 100);
   const lead = input.isRainingNow
@@ -91,8 +218,12 @@ function rainBody(input: WeatherSuggestionInput): string {
  * Map normalized weather to a suggested announcement, or null when nothing
  * stands out.
  *
- * Rules are evaluated in priority order — the most schedule-disruptive
- * condition wins when several apply at once:
+ * An active, crew-relevant official alert (NWS, via One Call's `alerts[]`) is
+ * authoritative and wins over everything — it reflects conditions the raw
+ * thresholds can miss (e.g. a Wind Advisory issued below our wind cutoff). When
+ * no such alert applies, the v1 threshold rules run unchanged, in priority order
+ * (most schedule-disruptive first):
+ *   0. Active official alert (if any, crew-relevant)
  *   1. Rain (now, or a high morning precip chance)
  *   2. Heat (feels-like)
  *   3. High wind (sustained or gusting)
@@ -104,6 +235,10 @@ export function suggestAnnouncement(
   thresholds: WeatherSuggestionThresholds = WEATHER_SUGGESTION_THRESHOLDS,
 ): WeatherSuggestion | null {
   const t = thresholds;
+
+  // 0. Official alert — authoritative; beats the raw thresholds below.
+  const alertSuggestion = suggestFromAlerts(input.alerts);
+  if (alertSuggestion) return alertSuggestion;
 
   // 1. Rain — now, or a high chance through the morning. Most disruptive.
   if (input.isRainingNow || input.morningPrecipProb >= t.morningPrecipProb) {

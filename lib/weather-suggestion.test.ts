@@ -114,6 +114,89 @@ describe('suggestAnnouncement — frost / cold', () => {
   });
 });
 
+describe('suggestAnnouncement — official alerts', () => {
+  it('builds an alert-based suggestion from event + end time, beating the thresholds', () => {
+    // The Pasco case: a Wind Advisory active even though sustained wind sits
+    // BELOW the v1 cutoff (windMph 12 < 25), which v1 alone would call "clear".
+    const s = suggestAnnouncement(
+      input({
+        windMph: 12,
+        gustMph: 20,
+        alerts: [{ event: 'Wind Advisory', endLabel: '11 PM', tags: ['Wind'] }],
+      }),
+    );
+    expect(s?.title).toBe('Wind Advisory until 11 PM — hold spraying/blowing, secure equipment');
+    expect(s?.body).toMatch(/Wind Advisory is in effect until 11 PM/);
+    expect(s?.body).toMatch(/spraying and blowing/i);
+    expect(s?.audience).toBe('all_crew');
+  });
+
+  it('omits the "until …" clause when no end time is known', () => {
+    const s = suggestAnnouncement(
+      input({ alerts: [{ event: 'Excessive Heat Warning', endLabel: null }] }),
+    );
+    expect(s?.title).toBe('Excessive Heat Warning — hydrate, shade breaks, start early');
+    expect(s?.body).not.toMatch(/until/);
+  });
+
+  it('maps a winter/ice alert to a delayed-start, watch-for-ice suggestion', () => {
+    const s = suggestAnnouncement(
+      input({ alerts: [{ event: 'Winter Weather Advisory', endLabel: 'Tue 9 AM' }] }),
+    );
+    expect(s?.title).toBe('Winter Weather Advisory until Tue 9 AM — delayed start, watch for ice');
+    expect(s?.body).toMatch(/watch.*for ice/i);
+  });
+
+  it('classifies a Wind Chill alert as winter, not wind', () => {
+    const s = suggestAnnouncement(input({ alerts: [{ event: 'Wind Chill Advisory', endLabel: '8 AM' }] }));
+    expect(s?.title).toMatch(/delayed start, watch for ice$/);
+  });
+
+  it('maps a flood / thunderstorm alert to a rain delay', () => {
+    const s = suggestAnnouncement(input({ alerts: [{ event: 'Flood Warning', endLabel: '3 PM' }] }));
+    expect(s?.title).toBe('Flood Warning until 3 PM — rain delay');
+    expect(s?.body).toMatch(/Hold the start/);
+  });
+
+  it('ignores crew-irrelevant alerts and falls back to the thresholds', () => {
+    // A marine alert is irrelevant; with otherwise-clear inputs we expect null
+    // (v1 behavior), NOT an alert-based suggestion.
+    const s = suggestAnnouncement(input({ alerts: [{ event: 'Small Craft Advisory', endLabel: '6 PM' }] }));
+    expect(s).toBeNull();
+  });
+
+  it('ignores an irrelevant alert but still honors the underlying thresholds', () => {
+    // Irrelevant alert + genuinely hot conditions → the heat threshold rule fires.
+    const s = suggestAnnouncement(
+      input({ feelsLikeF: 98, alerts: [{ event: 'Coastal Flood Watch', endLabel: '6 PM' }] }),
+    );
+    expect(s?.title).toMatch(/^Heat advisory/);
+  });
+
+  it('picks the most disruptive alert when several are active', () => {
+    const s = suggestAnnouncement(
+      input({
+        alerts: [
+          { event: 'Wind Advisory', endLabel: '5 PM', tags: ['Wind'] },
+          { event: 'Severe Thunderstorm Warning', endLabel: '4 PM', tags: ['Thunderstorm'] },
+        ],
+      }),
+    );
+    expect(s?.title).toMatch(/^Severe Thunderstorm Warning until 4 PM — rain delay/);
+  });
+
+  it('leaves v1 behavior unchanged when no alerts are present', () => {
+    // undefined alerts → exactly the old clear-day result.
+    expect(suggestAnnouncement(input({ alerts: undefined }))).toBeNull();
+    // empty alerts array → same.
+    expect(suggestAnnouncement(input({ alerts: [] }))).toBeNull();
+    // an active wind threshold with no alerts still produces the v1 wind copy.
+    expect(suggestAnnouncement(input({ windMph: 27 }))?.title).toBe(
+      'High winds today — hold spraying/blowing, secure equipment',
+    );
+  });
+});
+
 describe('suggestAnnouncement — custom thresholds', () => {
   it('honors overridden cutoffs', () => {
     const tropical = { ...WEATHER_SUGGESTION_THRESHOLDS, heatFeelsLikeF: 105 };
