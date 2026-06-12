@@ -90,9 +90,28 @@ export default async function TodayPage() {
       }));
   }
 
+  // A worker with no crew membership has no day to show — render a clear
+  // "talk to your dispatcher" state rather than querying. (Skipping the crew
+  // filter here used to return EVERY company job for the date.)
+  if (crewIds.length === 0) {
+    return (
+      <div className="space-y-5 pb-8">
+        <CrewStatusBar todayLabel={formatDate(today)} />
+        <section className="rounded-2xl border bg-card px-5 py-14 text-center">
+          <Truck className="h-10 w-10 mx-auto text-muted-foreground" />
+          <h2 className="text-lg font-bold mt-3">You&apos;re not assigned to a crew yet</h2>
+          <p className="text-sm text-muted-foreground mt-1.5">
+            Contact your dispatcher to get added to a crew — your jobs will
+            show up here as soon as you&apos;re on one.
+          </p>
+        </section>
+      </div>
+    );
+  }
+
   // Jobs for today, scoped to the worker's crews. Drive order if present,
   // else fall back to scheduled_start.
-  let jobsQuery = supabase
+  const { data: jobs } = await supabase
     .from('jobs')
     .select(`
       *,
@@ -104,14 +123,9 @@ export default async function TodayPage() {
     .eq('company_id', profile.company_id)
     .eq('scheduled_date', today)
     .not('status', 'in', '("cancelled")')
+    .in('crew_id', crewIds)
     .order('route_order', { ascending: true, nullsFirst: false })
     .order('scheduled_start', { ascending: true, nullsFirst: false });
-
-  if (crewIds.length > 0) {
-    jobsQuery = jobsQuery.in('crew_id', crewIds);
-  }
-
-  const { data: jobs } = await jobsQuery;
   const todayJobs = (jobs ?? []) as JobWithClient[];
 
   // Shift state from clock_events (migration 038 expanded the check).
