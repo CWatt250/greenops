@@ -321,6 +321,35 @@ export default function CompleteJobPage() {
     return <p className="text-sm text-muted-foreground text-center py-16">Job not found.</p>;
   }
 
+  // Already completed (direct URL — the job page hides its Complete button).
+  // The complete_job RPC rejects a re-submit too (migration 046); this state
+  // keeps the worker from filling the whole form before finding that out.
+  if (job.status === 'complete' && !done) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-5 py-20 text-center">
+        <div
+          className="flex h-16 w-16 items-center justify-center rounded-full"
+          style={{ backgroundColor: 'var(--color-brand-green-raw)' }}
+        >
+          <CheckCircle2 className="h-8 w-8 text-white" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold">This job is already complete</h1>
+          <p className="text-sm text-muted-foreground mt-2">
+            {job.client?.name ?? job.title} was marked complete
+            {job.actual_end ? ` at ${new Date(job.actual_end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}.
+          </p>
+        </div>
+        <Link
+          href="/today"
+          className="rounded-lg border bg-card px-5 py-3 text-sm font-semibold"
+        >
+          Back to Today
+        </Link>
+      </div>
+    );
+  }
+
   const grandTotal = lineItems.reduce((s, li) => s + (li.total ?? 0), 0);
 
   // Success state — brief flash before the auto-forward kicks in (1.2s).
