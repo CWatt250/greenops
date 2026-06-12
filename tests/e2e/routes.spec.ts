@@ -49,19 +49,24 @@ function dateLabel(dateStr: string): string {
 async function setRouteDate(page: import('@playwright/test').Page, dateStr: string) {
   const dateInput = page.locator('input[type="date"]');
   await expect(dateInput).toHaveValue(/\d{4}-\d{2}-\d{2}/); // wait for hydration
-  await dateInput.evaluate((el, val) => {
-    const setter = Object.getOwnPropertyDescriptor(
-      window.HTMLInputElement.prototype,
-      'value',
-    )!.set!;
-    setter.call(el, val);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-  }, dateStr);
-  await expect(dateInput).toHaveValue(dateStr);
-  await expect(
-    page.getByRole('button', { name: /auto-load all jobs scheduled/i }),
-  ).toContainText(dateLabel(dateStr));
+  // Re-dispatch until the auto-load label (derived from React state) reflects
+  // the date: a dispatch that lands before React attaches the controlled
+  // onChange is silently lost — the cold-compile flake this retries away.
+  await expect(async () => {
+    await dateInput.evaluate((el, val) => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        'value',
+      )!.set!;
+      setter.call(el, val);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }, dateStr);
+    await expect(dateInput).toHaveValue(dateStr, { timeout: 1_000 });
+    await expect(
+      page.getByRole('button', { name: /auto-load all jobs scheduled/i }),
+    ).toContainText(dateLabel(dateStr), { timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
 }
 
 /**
@@ -283,6 +288,16 @@ test('ungeocodable stop shows a loud banner and blocks Optimize', async ({ page 
   test.setTimeout(60_000);
   const stamp = Date.now();
   const clientName = `E2E No Address ${stamp}`;
+  // An isolated date no other spec auto-loads: the seed jobs live on
+  // tomorrow, and this fixture must never appear in the parallel multi-crew
+  // test's stop list (it would — correctly — disable that test's Optimize).
+  const isolatedDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 3);
+    const m = `${d.getMonth() + 1}`.padStart(2, '0');
+    const day = `${d.getDate()}`.padStart(2, '0');
+    return `${d.getFullYear()}-${m}-${day}`;
+  })();
 
   // A client with NO coordinates and an EMPTY address: the builder's
   // auto-load skips geocoding entirely (empty string is falsy), so the stop
@@ -300,7 +315,7 @@ test('ungeocodable stop shows a loud banner and blocks Optimize', async ({ page 
       client_id: client!.id,
       title: `E2E Ungeocodable ${stamp}`,
       status: 'unscheduled',
-      scheduled_date: tomorrowStr(),
+      scheduled_date: isolatedDate,
     })
     .select('id')
     .single();
@@ -308,7 +323,7 @@ test('ungeocodable stop shows a loud banner and blocks Optimize', async ({ page 
 
   try {
     await page.goto('/dashboard/routes/new');
-    await setRouteDate(page, tomorrowStr());
+    await setRouteDate(page, isolatedDate);
     await page.getByRole('button', { name: /select all crews/i }).click();
     await page.getByRole('button', { name: /auto-load all jobs scheduled/i }).click();
 

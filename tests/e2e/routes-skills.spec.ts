@@ -58,21 +58,27 @@ function dateLabel(dateStr: string): string {
   });
 }
 
-async function setRouteDate(page: Page, dateStr: string) {
+async function setRouteDate(page: import('@playwright/test').Page, dateStr: string) {
   const dateInput = page.locator('input[type="date"]');
-  await expect(dateInput).toHaveValue(/\d{4}-\d{2}-\d{2}/);
-  await dateInput.evaluate((el, val) => {
-    const setter = Object.getOwnPropertyDescriptor(
-      window.HTMLInputElement.prototype, 'value',
-    )!.set!;
-    setter.call(el, val);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-  }, dateStr);
-  await expect(dateInput).toHaveValue(dateStr);
-  await expect(
-    page.getByRole('button', { name: /auto-load all jobs scheduled/i }),
-  ).toContainText(dateLabel(dateStr));
+  await expect(dateInput).toHaveValue(/\d{4}-\d{2}-\d{2}/); // wait for hydration
+  // Re-dispatch until the auto-load label (derived from React state) reflects
+  // the date: a dispatch that lands before React attaches the controlled
+  // onChange is silently lost — the cold-compile flake this retries away.
+  await expect(async () => {
+    await dateInput.evaluate((el, val) => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        'value',
+      )!.set!;
+      setter.call(el, val);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }, dateStr);
+    await expect(dateInput).toHaveValue(dateStr, { timeout: 1_000 });
+    await expect(
+      page.getByRole('button', { name: /auto-load all jobs scheduled/i }),
+    ).toContainText(dateLabel(dateStr), { timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
 }
 
 /**
