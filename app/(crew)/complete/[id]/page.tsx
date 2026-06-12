@@ -11,7 +11,8 @@ import { formatCurrency } from '@/lib/utils';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { SignaturePad, type SigCanvasType } from '@/components/shared/signature-pad';
 import {
-  ChevronLeft, PenLine, Trash2, Loader2, CheckCircle2, Camera, X, Image as ImageIcon,
+  ChevronLeft, PenLine, Trash2, Loader2, CheckCircle2, Camera, X, RotateCcw,
+  Image as ImageIcon,
 } from 'lucide-react';
 import type { Job, JobLineItem } from '@/types';
 
@@ -92,6 +93,44 @@ export default function CompleteJobPage() {
   }
 
   // ── Photos ─────────────────────────────────────────────────────────────
+  /** Upload one pending photo to storage, recording success/failure on its
+   *  row. Shared by the initial pick and tap-to-retry. */
+  async function uploadOne(p: PendingPhoto) {
+    try {
+      const ext = (p.file.name.split('.').pop() ?? 'jpg').toLowerCase();
+      const path = `${companyId}/${id}/${Date.now()}-${p.id}.${ext}`;
+      const { error: uploadErr } = await supabase
+        .storage
+        .from('job-photos')
+        .upload(path, p.file, { contentType: p.file.type, upsert: false });
+      if (uploadErr) throw uploadErr;
+
+      setPhotos((prev) =>
+        prev.map((x) =>
+          x.id === p.id ? { ...x, uploadedPath: path, uploading: false, error: undefined } : x,
+        ),
+      );
+    } catch (err) {
+      setPhotos((prev) =>
+        prev.map((x) =>
+          x.id === p.id
+            ? { ...x, uploading: false, error: (err as Error).message ?? 'Upload failed' }
+            : x,
+        ),
+      );
+    }
+  }
+
+  /** Tap-to-retry on a failed tile (the error copy promises this). */
+  async function retryPhoto(photoId: string) {
+    const photo = photos.find((p) => p.id === photoId);
+    if (!photo || photo.uploading) return;
+    setPhotos((prev) =>
+      prev.map((x) => (x.id === photoId ? { ...x, uploading: true, error: undefined } : x)),
+    );
+    await uploadOne(photo);
+  }
+
   async function handlePhotoPick(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
@@ -111,29 +150,7 @@ export default function CompleteJobPage() {
     // Sequential upload — keeps the UI responsive on slow networks and
     // avoids saturating the worker's mobile data plan.
     for (const p of fresh) {
-      try {
-        const ext = (p.file.name.split('.').pop() ?? 'jpg').toLowerCase();
-        const path = `${companyId}/${id}/${Date.now()}-${p.id}.${ext}`;
-        const { error: uploadErr } = await supabase
-          .storage
-          .from('job-photos')
-          .upload(path, p.file, { contentType: p.file.type, upsert: false });
-        if (uploadErr) throw uploadErr;
-
-        setPhotos((prev) =>
-          prev.map((x) =>
-            x.id === p.id ? { ...x, uploadedPath: path, uploading: false } : x,
-          ),
-        );
-      } catch (err) {
-        setPhotos((prev) =>
-          prev.map((x) =>
-            x.id === p.id
-              ? { ...x, uploading: false, error: (err as Error).message ?? 'Upload failed' }
-              : x,
-          ),
-        );
-      }
+      await uploadOne(p);
     }
   }
 
@@ -233,6 +250,27 @@ export default function CompleteJobPage() {
     });
 
     if (rpcErr) {
+      // The RPC transaction rolled back, so no job_photos rows reference the
+      // objects we just uploaded — clean them up (best-effort) instead of
+      // orphaning them in the bucket, and flip the tiles to tap-to-retry so
+      // a resubmit re-uploads fresh copies.
+      const uploadedPaths = photos
+        .map((p) => p.uploadedPath)
+        .filter((path): path is string => !!path);
+      if (uploadedPaths.length > 0) {
+        try {
+          await supabase.storage.from('job-photos').remove(uploadedPaths);
+        } catch {
+          // Orphans are cosmetic; the error the worker needs to see is rpcErr.
+        }
+        setPhotos((prev) =>
+          prev.map((p) =>
+            p.uploadedPath
+              ? { ...p, uploadedPath: undefined, error: 'Upload rolled back — tap to retry' }
+              : p,
+          ),
+        );
+      }
       setError(rpcErr.message);
       setSubmitting(false);
       return;
@@ -497,9 +535,15 @@ export default function CompleteJobPage() {
                   </div>
                 )}
                 {p.error && (
-                  <div className="absolute inset-0 bg-rose-600/80 flex items-center justify-center text-[10px] text-white text-center px-1">
-                    Failed
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => retryPhoto(p.id)}
+                    className="absolute inset-0 bg-rose-600/80 flex flex-col items-center justify-center gap-0.5 text-[10px] text-white text-center px-1"
+                    aria-label="Retry photo upload"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Failed — tap to retry
+                  </button>
                 )}
                 <button
                   type="button"
