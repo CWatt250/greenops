@@ -46,11 +46,17 @@ test('owner broadcasts from the top-bar megaphone and the crew recipient sees it
   const sheet = page.getByRole('dialog');
   await sheet.locator('#ann-title').fill(title);
   await sheet.locator('#ann-body').fill(body);
+  // Wait for the async recipient count to render BEFORE clicking: its arrival
+  // re-renders the sheet, and a click dispatched across that re-render lands
+  // on a detached button node — a silent no-op (the audit's flake).
+  await expect(sheet.getByText(/will reach \d+ crew member/i)).toBeVisible({ timeout: 15_000 });
   // Audience defaults to "All crew"; send.
   await sheet.getByRole('button', { name: /send announcement/i }).click();
 
-  // 3. Success toast confirms delivery to crew member(s).
-  await expect(page.getByText(/announcement sent to .* crew member/i)).toBeVisible({ timeout: 15_000 });
+  // 3. Success toast confirms delivery to crew member(s). Generous timeout:
+  //    under a fully-parallel local run the dev server is compiling several
+  //    routes at once and the send round-trip can exceed 15s (audit #21).
+  await expect(page.getByText(/announcement sent to .* crew member/i)).toBeVisible({ timeout: 30_000 });
 
   // 4. A notification row was created against the seeded crew recipient.
   await expect(async () => {

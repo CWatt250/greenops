@@ -15,6 +15,12 @@ import { loadEnvTest } from './helpers/env';
  * local Supabase the suite uses, then torn down in afterAll.
  */
 
+// SERIAL: both tests mutate the same John Smith job and certification rows.
+// Under fullyParallel they raced each other's setupSkillData (the 2026-06
+// audit found duplicate services + permanently-failing runs from exactly
+// that), so they must run one at a time.
+test.describe.configure({ mode: 'serial' });
+
 const env = loadEnvTest();
 const admin = createClient(
   env.NEXT_PUBLIC_SUPABASE_URL,
@@ -22,8 +28,19 @@ const admin = createClient(
   { auth: { persistSession: false, autoRefreshToken: false } },
 );
 const COMPANY = env.E2E_COMPANY_ID;
-const RESTRICTED_SERVICE = 'E2E Fertilizing (restricted)';
+// Base name + unique-per-run suffix: a parallel sibling run (or residue from
+// a crashed one) can never collide with this run's service, and `.maybeSingle()`
+// lookups can never hit duplicates.
+const RESTRICTED_SERVICE_BASE = 'E2E Fertilizing (restricted)';
+const RESTRICTED_SERVICE = `${RESTRICTED_SERVICE_BASE} ${Date.now()}`;
 const RESTRICTED_CLIENT = 'John Smith'; // a seed (020) client with a tomorrow job
+
+/** Throw loudly on any Supabase error — a silently-failed setup write turns
+ *  into a baffling UI assertion failure half a spec later. */
+function must<T>(res: { data: T; error: { message: string } | null }, what: string): T {
+  if (res.error) throw new Error(`routes-skills setup: ${what} failed — ${res.error.message}`);
+  return res.data;
+}
 
 function tomorrowStr(): string {
   const d = new Date();
@@ -100,54 +117,90 @@ async function fulfillSkillAwareVroom(route: Route): Promise<void> {
   });
 }
 
-/** Ensure the restricted service + the John Smith job requirement exist, and set
- *  Crew 1's certification per the test. Idempotent. */
-async function setupSkillData({ certifyCrew1 }: { certifyCrew1: boolean }): Promise<void> {
-  const existing = await admin.from('services').select('id')
-    .eq('company_id', COMPANY).eq('name', RESTRICTED_SERVICE).maybeSingle();
-  let serviceId = existing.data?.id as string | undefined;
-  if (!serviceId) {
-    const ins = await admin.from('services').insert({
-      company_id: COMPANY, name: RESTRICTED_SERVICE, category: 'fertilization',
-      unit: 'per_visit', base_price: 50, restricted: true, is_active: true,
-    }).select('id').single();
-    serviceId = ins.data!.id as string;
-  } else {
-    await admin.from('services').update({ restricted: true, is_active: true }).eq('id', serviceId);
-  }
+/** This run's restricted service id — created once, torn down by exact id. */
+let runServiceId: string | undefined;
 
-  const crewsRes = await admin.from('crews').select('id, name').eq('company_id', COMPANY);
-  const crew1 = (crewsRes.data ?? []).find((c) => c.name === 'Crew 1');
-
-  // Reset this service's certifications, then certify Crew 1 if requested.
-  await admin.from('crew_skills').delete().eq('service_id', serviceId);
-  if (certifyCrew1 && crew1) {
-    await admin.from('crew_skills').insert({ crew_id: crew1.id, service_id: serviceId });
-  }
-
-  // Attach the restricted service to the John Smith job scheduled tomorrow.
-  const client = await admin.from('clients').select('id')
-    .eq('company_id', COMPANY).eq('name', RESTRICTED_CLIENT).maybeSingle();
-  const job = await admin.from('jobs').select('id')
-    .eq('company_id', COMPANY).eq('client_id', client.data?.id ?? '')
-    .eq('scheduled_date', tomorrowStr()).limit(1).maybeSingle();
-  const jobId = job.data?.id;
-  if (jobId) {
-    await admin.from('job_services').delete().eq('job_id', jobId).eq('service_id', serviceId);
-    await admin.from('job_services').insert({
-      job_id: jobId, service_id: serviceId, quantity: 1, duration_minutes: 30, price: 50,
-    });
+/** Remove fixture residue this spec FAMILY owns: any restricted service whose
+ *  name carries our base prefix (this run's or a crashed prior run's), plus
+ *  its job_services/crew_skills rows. Without this, a stale restricted
+ *  service left on the John Smith job locks it for every later run. */
+async function scrubSpecResidue(): Promise<void> {
+  const stale = must(
+    await admin.from('services').select('id')
+      .eq('company_id', COMPANY).like('name', `${RESTRICTED_SERVICE_BASE}%`),
+    'stale-service lookup',
+  ) as Array<{ id: string }>;
+  for (const s of stale) {
+    must(await admin.from('job_services').delete().eq('service_id', s.id), 'stale job_services delete');
+    must(await admin.from('crew_skills').delete().eq('service_id', s.id), 'stale crew_skills delete');
+    must(await admin.from('services').delete().eq('id', s.id), 'stale service delete');
   }
 }
 
+/** Ensure the restricted service + the John Smith job requirement exist, and set
+ *  Crew 1's certification per the test. Every write is error-checked. */
+async function setupSkillData({ certifyCrew1 }: { certifyCrew1: boolean }): Promise<void> {
+  if (!runServiceId) {
+    await scrubSpecResidue();
+    const ins = must(
+      await admin.from('services').insert({
+        company_id: COMPANY, name: RESTRICTED_SERVICE, category: 'fertilization',
+        unit: 'per_visit', base_price: 50, restricted: true, is_active: true,
+      }).select('id').single(),
+      'restricted-service insert',
+    ) as { id: string };
+    runServiceId = ins.id;
+  }
+  const serviceId = runServiceId;
+
+  const crews = must(
+    await admin.from('crews').select('id, name').eq('company_id', COMPANY),
+    'crews lookup',
+  ) as Array<{ id: string; name: string }>;
+  const crew1 = crews.find((c) => c.name === 'Crew 1');
+  if (!crew1) throw new Error('routes-skills setup: seeded "Crew 1" not found');
+
+  // Reset this service's certifications, then certify Crew 1 if requested.
+  must(await admin.from('crew_skills').delete().eq('service_id', serviceId), 'crew_skills reset');
+  if (certifyCrew1) {
+    must(
+      await admin.from('crew_skills').insert({ crew_id: crew1.id, service_id: serviceId }),
+      'crew_skills insert',
+    );
+  }
+
+  // Attach the restricted service to the John Smith job scheduled tomorrow.
+  const client = must(
+    await admin.from('clients').select('id')
+      .eq('company_id', COMPANY).eq('name', RESTRICTED_CLIENT).limit(1).maybeSingle(),
+    'client lookup',
+  ) as { id: string } | null;
+  if (!client) throw new Error(`routes-skills setup: seeded client "${RESTRICTED_CLIENT}" not found`);
+  const job = must(
+    await admin.from('jobs').select('id')
+      .eq('company_id', COMPANY).eq('client_id', client.id)
+      .eq('scheduled_date', tomorrowStr()).limit(1).maybeSingle(),
+    'job lookup',
+  ) as { id: string } | null;
+  if (!job) throw new Error('routes-skills setup: seeded John Smith tomorrow-job not found');
+  must(
+    await admin.from('job_services').delete().eq('job_id', job.id).eq('service_id', serviceId),
+    'job_services reset',
+  );
+  must(
+    await admin.from('job_services').insert({
+      job_id: job.id, service_id: serviceId, quantity: 1, duration_minutes: 30, price: 50,
+    }),
+    'job_services insert',
+  );
+}
+
 test.afterAll(async () => {
-  const existing = await admin.from('services').select('id')
-    .eq('company_id', COMPANY).eq('name', RESTRICTED_SERVICE).maybeSingle();
-  const serviceId = existing.data?.id;
-  if (!serviceId) return;
-  await admin.from('job_services').delete().eq('service_id', serviceId);
-  await admin.from('crew_skills').delete().eq('service_id', serviceId);
-  await admin.from('services').delete().eq('id', serviceId);
+  // Tear down by the exact id we created (never a name lookup that can miss).
+  if (!runServiceId) return;
+  must(await admin.from('job_services').delete().eq('service_id', runServiceId), 'teardown job_services');
+  must(await admin.from('crew_skills').delete().eq('service_id', runServiceId), 'teardown crew_skills');
+  must(await admin.from('services').delete().eq('id', runServiceId), 'teardown service');
 });
 
 /** Select both crews, auto-load tomorrow's jobs, wait for Optimize to enable. */
