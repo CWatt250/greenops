@@ -1,3 +1,5 @@
+import { localDateStr } from '@/lib/dates';
+
 export interface VroomStop {
   id: number;
   location: [number, number]; // [lng, lat]
@@ -292,7 +294,7 @@ function dayWindowEpochSeconds(
   // construct with no timezone so the user's local zone applies — VROOM
   // doesn't care about the absolute calendar, only the relative window
   // length. Using local epoch values keeps log-debugging human-readable.
-  const date = routeDate ?? new Date().toISOString().slice(0, 10);
+  const date = routeDate ?? localDateStr();
   const startMs = new Date(`${date}T${String(startHour).padStart(2, '0')}:00:00`).getTime();
   const endMs = new Date(`${date}T${String(endHour).padStart(2, '0')}:00:00`).getTime();
   return [Math.floor(startMs / 1000), Math.floor(endMs / 1000)];

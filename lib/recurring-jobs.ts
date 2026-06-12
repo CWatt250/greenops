@@ -50,6 +50,9 @@ export function addMonthsUTC(d: Date, n: number): Date {
   return result;
 }
 
+// This module's Dates are UTC-anchored date-only values (fromDateOnly parses
+// `T00:00:00Z`, month math uses addMonthsUTC), so the UTC slice round-trips
+// exactly on any machine — do NOT convert to localDateStr().
 function toDateOnly(d: Date): string {
   return d.toISOString().slice(0, 10);
 }

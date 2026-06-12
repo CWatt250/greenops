@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { localDateStr } from '@/lib/dates';
 import {
   DndContext,
   DragOverlay,
@@ -32,12 +33,8 @@ interface ScheduleDayGridProps {
   initialJobs: Job[];
 }
 
-function toDateStr(d: Date): string {
-  return d.toISOString().split('T')[0];
-}
-
 function isSameDate(a: Date, b: Date): boolean {
-  return toDateStr(a) === toDateStr(b);
+  return localDateStr(a) === localDateStr(b);
 }
 
 function parseHHMM(value: string | null | undefined): number | null {
@@ -66,7 +63,7 @@ function CrewColumn({
   jobs: Job[];
   date: Date;
 }) {
-  const dropId = `day-col::${laneId}::${toDateStr(date)}`;
+  const dropId = `day-col::${laneId}::${localDateStr(date)}`;
   const { isOver, setNodeRef } = useDroppable({ id: dropId });
 
   return (
@@ -173,7 +170,7 @@ export function ScheduleDayGrid({ date, crews, initialJobs }: ScheduleDayGridPro
     const [, toLaneId, dateStr] = overId.split('::');
     const found = findJob(active.id as string);
     if (!found) return;
-    if (found.fromCrew === toLaneId && toDateStr(date) === dateStr) return;
+    if (found.fromCrew === toLaneId && localDateStr(date) === dateStr) return;
 
     const { job, fromCrew } = found;
     const isUnassigned = toLaneId === UNASSIGNED_LANE_ID;

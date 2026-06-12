@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { localDateStr } from '@/lib/dates';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet';
@@ -191,7 +192,7 @@ export function SendAppToWorker({ trigger, open: controlledOpen, onOpenChange }:
           phone: newPhone.trim() || null,
           crew_id: newCrewId,
           hourly_rate: newHourly ? Number(newHourly) : null,
-          hire_date: new Date().toISOString().slice(0, 10),
+          hire_date: localDateStr(),
         }),
       });
       const json = await res.json();

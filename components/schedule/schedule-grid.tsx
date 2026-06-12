@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { localDateStr } from '@/lib/dates';
 import {
   DndContext,
   DragOverlay,
@@ -28,12 +29,8 @@ function getWeekDates(weekStart: Date): Date[] {
   });
 }
 
-function toDateStr(date: Date): string {
-  return date.toISOString().split('T')[0];
-}
-
 function isToday(date: Date): boolean {
-  return toDateStr(date) === toDateStr(new Date());
+  return localDateStr(date) === localDateStr(new Date());
 }
 
 // Sentinel used in cell keys for the "Unassigned" lane (jobs with a date
@@ -338,7 +335,7 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
                 </span>
               </div>
               {weekDates.map((date, dayIdx) => {
-                const dateStr = toDateStr(date);
+                const dateStr = localDateStr(date);
                 const key = cellKey(null, dateStr);
                 const dayJobs = jobMap.get(key) ?? [];
                 return (
@@ -374,7 +371,7 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
 
                 {/* Day cells */}
                 {weekDates.map((date, dayIdx) => {
-                  const dateStr = toDateStr(date);
+                  const dateStr = localDateStr(date);
                   const key = cellKey(crew.id, dateStr);
                   const dayJobs = jobMap.get(key) ?? [];
 

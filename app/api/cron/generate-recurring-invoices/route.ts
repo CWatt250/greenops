@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { localDateStr } from '@/lib/dates';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 
 /**
@@ -91,7 +92,7 @@ async function run(req: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY,
   );
 
-  const today = todayUTC().toISOString().slice(0, 10);
+  const today = localDateStr();
 
   const { data: dueRaw, error: dueErr } = await admin
     .from('billing_schedules')
@@ -157,9 +158,9 @@ async function run(req: Request) {
       const { data: invNumRaw } = await admin
         .rpc('next_invoice_number', { p_company_id: s.company_id });
       const invoiceNumber = (invNumRaw as string) ?? `INV-${Date.now()}`;
-      const issued = new Date().toISOString().slice(0, 10);
-      const due = new Date(); due.setUTCDate(due.getUTCDate() + 30);
-      const dueDate = due.toISOString().slice(0, 10);
+      const issued = localDateStr();
+      const due = new Date(); due.setDate(due.getDate() + 30);
+      const dueDate = localDateStr(due);
 
       const { data: invoice, error: invErr } = await admin
         .from('invoices')
@@ -210,6 +211,9 @@ async function run(req: Request) {
       await admin
         .from('billing_schedules')
         .update({
+          // nextDate is UTC-anchored (advanceByRRule / addMonthsUTC build it
+          // via Date.UTC), so the UTC slice recovers the exact date-only
+          // value on any machine — do NOT convert to localDateStr().
           next_invoice_date: nextDate.toISOString().slice(0, 10),
           last_generated_at: new Date().toISOString(),
         })

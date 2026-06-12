@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { localDateStr } from '@/lib/dates';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { Loader2, ClipboardList, MessageCircle, Camera, Receipt, ChevronRight } from 'lucide-react';
@@ -92,7 +93,7 @@ export default function PortalHomePage() {
   // Live-refreshable data: next job, unpaid invoices, recent requests + complaints.
   const loadHomeData = useCallback(async () => {
     if (!clientId) return;
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStr();
     const [jobRes, invRes, reqRes, complRes] = await Promise.all([
       supabase
         .from('jobs')

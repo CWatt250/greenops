@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { localDateStr } from '@/lib/dates';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { ShapeList } from './shape-list';
@@ -341,7 +342,7 @@ export function MeasureView({
       const blob = await pdf(doc as any).toBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      const ts = new Date().toISOString().split('T')[0];
+      const ts = localDateStr();
       const slug = (clientName ?? addressInfo?.service_address ?? 'property')
         .replace(/[^a-z0-9-]+/gi, '_').slice(0, 40);
       a.href = url;

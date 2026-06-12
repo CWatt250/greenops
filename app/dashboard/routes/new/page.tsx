@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { localDateStr } from '@/lib/dates';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -83,10 +84,6 @@ type JobWithClient = {
   }> | null;
 };
 
-function toDateStr(d: Date) {
-  return d.toISOString().split('T')[0];
-}
-
 /** Human label for a stop, used in the unroutable banner. */
 function stopLabel(s: StopDraft | undefined | null): string {
   if (!s) return 'Unknown stop';
@@ -126,7 +123,7 @@ export default function RouteBuilderPage() {
   // Selectors
   const [crews, setCrews] = useState<Crew[]>([]);
   const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
-  const [selectedDate, setSelectedDate] = useState(toDateStr(new Date()));
+  const [selectedDate, setSelectedDate] = useState(localDateStr(new Date()));
   const [routeTitle, setRouteTitle] = useState('');
 
   // Stops

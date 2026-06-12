@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { localDateStr } from '@/lib/dates';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
@@ -20,10 +21,6 @@ type RouteWithCrew = Route & {
   stops: RouteStop[];
 };
 
-function toDateStr(d: Date) {
-  return d.toISOString().split('T')[0];
-}
-
 function addDays(d: Date, n: number) {
   const r = new Date(d);
   r.setDate(r.getDate() + n);
@@ -32,9 +29,9 @@ function addDays(d: Date, n: number) {
 
 function formatDateLabel(dateStr: string) {
   const d = new Date(`${dateStr}T12:00:00`);
-  const today = toDateStr(new Date());
+  const today = localDateStr(new Date());
   if (dateStr === today) return 'Today';
-  const tomorrow = toDateStr(addDays(new Date(), 1));
+  const tomorrow = localDateStr(addDays(new Date(), 1));
   if (dateStr === tomorrow) return 'Tomorrow';
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 }
@@ -54,7 +51,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function RoutesPage() {
   const supabase = createClient();
-  const [selectedDate, setSelectedDate] = useState(() => toDateStr(new Date()));
+  const [selectedDate, setSelectedDate] = useState(() => localDateStr(new Date()));
   const [routes, setRoutes] = useState<RouteWithCrew[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -142,13 +139,13 @@ export default function RoutesPage() {
 
       {/* Date navigation */}
       <div className="flex items-center gap-2 mb-5">
-        <Button variant="outline" size="icon" onClick={() => setSelectedDate((d) => toDateStr(addDays(new Date(`${d}T12:00`), -1)))}>
+        <Button variant="outline" size="icon" onClick={() => setSelectedDate((d) => localDateStr(addDays(new Date(`${d}T12:00`), -1)))}>
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <Button variant="outline" size="icon" onClick={() => setSelectedDate((d) => toDateStr(addDays(new Date(`${d}T12:00`), 1)))}>
+        <Button variant="outline" size="icon" onClick={() => setSelectedDate((d) => localDateStr(addDays(new Date(`${d}T12:00`), 1)))}>
           <ChevronRight className="h-4 w-4" />
         </Button>
-        <Button variant="outline" size="sm" onClick={() => setSelectedDate(toDateStr(new Date()))}>
+        <Button variant="outline" size="sm" onClick={() => setSelectedDate(localDateStr(new Date()))}>
           Today
         </Button>
         <span className="text-sm font-semibold ml-1">{formatDateLabel(selectedDate)}</span>

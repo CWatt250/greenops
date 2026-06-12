@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { localDateStr } from '@/lib/dates';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -52,7 +53,7 @@ export default function InvoiceDetailPage() {
     if (invRes.data) {
       // Check overdue
       const inv = invRes.data as unknown as InvoiceWithClient;
-      const now = new Date().toISOString().split('T')[0];
+      const now = localDateStr();
       if (inv.status !== 'paid' && inv.status !== 'cancelled' && inv.due_date && inv.due_date < now) {
         inv.status = 'overdue';
       }
@@ -157,7 +158,7 @@ export default function InvoiceDetailPage() {
         job_id: invoice.job_id,
         invoice_number: (invNumData as string) ?? `INV-DUP`,
         status: 'draft',
-        issued_date: new Date().toISOString().split('T')[0],
+        issued_date: localDateStr(),
         due_date: invoice.due_date,
         subtotal: invoice.subtotal,
         tax_rate: invoice.tax_rate,

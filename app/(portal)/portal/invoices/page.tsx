@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { localDateStr } from '@/lib/dates';
 import { createClient } from '@/lib/supabase/client';
 import { InvoiceCard } from '@/components/portal/invoice-card';
 import { LiveIndicator } from '@/components/shared/live-indicator';
@@ -40,7 +41,7 @@ export default function PortalInvoicesPage() {
       .not('status', 'eq', 'draft')
       .order('issued_date', { ascending: false });
 
-    const now = new Date().toISOString().split('T')[0];
+    const now = localDateStr();
     const processed = (data ?? []).map((inv) => ({
       ...inv,
       status: (inv.status !== 'paid' && inv.status !== 'cancelled' && inv.due_date && inv.due_date < now)

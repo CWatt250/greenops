@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { localDateStr } from '@/lib/dates';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import {
   materializeRecurringJob,
@@ -45,7 +46,7 @@ async function run(req: Request) {
   }
 
   const horizon = defaultMaterializeHorizon();
-  const horizonStr = horizon.toISOString().slice(0, 10);
+  const horizonStr = localDateStr(horizon);
 
   const results: Array<{ id: string; inserted?: number; error?: string }> = [];
   let totalInserted = 0;
@@ -57,7 +58,7 @@ async function run(req: Request) {
   }>) {
     // Skip parents that have already passed their explicit end date AND
     // are fully materialized through it.
-    if (p.recurrence_end_date && p.recurrence_end_date < new Date().toISOString().slice(0, 10)) {
+    if (p.recurrence_end_date && p.recurrence_end_date < localDateStr()) {
       continue;
     }
     // If we've already materialized past the horizon, nothing to do.

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { localDateStr } from '@/lib/dates';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
@@ -35,7 +36,7 @@ export default function BillingPage() {
         .order('next_invoice_date'),
     ]);
 
-    const now = new Date().toISOString().split('T')[0];
+    const now = localDateStr();
     const processed = (invRes.data ?? []).map((inv) => ({
       ...inv,
       status: (

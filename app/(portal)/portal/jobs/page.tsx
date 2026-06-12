@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { localDateStr } from '@/lib/dates';
 import { createClient } from '@/lib/supabase/client';
 import { JobHistoryCard, type JobPhoto } from '@/components/portal/job-history-card';
 import { LiveIndicator } from '@/components/shared/live-indicator';
@@ -86,7 +87,7 @@ export default function PortalJobsPage() {
     enabled: !!clientId,
   });
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStr();
   const filtered = useMemo(() => jobs.filter((j) => {
     if (filter === 'upcoming') return j.scheduled_date && j.scheduled_date >= today && j.status !== 'cancelled';
     if (filter === 'past') return !j.scheduled_date || j.scheduled_date < today || j.status === 'complete' || j.status === 'cancelled';

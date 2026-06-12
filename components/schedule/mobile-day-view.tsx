@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
+import { localDateStr } from '@/lib/dates';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, Plus, Filter, Check } from 'lucide-react';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -18,12 +19,8 @@ interface MobileDayViewProps {
 const UNASSIGNED_COLOR = '#94A3B8';
 const SWIPE_THRESHOLD_PX = 60;
 
-function toDateStr(d: Date): string {
-  return d.toISOString().split('T')[0];
-}
-
 function isToday(d: Date): boolean {
-  return toDateStr(d) === toDateStr(new Date());
+  return localDateStr(d) === localDateStr(new Date());
 }
 
 function formatHHMM(value: string | null | undefined): string | null {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { localDateStr } from '@/lib/dates';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
@@ -23,8 +24,8 @@ function presetToDates(preset: Preset): { from: string; to: string } {
   else if (preset === '6m') from.setMonth(to.getMonth() - 6);
   else if (preset === '1y') from.setFullYear(to.getFullYear() - 1);
   return {
-    from: from.toISOString().split('T')[0],
-    to: to.toISOString().split('T')[0],
+    from: localDateStr(from),
+    to: localDateStr(to),
   };
 }
 

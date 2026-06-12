@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { localDateStr } from '@/lib/dates';
 import { createClient } from '@/lib/supabase/server';
 import { frequencyToRRule } from '@/lib/rrule-helpers';
 import { materializeRecurringJob, defaultMaterializeHorizon } from '@/lib/recurring-jobs';
@@ -94,7 +95,7 @@ export async function POST(
   // Anchor the series on today (dispatcher can pick a real date on the
   // job detail page; the materializer recomputes from there if changed).
   const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
+  const todayStr = localDateStr(today);
   const rruleStr = frequencyToRRule(topFreq, today);
   const isRecurring = !!rruleStr;
 

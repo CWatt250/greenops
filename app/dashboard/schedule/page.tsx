@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { localDateStr } from '@/lib/dates';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -30,10 +31,6 @@ function parseDate(value: string | null): Date {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return today;
-}
-
-function toDateStr(d: Date): string {
-  return d.toISOString().split('T')[0];
 }
 
 function addDays(d: Date, n: number): Date {
@@ -111,19 +108,19 @@ function SchedulePageInner() {
   // Compute query window per view
   const { rangeStart, rangeEnd } = useMemo(() => {
     if (view === 'day') {
-      return { rangeStart: toDateStr(anchor), rangeEnd: toDateStr(anchor) };
+      return { rangeStart: localDateStr(anchor), rangeEnd: localDateStr(anchor) };
     }
     if (view === 'month') {
       return {
-        rangeStart: toDateStr(startOfMonthGrid(anchor)),
-        rangeEnd: toDateStr(endOfMonthGrid(anchor)),
+        rangeStart: localDateStr(startOfMonthGrid(anchor)),
+        rangeEnd: localDateStr(endOfMonthGrid(anchor)),
       };
     }
     // week
     const monday = getMondayOf(anchor);
     return {
-      rangeStart: toDateStr(monday),
-      rangeEnd: toDateStr(addDays(monday, 6)),
+      rangeStart: localDateStr(monday),
+      rangeEnd: localDateStr(addDays(monday, 6)),
     };
   }, [view, anchor]);
 
@@ -173,7 +170,7 @@ function SchedulePageInner() {
   function navigate({ view: nextView, date: nextDate }: { view?: View; date?: Date }) {
     const params = new URLSearchParams(searchParams.toString());
     if (nextView) params.set('view', nextView);
-    if (nextDate) params.set('date', toDateStr(nextDate));
+    if (nextDate) params.set('date', localDateStr(nextDate));
     router.replace(`/dashboard/schedule?${params.toString()}`, { scroll: false });
   }
 
@@ -269,7 +266,7 @@ function SchedulePageInner() {
           <MobileDayView
             date={anchor}
             crews={crews}
-            jobs={jobs.filter((j) => j.scheduled_date === toDateStr(anchor))}
+            jobs={jobs.filter((j) => j.scheduled_date === localDateStr(anchor))}
             onStepDay={(direction) => navigate({ view: 'day', date: addDays(anchor, direction) })}
             onJumpToday={jumpToday}
           />
@@ -278,7 +275,7 @@ function SchedulePageInner() {
           <div className="hidden md:block">
             {view === 'day' ? (
               <ScheduleDayGrid
-                key={toDateStr(anchor)}
+                key={localDateStr(anchor)}
                 date={anchor}
                 crews={crews}
                 initialJobs={jobs}
@@ -293,7 +290,7 @@ function SchedulePageInner() {
               />
             ) : (
               <ScheduleGrid
-                key={toDateStr(getMondayOf(anchor))}
+                key={localDateStr(getMondayOf(anchor))}
                 weekStart={getMondayOf(anchor)}
                 crews={crews}
                 initialJobs={jobs}

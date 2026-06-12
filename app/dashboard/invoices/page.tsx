@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { localDateStr } from '@/lib/dates';
 import { createClient } from '@/lib/supabase/server';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
@@ -30,7 +31,7 @@ export default async function InvoicesPage() {
     .order('created_at', { ascending: false });
 
   // Mark overdue invoices (UTC date cutoff, same as before — no tz drift).
-  const now = new Date().toISOString().split('T')[0];
+  const now = localDateStr();
   const invoices = (data ?? []).map((inv) => ({
     ...inv,
     status: (

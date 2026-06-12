@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { localDateStr } from '@/lib/dates';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -150,7 +151,7 @@ export function ProposalWizard({
   const [validUntil, setValidUntil] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 30);
-    return d.toISOString().split('T')[0];
+    return localDateStr(d);
   });
   const [taxRate, setTaxRate] = useState(0);
   const [paymentTerms, setPaymentTerms] = useState('Net 30');

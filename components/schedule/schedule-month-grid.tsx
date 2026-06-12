@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { localDateStr } from '@/lib/dates';
 import type { Job, Crew } from '@/types';
 
 interface ScheduleMonthGridProps {
@@ -32,16 +33,12 @@ function addDays(d: Date, n: number): Date {
   return x;
 }
 
-function toDateStr(d: Date): string {
-  return d.toISOString().split('T')[0];
-}
-
 function isSameMonth(a: Date, b: Date): boolean {
   return a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
 }
 
 function isToday(d: Date): boolean {
-  return toDateStr(d) === toDateStr(new Date());
+  return localDateStr(d) === localDateStr(new Date());
 }
 
 export function ScheduleMonthGrid({
@@ -84,7 +81,7 @@ export function ScheduleMonthGrid({
       {/* Day cells */}
       <div className="grid grid-cols-7 grid-rows-6">
         {days.map((day) => {
-          const ds = toDateStr(day);
+          const ds = localDateStr(day);
           const inMonth = isSameMonth(day, monthAnchor);
           const dayJobs = jobsByDate.get(ds) ?? [];
 

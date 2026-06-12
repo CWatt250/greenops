@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { localDateStr } from '@/lib/dates';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,10 +15,6 @@ import {
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import type { Payment } from '@/types';
-
-function toDateStr(d: Date) {
-  return d.toISOString().split('T')[0];
-}
 
 interface Props {
   open: boolean;
@@ -33,7 +30,7 @@ export function PaymentForm({ open, onOpenChange, invoiceId, companyId, balanceD
   const [amount, setAmount] = useState(balanceDue.toFixed(2));
   const [method, setMethod] = useState<'cash' | 'check' | 'card' | 'ach' | 'other'>('check');
   const [reference, setReference] = useState('');
-  const [date, setDate] = useState(toDateStr(new Date()));
+  const [date, setDate] = useState(localDateStr(new Date()));
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 

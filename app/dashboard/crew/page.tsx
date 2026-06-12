@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { localDateStr } from '@/lib/dates';
 import dynamic from 'next/dynamic';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
@@ -31,10 +32,6 @@ type CrewWithJobs = Crew & {
 };
 
 type LiveStatus = 'connecting' | 'live' | 'polling' | 'offline';
-
-function toDateStr(d: Date) {
-  return d.toISOString().split('T')[0];
-}
 
 function relTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -79,7 +76,7 @@ export default function DispatchPage() {
 
   const loadData = useCallback(async () => {
     if (!companyId) return;
-    const today = toDateStr(new Date());
+    const today = localDateStr(new Date());
     const sinceIso = new Date(Date.now() - 60 * 60_000).toISOString();
 
     const [crewsRes, jobsRes, clockRes, locsRes] = await Promise.all([

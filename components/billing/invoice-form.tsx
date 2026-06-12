@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { localDateStr } from '@/lib/dates';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,10 +14,6 @@ import { LineItemsTable, type LineItemDraft } from '@/components/jobs/line-items
 import { Loader2, Save, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Client, Invoice, InvoiceLineItem, JobLineItem } from '@/types';
-
-function toDateStr(d: Date) {
-  return d.toISOString().split('T')[0];
-}
 
 function addDays(d: Date, n: number) {
   const r = new Date(d);
@@ -38,8 +35,8 @@ export function InvoiceForm({ companyId, userId, prefillJobId, prefillClientId, 
 
   const [clients, setClients] = useState<Client[]>([]);
   const [clientId, setClientId] = useState(prefillClientId ?? '');
-  const [issuedDate, setIssuedDate] = useState(toDateStr(new Date()));
-  const [dueDate, setDueDate] = useState(toDateStr(addDays(new Date(), 30)));
+  const [issuedDate, setIssuedDate] = useState(localDateStr(new Date()));
+  const [dueDate, setDueDate] = useState(localDateStr(addDays(new Date(), 30)));
   const [taxRate, setTaxRate] = useState('0');
   const [notes, setNotes] = useState('');
   const [internalNotes, setInternalNotes] = useState('');
