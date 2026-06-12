@@ -1,4 +1,22 @@
 import { test, expect, type Route } from '@playwright/test';
+import { createClient } from '@supabase/supabase-js';
+import { loadEnvTest } from './helpers/env';
+import { CREW } from './helpers/creds';
+
+const env = loadEnvTest();
+const admin = createClient(
+  env.NEXT_PUBLIC_SUPABASE_URL,
+  env.SUPABASE_SERVICE_ROLE_KEY,
+  { auth: { autoRefreshToken: false, persistSession: false } },
+);
+
+/** Local YYYY-MM-DD for today — matches what the crew's /today queries. */
+function todayStr(): string {
+  const d = new Date();
+  const m = `${d.getMonth() + 1}`.padStart(2, '0');
+  const day = `${d.getDate()}`.padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
 
 /** Local YYYY-MM-DD for tomorrow — matches the seed's `current_date + 1` jobs. */
 function tomorrowStr(): string {
@@ -156,4 +174,101 @@ test('optimize multi-crew route → VROOM reorders stops + success toast', async
   const after = await stopNames.allTextContents();
   expect([...after].sort()).toEqual([...before].sort()); // same set of stops
   expect(after).not.toEqual(before); // genuinely reordered
+});
+
+/**
+ * The dead end found in the 2026-06 field audit: a SINGLE-crew dispatch wrote
+ * routes/route_stops but never set jobs.crew_id, so the crew's /today (which
+ * filters jobs by crew_id) showed an empty day. This drives the real builder
+ * in single-crew mode, dispatches a job scheduled TODAY, then logs in as the
+ * crew member and asserts the stop is actually visible on /today.
+ */
+test('dispatch a single-crew route → the crew sees the stop on /today', async ({ page, browser }) => {
+  // Owner flow + a second full crew login — well past the 30s default.
+  test.setTimeout(120_000);
+  await page.route('**/api/optimize-route', fulfillMockVroom);
+
+  const jobTitle = `E2E Dispatch Today ${Date.now()}`;
+
+  // Seed a TODAY job for a geocoded client, deliberately with NO crew —
+  // exactly the state the builder's auto-load picks up.
+  const { data: client } = await admin
+    .from('clients')
+    .select('id, company_id')
+    .eq('name', 'John Smith')
+    .not('latitude', 'is', null)
+    .limit(1)
+    .maybeSingle();
+  expect(client, 'seeded geocoded John Smith client must exist').toBeTruthy();
+  const { data: job, error: jobErr } = await admin
+    .from('jobs')
+    .insert({
+      company_id: client!.company_id,
+      client_id: client!.id,
+      title: jobTitle,
+      status: 'unscheduled',
+      scheduled_date: todayStr(),
+    })
+    .select('id')
+    .single();
+  expect(jobErr, `today-job insert failed: ${jobErr?.message}`).toBeNull();
+
+  try {
+    await page.goto('/dashboard/routes/new');
+    await setRouteDate(page, todayStr());
+
+    // Pick exactly ONE crew → single-crew mode (the buggy path).
+    await page.getByRole('button', { name: /^crew 1$/i }).first().click();
+
+    await page.getByRole('button', { name: /auto-load all jobs scheduled/i }).click();
+    // The seeded stop appears (Optimize stays disabled for a single stop —
+    // nothing to sequence — so dispatch directly, as a dispatcher would).
+    await expect(page.getByText(jobTitle)).toBeVisible({ timeout: 40_000 });
+
+    await page.getByRole('button', { name: /^dispatch$/i }).click();
+    await expect(page.getByText(/dispatched/i).first()).toBeVisible({ timeout: 30_000 });
+
+    // The fix under test: dispatch must have pinned the job to the crew and
+    // promoted it onto the schedule.
+    await expect(async () => {
+      const { data } = await admin
+        .from('jobs')
+        .select('crew_id, status, route_order')
+        .eq('id', job!.id)
+        .single();
+      expect(data?.crew_id, 'dispatch must set jobs.crew_id in single-crew mode').toBeTruthy();
+      expect(data?.status).toBe('scheduled');
+      expect(data?.route_order).toBeGreaterThan(0);
+    }).toPass({ timeout: 10_000 });
+
+    // And the crew member can actually see the stop. Fresh logged-out context
+    // (explicit baseURL + empty storageState — see announce.spec for why).
+    const crewCtx = await browser.newContext({
+      baseURL: new URL(page.url()).origin,
+      storageState: { cookies: [], origins: [] },
+    });
+    const crewPage = await crewCtx.newPage();
+    try {
+      await crewPage.goto('/login');
+      await crewPage.locator('#email').fill(CREW.email, { timeout: 15_000 });
+      await crewPage.locator('#password').fill(CREW.password, { timeout: 15_000 });
+      await crewPage.getByRole('button', { name: /sign in/i }).click({ timeout: 15_000 });
+      await crewPage.waitForURL(/\/today(\/|$|\?)/, { timeout: 30_000 });
+      // A fresh day opens on the morning-brief gate; step through it the way
+      // a worker would before the stop cards render.
+      const startDay = crewPage.getByRole('button', { name: /start my day/i });
+      if (await startDay.isVisible({ timeout: 5_000 }).catch(() => false)) {
+        await startDay.click();
+      }
+      await expect(crewPage.getByText(jobTitle)).toBeVisible({ timeout: 15_000 });
+    } finally {
+      await crewCtx.close();
+    }
+  } finally {
+    // Tear down what we created (stops first — they reference the job).
+    if (job?.id) {
+      await admin.from('route_stops').delete().eq('job_id', job.id);
+      await admin.from('jobs').delete().eq('id', job.id);
+    }
+  }
 });

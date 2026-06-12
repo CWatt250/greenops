@@ -944,8 +944,10 @@ export default function RouteBuilderPage() {
       // Reflect VROOM's order back onto the source jobs. The crew app reads
       // jobs.route_order on /today so the worker sees stops in true drive
       // order (with drive_minutes_from_previous shown between each card).
-      // In multi mode we also reassign crew_id since VROOM may have moved
-      // stops between trucks.
+      // crew_id is written in BOTH modes: /today filters jobs by crew_id, so
+      // a dispatched stop the worker can't see is a dead end. (Multi mode may
+      // also have moved stops between trucks; single mode pins them to the
+      // one selected crew.)
       const orderedJobs = ordered.filter((s) => !!s.job_id);
       for (let i = 0; i < orderedJobs.length; i++) {
         const s = orderedJobs[i];
@@ -954,8 +956,11 @@ export default function RouteBuilderPage() {
           route_order: i + 1,
           drive_minutes_from_previous: Math.round(s.drive_minutes_from_prev ?? 0),
           drive_distance_miles_from_previous: s.drive_distance_miles ?? 0,
+          crew_id: cid,
         };
-        if (mode === 'multi') update.crew_id = cid;
+        // Dispatching promotes fresh jobs onto the schedule, but never
+        // rewinds one a crew already started.
+        if (dispatch && s.job?.status === 'unscheduled') update.status = 'scheduled';
         await supabase.from('jobs').update(update).eq('id', s.job_id);
       }
 
