@@ -272,3 +272,61 @@ test('dispatch a single-crew route → the crew sees the stop on /today', async 
     }
   }
 });
+
+/**
+ * Audit #6: a stop whose address can't be geocoded used to be silently
+ * filtered out of the VROOM payload (console.warn only) — the job just never
+ * got routed. Now it must surface a loud per-stop banner and disable
+ * Optimize until the stop is fixed or removed.
+ */
+test('ungeocodable stop shows a loud banner and blocks Optimize', async ({ page }) => {
+  test.setTimeout(60_000);
+  const stamp = Date.now();
+  const clientName = `E2E No Address ${stamp}`;
+
+  // A client with NO coordinates and an EMPTY address: the builder's
+  // auto-load skips geocoding entirely (empty string is falsy), so the stop
+  // deterministically has no coords in every environment, real token or not.
+  const { data: client, error: clientErr } = await admin
+    .from('clients')
+    .insert({ company_id: env.E2E_COMPANY_ID, name: clientName, service_address: '' })
+    .select('id')
+    .single();
+  expect(clientErr, `client insert failed: ${clientErr?.message}`).toBeNull();
+  const { data: job, error: jobErr } = await admin
+    .from('jobs')
+    .insert({
+      company_id: env.E2E_COMPANY_ID,
+      client_id: client!.id,
+      title: `E2E Ungeocodable ${stamp}`,
+      status: 'unscheduled',
+      scheduled_date: tomorrowStr(),
+    })
+    .select('id')
+    .single();
+  expect(jobErr, `job insert failed: ${jobErr?.message}`).toBeNull();
+
+  try {
+    await page.goto('/dashboard/routes/new');
+    await setRouteDate(page, tomorrowStr());
+    await page.getByRole('button', { name: /select all crews/i }).click();
+    await page.getByRole('button', { name: /auto-load all jobs scheduled/i }).click();
+
+    // The loud banner names the broken stop and tells the dispatcher what to do.
+    const banner = page.getByTestId('ungeocoded-banner');
+    await expect(banner).toBeVisible({ timeout: 40_000 });
+    await expect(banner).toContainText(clientName);
+    await expect(banner).toContainText(/fix the address or remove the stop/i);
+
+    // And Optimize is hard-blocked while the stop is unresolved.
+    await expect(
+      page.getByRole('button', { name: /optimize routes/i }),
+    ).toBeDisabled();
+  } finally {
+    if (job?.id) {
+      await admin.from('route_stops').delete().eq('job_id', job.id);
+      await admin.from('jobs').delete().eq('id', job.id);
+    }
+    if (client?.id) await admin.from('clients').delete().eq('id', client.id);
+  }
+});

@@ -141,6 +141,14 @@ export default function RouteBuilderPage() {
     Array<{ key: string; label: string; missing: string[] }>
   >([]);
 
+  // Stops with no coordinates (geocoding failed / address missing). These
+  // used to be silently filtered out of the VROOM payload — now they block
+  // Optimize until the address is fixed or the stop is removed.
+  const ungeocodedStops = useMemo(
+    () => stops.filter((s) => s.lat === null || s.lng === null),
+    [stops],
+  );
+
   // Polylines: keyed by crew_id (or 'single' in single-crew mode).
   const [polylinesByGroup, setPolylinesByGroup] = useState<Record<string, GeoJSON.LineString>>({});
 
@@ -635,8 +643,16 @@ export default function RouteBuilderPage() {
       return;
     }
 
+    // Belt-and-suspenders: the Optimize button is disabled while any stop is
+    // ungeocoded (loud banner above the list), so this should be unreachable.
+    if (ungeocodedStops.length > 0) {
+      toast.error(
+        `${ungeocodedStops.length} stop${ungeocodedStops.length === 1 ? '' : 's'} ` +
+        'can’t be located — fix the address or remove the stop before optimizing.',
+      );
+      return;
+    }
     const geocodedStops = stops.filter((s) => s.lat !== null && s.lng !== null);
-    const ungeocoded = stops.filter((s) => s.lat === null || s.lng === null);
 
     // Pre-flight: log everything so the browser console shows the full picture.
     // eslint-disable-next-line no-console
@@ -649,21 +665,9 @@ export default function RouteBuilderPage() {
       coords: [s.lng, s.lat],
       duration_min: s.estimated_duration_minutes,
     })));
-    if (ungeocoded.length > 0) {
-      // eslint-disable-next-line no-console
-      console.warn('[optimize] stops with no coords (will be skipped):',
-        ungeocoded.map((s) => (
-          (s.job?.client as { service_address?: string } | null | undefined)?.service_address
-          ?? s.address ?? '(no address)'
-        )));
-    }
 
     if (geocodedStops.length === 0) {
-      toast.error(
-        ungeocoded.length > 0
-          ? `0 of ${stops.length} stops have coordinates — Mapbox geocoding may have failed (check NEXT_PUBLIC_MAPBOX_TOKEN). See console for the address list.`
-          : 'No stops to optimize.'
-      );
+      toast.error('No stops to optimize.');
       return;
     }
 
@@ -1181,13 +1185,13 @@ export default function RouteBuilderPage() {
               onOptimized={handleOptimizedSingle}
               vehicleSkills={crewSkillMap.get(selectedCrewIds[0]) ?? []}
               onUnroutable={handleSingleUnroutable}
-              disabled={loadingJobs}
+              disabled={loadingJobs || ungeocodedStops.length > 0}
             />
           ) : (
             <Button
               size="sm"
               onClick={handleOptimizeMulti}
-              disabled={loadingJobs || optimizingMulti || stops.length === 0}
+              disabled={loadingJobs || optimizingMulti || stops.length === 0 || ungeocodedStops.length > 0}
               style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
               className="gap-1.5 font-semibold"
             >
@@ -1231,6 +1235,25 @@ export default function RouteBuilderPage() {
 
         {/* Unroutable banner — jobs no selected crew is certified for
             (migration 045). Loud + lists each job so nothing vanishes. */}
+        {ungeocodedStops.length > 0 && (
+          <div
+            data-testid="ungeocoded-banner"
+            className="mx-3 mt-3 rounded-lg border-l-4 border-red-500 bg-red-50 px-3 py-2.5"
+          >
+            <p className="text-sm font-semibold text-red-700">
+              {ungeocodedStops.length} stop{ungeocodedStops.length === 1 ? '' : 's'} can&apos;t be
+              located — Optimize is paused until they&apos;re fixed.
+            </p>
+            <ul className="mt-1.5 space-y-0.5 text-xs text-red-700/90">
+              {ungeocodedStops.map((s) => (
+                <li key={s._key}>
+                  • Couldn&apos;t locate address for {stopLabel(s)} — fix the address or remove the stop.
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {unroutable.length > 0 && (
           <div
             data-testid="unroutable-banner"
