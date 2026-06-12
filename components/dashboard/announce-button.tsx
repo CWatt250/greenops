@@ -360,12 +360,14 @@ export function AnnounceButton({ companyId: companyIdProp, variant = 'button' }:
             <p className="text-[11px] text-muted-foreground">
               {recipientCount === null
                 ? '—'
-                : `Will reach ${recipientCount} ${audience === 'all_customers' ? 'customer' : 'crew member'}${recipientCount === 1 ? '' : 's'}.`}
+                : recipientCount === 0
+                  ? `No one to notify — this audience has no ${audience === 'all_customers' ? 'customers' : 'crew members'} yet.`
+                  : `Will reach ${recipientCount} ${audience === 'all_customers' ? 'customer' : 'crew member'}${recipientCount === 1 ? '' : 's'}.`}
             </p>
 
             <Button
               onClick={send}
-              disabled={sending || !title.trim() || (audience === 'crew_specific' && !crewId)}
+              disabled={sending || recipientCount === 0 || !title.trim() || (audience === 'crew_specific' && !crewId)}
               className="w-full gap-1.5"
               style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
             >

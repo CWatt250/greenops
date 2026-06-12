@@ -88,6 +88,26 @@ test('owner broadcasts from the top-bar megaphone and the crew recipient sees it
     // Crew role redirects to /today, whose layout renders the bell.
     await crewPage.waitForURL(/\/today(\/|$|\?)/, { timeout: 30_000 });
 
+    // 6. The unread broadcast surfaces INLINE on /today (audit #13) — not
+    //    bell-only — and dismissing it marks the notification read.
+    const banner = crewPage.getByTestId('broadcast-banner');
+    await expect(banner.getByText(title)).toBeVisible({ timeout: 15_000 });
+    await banner
+      .getByRole('button', { name: /dismiss announcement/i })
+      .first()
+      .click();
+    await expect(banner.getByText(title)).toHaveCount(0);
+    await expect(async () => {
+      const { data } = await admin
+        .from('notifications')
+        .select('is_read')
+        .eq('profile_id', crewUser!.id)
+        .eq('title', title)
+        .single();
+      expect(data?.is_read).toBe(true);
+    }).toPass({ timeout: 10_000 });
+
+    // 7. Still listed in the bell history after dismissal.
     await crewPage.getByRole('button', { name: /notifications/i }).click({ timeout: 15_000 });
     await expect(crewPage.getByText(title)).toBeVisible({ timeout: 10_000 });
   } finally {

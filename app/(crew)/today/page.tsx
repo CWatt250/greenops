@@ -9,6 +9,7 @@ import { MorningBrief, type MorningBriefJob } from '@/components/crew/morning-br
 import { JobCard, type JobCardClient } from '@/components/crew/job-card';
 import { EndOfDay } from '@/components/crew/end-of-day';
 import { TodayFocusScroller } from '@/components/crew/today-focus-scroller';
+import { BroadcastBanner } from '@/components/crew/broadcast-banner';
 import { formatDate } from '@/lib/utils';
 import { CalendarDays, CheckCircle2, Truck } from 'lucide-react';
 import type { Job } from '@/types';
@@ -236,6 +237,9 @@ export default async function TodayPage() {
   return (
     <div className="space-y-5 pb-8">
       <CrewStatusBar todayLabel={formatDate(today)} />
+
+      {/* Unread broadcasts (rain delays etc.) — inline, not bell-only. */}
+      <BroadcastBanner profileId={user.id} />
 
       <GPSTracker
         profileId={user.id}
