@@ -7,7 +7,7 @@ import type { LiveStatus } from '@/lib/hooks/use-live-data';
 interface Props {
   status: LiveStatus;
   /** Optional timestamp shown after the indicator. */
-  updatedAt?: Date;
+  updatedAt?: Date | null;
   className?: string;
   /** Size variant — "sm" for tight headers, "md" for full bars. */
   size?: 'sm' | 'md';

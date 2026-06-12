@@ -487,6 +487,9 @@ interface OneCallResponse {
  */
 const ONECALL_TTL_MS = 12 * 60 * 1000;
 const oneCallCache = new Map<string, { at: number; data: OneCallResponse }>();
+// One Call 401s are a subscription-tier gap, not a transient error — log the
+// hint once per process instead of spamming every 12-minute cache miss.
+let oneCall401Logged = false;
 
 /**
  * Fetch + cache One Call 3.0. Includes `alerts[]` (only current/minutely/hourly
@@ -507,7 +510,20 @@ async function fetchOneCall(
       `https://api.openweathermap.org/data/3.0/onecall?lat=${query.lat}&lon=${query.lng}` +
       `&exclude=current,minutely,hourly&units=${units}&appid=${OWM_KEY}`;
     const res = await fetch(url, { next: { revalidate: 720 } });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      if (res.status === 401 && !oneCall401Logged) {
+        oneCall401Logged = true;
+        // eslint-disable-next-line no-console
+        console.error(
+          '[weather] OpenWeatherMap One Call 3.0 returned 401 — the API key’s '
+          + 'subscription tier likely doesn’t include One Call 3.0 (it needs the '
+          + 'separate “One Call by Call” plan). Official NWS alerts are silently '
+          + 'unavailable until this is fixed; threshold rules still cover '
+          + 'suggestions. Logged once per process.',
+        );
+      }
+      return null;
+    }
     const data = (await res.json()) as OneCallResponse;
     oneCallCache.set(key, { at: nowMs, data });
     return data;

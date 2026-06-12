@@ -48,8 +48,16 @@ export function TodaysRunTable({ initialJobs, companyId, limit = 8 }: Props) {
   const supabase = createClient();
   const [jobs, setJobs] = useState<TodaysRunJob[]>(initialJobs);
   const [status, setStatus] = useState<LiveStatus>('connecting');
-  const [updatedAt, setUpdatedAt] = useState<Date>(new Date());
+  // Start null and stamp after mount: a render-time `new Date()` puts the
+  // SERVER's clock in the HTML and the client's in hydration — a guaranteed
+  // mismatch whenever the two renders straddle a second boundary (this was
+  // the app's one recurring dev hydration error).
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const lastRtAtRef = useRef<number>(0);
+
+  useEffect(() => {
+    setUpdatedAt(new Date());
+  }, []);
 
   const loadJobs = useCallback(async () => {
     if (!companyId) return;
@@ -139,7 +147,7 @@ export function TodaysRunTable({ initialJobs, companyId, limit = 8 }: Props) {
         <div className="flex items-center gap-1.5 shrink-0">
           <LiveIndicator status={status} />
           <span className="text-[10px] text-muted-foreground tabular-nums">
-            · {updatedAt.toLocaleTimeString()}
+            · {updatedAt ? updatedAt.toLocaleTimeString() : '—'}
           </span>
         </div>
       </div>

@@ -160,13 +160,13 @@ export function EndOfDay({
           {stats.photos_count > 0 && (
             <StatLine
               icon={<Camera className="h-4 w-4 text-muted-foreground" />}
-              label={`${stats.photos_count} photos captured`}
+              label={`${stats.photos_count} photo${stats.photos_count === 1 ? '' : 's'} captured`}
             />
           )}
           {stats.signatures_count > 0 && (
             <StatLine
               icon={<PenLine className="h-4 w-4 text-muted-foreground" />}
-              label={`${stats.signatures_count} signatures collected`}
+              label={`${stats.signatures_count} signature${stats.signatures_count === 1 ? '' : 's'} collected`}
             />
           )}
           {stats.measurements_count > 0 && (

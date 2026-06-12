@@ -49,7 +49,9 @@ export default function DispatchPage() {
   const [crewData, setCrewData] = useState<CrewWithJobs[]>([]);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  // null until the first load lands — a render-time `new Date()` mismatches
+  // the SSR'd HTML against the hydrating client (see use-live-data.ts).
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
   const [liveStatus, setLiveStatus] = useState<LiveStatus>('connecting');
 
@@ -255,7 +257,7 @@ export default function DispatchPage() {
         description={
           <span className="inline-flex items-center gap-2">
             <LiveIndicator status={liveStatus} />
-            Refreshed {lastRefresh.toLocaleTimeString()}
+            Refreshed {lastRefresh ? lastRefresh.toLocaleTimeString() : '—'}
           </span>
         }
       >

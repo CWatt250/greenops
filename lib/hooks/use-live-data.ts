@@ -49,7 +49,11 @@ export function useLiveData({
   enabled = true,
 }: UseLiveDataOptions) {
   const [status, setStatus] = useState<LiveStatus>('connecting');
-  const [updatedAt, setUpdatedAt] = useState<Date>(new Date());
+  // null until the first load completes: a render-time `new Date()` bakes
+  // the server's clock into the SSR'd HTML and the client's into hydration —
+  // a guaranteed mismatch across a second boundary (the app's recurring dev
+  // hydration error, traced here via LiveIndicator's timestamp).
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const lastRtAtRef = useRef<number>(0);
 
   // Stable refs so the effects don't re-run when the caller forgets to
