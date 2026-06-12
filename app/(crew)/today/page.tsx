@@ -241,9 +241,14 @@ export default async function TodayPage() {
       {/* Unread broadcasts (rain delays etc.) — inline, not bell-only. */}
       <BroadcastBanner profileId={user.id} />
 
+      {/* Attribute pings to the crew of the job actually being worked — a
+          multi-crew member's location used to always tag their first crew,
+          putting the truck under the wrong crew on the dispatch map. The
+          tracker only runs while a job is in progress, so the active job's
+          crew is the right one; first crew is just the idle fallback. */}
       <GPSTracker
         profileId={user.id}
-        crewId={crewIds[0] ?? null}
+        crewId={inProgress[0]?.crew_id ?? crewIds[0] ?? null}
         companyId={profile.company_id}
         isActive={inProgress.length > 0}
       />

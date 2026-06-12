@@ -337,7 +337,12 @@ export default function DispatchPage() {
       <div className="space-y-4">
         {crewData.map((crew) => {
           const loc = crew.lastLocation;
-          const stale = loc && Date.now() - new Date(loc.recorded_at).getTime() > STALE_GPS_MS;
+          // The crew app only tracks GPS while a job is in progress, so a
+          // quiet signal with no active job is EXPECTED — show neutral
+          // "tracking paused" copy, not the amber no-GPS warning.
+          const hasActiveJob = crew.todayJobs.some((j) => j.status === 'in_progress');
+          const quiet = loc && Date.now() - new Date(loc.recorded_at).getTime() > STALE_GPS_MS;
+          const stale = quiet && hasActiveJob;
           return (
             <div key={crew.id} className="rounded-xl border bg-card overflow-hidden">
               {/* Crew header */}
@@ -365,8 +370,11 @@ export default function DispatchPage() {
                       title={`Lat ${Number(loc.latitude).toFixed(4)}, Lng ${Number(loc.longitude).toFixed(4)}`}
                     >
                       <MapPin className="h-3 w-3" />
-                      {stale ? 'No GPS for ' : 'Last seen '}
-                      {relTime(loc.recorded_at)}
+                      {stale
+                        ? `No GPS for ${relTime(loc.recorded_at)} — job in progress`
+                        : quiet
+                          ? `Tracking paused (no active job) · last seen ${relTime(loc.recorded_at)}`
+                          : `Last seen ${relTime(loc.recorded_at)}`}
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
