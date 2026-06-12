@@ -125,7 +125,7 @@ export function InstallBanner() {
       <button
         type="button"
         onClick={dismiss}
-        className="shrink-0 mt-0.5 hover:opacity-70"
+        className="shrink-0 -m-1.5 mt-0.5 p-2 hover:opacity-70"
         aria-label="Dismiss install banner"
       >
         <X className="h-4 w-4" />

@@ -152,8 +152,10 @@ export function JobCard({
         borderLeftColor: crewChip?.color ?? 'var(--color-brand-green-raw)',
       }}
     >
-      {/* Drive-from-previous banner */}
-      {Number.isFinite(driveMin) && driveMin && driveMin > 0 && (
+      {/* Drive-from-previous banner. The comparison must be the LAST term:
+          a bare `driveMin &&` short-circuits to the number 0, which React
+          renders as a literal "0" above the card. */}
+      {Number.isFinite(driveMin) && driveMin! > 0 && (
         <div className="flex items-center gap-2 px-4 py-2 bg-muted/40 text-xs text-muted-foreground border-b">
           <Truck className="h-3.5 w-3.5 shrink-0" />
           <span>

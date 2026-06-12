@@ -57,12 +57,12 @@ export default async function CrewLayout({ children }: { children: React.ReactNo
             href="/dashboard/measure"
             aria-label="Measure property"
             title="Measure property"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-full"
             style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
           >
             <Ruler className="h-4 w-4" />
           </Link>
-          <NotificationBell />
+          <NotificationBell className="h-11 w-11" />
         </div>
       </header>
       {/* Safe-area-aware bottom padding so CTAs clear the fixed bottom nav

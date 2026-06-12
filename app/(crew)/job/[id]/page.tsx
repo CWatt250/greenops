@@ -240,7 +240,7 @@ export default function CrewJobDetailPage() {
     <div className="space-y-5 pb-10">
       {/* Back */}
       <div>
-        <Link href="/today" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+        <Link href="/today" className="inline-flex min-h-11 items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ChevronLeft className="h-3.5 w-3.5" /> Back to Today
         </Link>
         <h1 className="text-xl font-bold mt-2 leading-tight">{job.title}</h1>
@@ -287,7 +287,7 @@ export default function CrewJobDetailPage() {
                 || job.status === 'cancelled'
                 || requiredPreJobIds.some((id) => !submittedPreJobIds.includes(id))
               }
-              className="flex-1 gap-2"
+              className="h-12 flex-1 gap-2 text-base"
               style={{ backgroundColor: 'var(--color-brand-green-raw)', color: '#fff' }}
             >
               {clockLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
@@ -298,7 +298,7 @@ export default function CrewJobDetailPage() {
               onClick={handleClockOut}
               disabled={clockLoading}
               variant="outline"
-              className="flex-1 gap-2"
+              className="h-12 flex-1 gap-2 text-base"
             >
               {clockLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
               Clock Out
@@ -309,7 +309,7 @@ export default function CrewJobDetailPage() {
             <Button
               onClick={() => router.push(`/complete/${id}`)}
               disabled={!isClockedIn && job.status !== 'in_progress'}
-              className="flex-1 gap-2"
+              className="h-12 flex-1 gap-2 text-base"
               style={{ backgroundColor: 'var(--color-brand-gold-raw)', color: '#fff' }}
             >
               <CheckSquare className="h-4 w-4" />
@@ -324,7 +324,7 @@ export default function CrewJobDetailPage() {
         {job.client?.service_address && (
           <Link
             href={`/dashboard/measure?address=${encodeURIComponent(job.client.service_address)}&client_id=${job.client.id}`}
-            className="flex items-center gap-1.5 text-xs font-medium"
+            className="flex min-h-11 items-center gap-1.5 text-xs font-medium"
             style={{ color: 'var(--orange-deep)' }}
           >
             <Ruler className="h-3.5 w-3.5" />
@@ -335,7 +335,7 @@ export default function CrewJobDetailPage() {
         {job.status !== 'complete' && job.status !== 'issue' && job.status !== 'cancelled' && (
           <button
             onClick={openIssueSheet}
-            className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-700"
+            className="flex min-h-11 items-center gap-1.5 text-xs text-red-600 hover:text-red-700"
           >
             <AlertTriangle className="h-3.5 w-3.5" />
             Flag an issue
@@ -403,7 +403,7 @@ export default function CrewJobDetailPage() {
                 {job.client.phone && (
                   <a
                     href={`tel:${job.client.phone}`}
-                    className="text-xs text-blue-600 hover:underline mt-0.5 block"
+                    className="mt-0.5 inline-flex min-h-11 items-center text-xs text-blue-600 hover:underline"
                   >
                     {job.client.phone}
                   </a>
