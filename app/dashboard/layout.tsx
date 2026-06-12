@@ -1,6 +1,8 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 import { Sidebar } from '@/components/layout/sidebar';
 import { MobileNav } from '@/components/layout/mobile-nav';
 import { MobileBottomNav } from '@/components/layout/mobile-bottom-nav';
@@ -8,25 +10,50 @@ import { QuickAddMenu } from '@/components/layout/quick-add-menu';
 import { NotificationBell } from '@/components/shared/notification-bell';
 import { AnnounceButton } from '@/components/dashboard/announce-button';
 import { Button } from '@/components/ui/button';
-import { Menu } from 'lucide-react';
+import { Menu, ChevronLeft } from 'lucide-react';
 import { WelcomeTour } from '@/components/help/welcome-tour';
 import { HelpButton } from '@/components/help/help-button';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Crew members reach /dashboard/measure (the proxy allows it); they must
+  // get crew chrome — no owner sidebar/drawer, no megaphone or quick-add
+  // (which expose the broadcast composer), and a clear way back to /today.
+  // Privileged controls stay hidden until the role resolves so they never
+  // flash in front of a crew member.
+  const [role, setRole] = useState<'owner' | 'dispatcher' | 'crew' | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (!cancelled && data?.role) setRole(data.role as 'owner' | 'dispatcher' | 'crew');
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const isCrew = role === 'crew';
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Desktop sidebar */}
-      <div className="hidden md:flex">
-        <Sidebar />
-      </div>
+      {/* Desktop sidebar — admin only (every link would bounce a crew user). */}
+      {!isCrew && (
+        <div className="hidden md:flex">
+          <Sidebar />
+        </div>
+      )}
 
-      {/* Mobile nav drawer */}
-      <MobileNav open={mobileOpen} onOpenChange={setMobileOpen} />
+      {/* Mobile nav drawer — admin only. */}
+      {!isCrew && <MobileNav open={mobileOpen} onOpenChange={setMobileOpen} />}
 
       {/* Main content */}
-      <div className="flex flex-1 flex-col md:ml-64">
+      <div className={`flex flex-1 flex-col ${isCrew ? '' : 'md:ml-64'}`}>
         {/* Mobile top bar. Horizontal padding respects the safe-area insets so
             the right-edge controls (notification bell) are never clipped on
             notched / rounded-corner phones. */}
@@ -38,14 +65,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           }}
         >
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setMobileOpen(true)}
-              aria-label="Open menu"
-            >
-              <Menu className="h-5 w-5" />
-            </Button>
+            {isCrew ? (
+              <Link
+                href="/today"
+                className="inline-flex min-h-11 items-center gap-1 pr-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+              >
+                <ChevronLeft className="h-4 w-4" /> Today
+              </Link>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setMobileOpen(true)}
+                aria-label="Open menu"
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+            )}
             <span
               className="uppercase"
               style={{
@@ -58,13 +94,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            {/* Announcement composer — the icon variant renders the orange
-                megaphone tap target and self-resolves the company. */}
-            <AnnounceButton variant="icon" />
-            <QuickAddMenu />
+            {/* Broadcast composer + quick-add are dispatcher tools — rendered
+                only once we KNOW the viewer isn't crew. */}
+            {(role === 'owner' || role === 'dispatcher') && (
+              <>
+                <AnnounceButton variant="icon" />
+                <QuickAddMenu />
+              </>
+            )}
             {/* Light bar → override the bell's default white tone to a visible,
                 bordered circle matching the other top-bar tap targets. */}
-            <NotificationBell className="h-9 w-9 rounded-full border bg-background text-foreground hover:bg-accent hover:text-foreground" />
+            <NotificationBell
+              className={`${isCrew ? 'h-11 w-11' : 'h-9 w-9'} rounded-full border bg-background text-foreground hover:bg-accent hover:text-foreground`}
+            />
           </div>
         </header>
 
@@ -73,11 +115,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <main className="flex-1 p-4 md:p-6 lg:p-8 pb-[calc(5rem_+_env(safe-area-inset-bottom))] md:pb-8">{children}</main>
       </div>
 
-      <Suspense fallback={null}>
-        <WelcomeTour />
-      </Suspense>
+      {!isCrew && (
+        <Suspense fallback={null}>
+          <WelcomeTour />
+        </Suspense>
+      )}
       <HelpButton />
-      <MobileBottomNav />
+      <MobileBottomNav role={role ?? undefined} />
     </div>
   );
 }
