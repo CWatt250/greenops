@@ -329,7 +329,9 @@ export async function persistJobServices(
         service_id: i.service_id,
         custom_name: i.custom_name || null,
         quantity: i.quantity,
-        duration_minutes: i.duration_minutes,
+        // Always persist a concrete duration (migration 047): a null here
+        // used to live-link route math back to the catalog at read time.
+        duration_minutes: i.duration_minutes ?? 30,
         price: i.price,
         notes: i.notes ?? null,
       })
@@ -347,7 +349,7 @@ export async function persistJobServices(
         service_id: i.service_id,
         custom_name: i.custom_name || null,
         quantity: i.quantity,
-        duration_minutes: i.duration_minutes,
+        duration_minutes: i.duration_minutes ?? 30,
         price: i.price,
         notes: i.notes ?? null,
         sort_order: idx,

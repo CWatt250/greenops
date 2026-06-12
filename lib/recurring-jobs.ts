@@ -198,7 +198,8 @@ export async function materializeRecurringJob(
           service_id: js.service_id,
           custom_name: js.custom_name,
           quantity: js.quantity ?? 1,
-          duration_minutes: js.duration_minutes,
+          // Pre-047 parents may still carry null — never copy it forward.
+          duration_minutes: js.duration_minutes ?? 30,
           price: js.price ?? 0,
           notes: js.notes,
           sort_order: js.sort_order ?? 0,

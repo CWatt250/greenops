@@ -119,7 +119,21 @@ export function resolveJobDurationMinutes(
   const jobServices = job.job_services ?? [];
   let svcSum = 0;
   for (const js of jobServices) {
-    const d = js.duration_minutes ?? js.service?.estimated_duration_minutes;
+    let d = js.duration_minutes;
+    if (typeof d !== 'number' || d <= 0) {
+      // Live-link safety net only: migration 047 backfilled snapshots and
+      // every insert path now writes a non-null duration, so this firing
+      // means a row slipped through — warn so it surfaces.
+      d = js.service?.estimated_duration_minutes;
+      if (typeof d === 'number' && d > 0) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[vroom] job_services.duration_minutes missing for job ${opts.jobId ?? '?'}`
+          + `${opts.jobTitle ? ` (${opts.jobTitle})` : ''} — falling back to the LIVE catalog`
+          + ' value. Run migration 047’s backfill against this database.',
+        );
+      }
+    }
     const qty = typeof js.quantity === 'number' && js.quantity > 0 ? js.quantity : 1;
     if (typeof d === 'number' && d > 0) svcSum += d * qty;
   }

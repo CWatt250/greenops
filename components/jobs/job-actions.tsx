@@ -81,7 +81,12 @@ export function JobActions({ jobId, jobTitle, status, clientId, crewId }: Props)
 
     if (items && items.length > 0) {
       await supabase.from('job_services').insert(
-        items.map((i) => ({ ...i, job_id: newJob.id }))
+        items.map((i) => ({
+          ...i,
+          job_id: newJob.id,
+          // Pre-047 rows may still carry null — never copy it forward.
+          duration_minutes: i.duration_minutes ?? 30,
+        }))
       );
     }
 

@@ -144,7 +144,9 @@ export async function POST(
         service_id: li.service_id,
         custom_name: li.description,
         quantity: li.quantity,
-        duration_minutes: li.service?.estimated_duration_minutes ?? null,
+        // Non-null always (migration 047): catalog default, else the global
+        // 30-minute fallback — never a null that live-links at read time.
+        duration_minutes: li.service?.estimated_duration_minutes ?? 30,
         price: li.unit_price,
         notes: li.notes ?? null,
         sort_order: i,
