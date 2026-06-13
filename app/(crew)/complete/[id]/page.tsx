@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/utils';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { SignaturePad, type SigCanvasType } from '@/components/shared/signature-pad';
+import { MaterialsEntry } from '@/components/crew/materials-entry';
 import {
   ChevronLeft, PenLine, Trash2, Loader2, CheckCircle2, Camera, X, RotateCcw,
   Image as ImageIcon,
@@ -489,6 +490,11 @@ export default function CompleteJobPage() {
           className="w-full rounded-lg border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground"
         />
       </div>
+
+      {/* Materials & expenses — captured per job so labor isn't the only cost. */}
+      {userId && companyId && (
+        <MaterialsEntry jobId={id} companyId={companyId} userId={userId} />
+      )}
 
       {/* Photos */}
       <div className="space-y-2">
