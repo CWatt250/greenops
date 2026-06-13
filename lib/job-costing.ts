@@ -3,8 +3,11 @@ import { marginToneWithGray } from '@/lib/margin-colors';
 
 export interface CrewMemberRate {
   profile_id: string;
-  hourly_rate: number;
-  labor_burden_pct: number;
+  /** Raw crew_members.hourly_rate — null when the member has no rate set, or
+   *  the profile has no crew_members row at all (passed as absent). Do NOT
+   *  pre-coalesce to a default; the absence is what flags "rate not set". */
+  hourly_rate: number | null;
+  labor_burden_pct: number | null;
 }
 
 export interface CostBreakdown {
@@ -66,17 +69,38 @@ export function pairClockEvents(events: ClockEvent[]): ClockInterval[] {
 
 const MS_PER_HOUR = 3_600_000;
 
+export interface LaborResult {
+  hours: number;
+  cost: number;
+  /** Profiles that logged hours on the job but have no resolvable pay rate
+   *  (no crew_members rate AND no company default). Their hours are counted
+   *  but excluded from `cost` — so the labor total is UNDERSTATED. Callers
+   *  must treat a non-empty list as "rate not set" and refuse to show a
+   *  margin rather than report a fabricated one. */
+  unratedProfileIds: string[];
+}
+
 /**
  * Compute actual labor hours + cost from clock_events.
  * Pairs successive 'clock_in' / 'clock_out' events per profile.
+ *
+ * Rate resolution per profile (no silent fabrication):
+ *   1. the member's own crew_members.hourly_rate, else
+ *   2. the company default rate (opts.companyDefaultRate), else
+ *   3. unrated — hours counted, cost excluded, profile flagged.
  */
 export function actualLaborFromClock(
   intervals: ClockInterval[],
   rates: CrewMemberRate[],
-): { hours: number; cost: number } {
+  opts: { companyDefaultRate?: number | null } = {},
+): LaborResult {
   const rateById = new Map(rates.map((r) => [r.profile_id, r] as const));
+  const companyDefault = typeof opts.companyDefaultRate === 'number' && opts.companyDefaultRate > 0
+    ? opts.companyDefaultRate
+    : null;
   let totalHours = 0;
   let totalCost = 0;
+  const unrated = new Set<string>();
   for (const iv of intervals) {
     if (!iv.clocked_in_at) continue;
     const start = new Date(iv.clocked_in_at).getTime();
@@ -86,14 +110,21 @@ export function actualLaborFromClock(
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
     const hours = (end - start) / MS_PER_HOUR;
     totalHours += hours;
+
     const r = rateById.get(iv.profile_id);
-    const rate = r?.hourly_rate ?? 25;
-    const burden = (r?.labor_burden_pct ?? 25) / 100;
+    const memberRate = typeof r?.hourly_rate === 'number' && r.hourly_rate >= 0 ? r.hourly_rate : null;
+    const rate = memberRate ?? companyDefault;
+    if (rate === null) {
+      unrated.add(iv.profile_id);
+      continue;
+    }
+    const burden = (typeof r?.labor_burden_pct === 'number' ? r.labor_burden_pct : 0) / 100;
     totalCost += hours * rate * (1 + burden);
   }
   return {
     hours: Math.round(totalHours * 100) / 100,
     cost: Math.round(totalCost * 100) / 100,
+    unratedProfileIds: [...unrated],
   };
 }
 
@@ -142,25 +173,60 @@ export function varianceTone(actual: number, estimated: number): 'green' | 'yell
   return 'red';
 }
 
+/** Why a margin can't be shown as a real number. */
+export type CostStatus = 'ok' | 'no_cost_data' | 'rate_not_set' | 'no_revenue';
+
 export interface ProfitSummary {
   revenue: number;
   total_cost: number;
   profit: number;
   margin_pct: number;
+  /** Display string for the margin — "—" whenever a real percentage would be
+   *  misleading (no cost data, unpriced labor, or no revenue). Render THIS,
+   *  never `margin_pct`, so a fabricated "100.0%" can't leak to the UI. */
+  margin_label: string;
   tone: 'green' | 'yellow' | 'red' | 'gray';
+  status: CostStatus;
 }
 
-export function profitSummary(revenue: number, totalCost: number): ProfitSummary {
+/**
+ * Profit + margin with honest "can't compute" states.
+ *
+ *   - no cost data (cost ≤ 0): a job with no tracked labor and no logged
+ *     materials has UNKNOWN cost — showing 100% margin would be a fabrication.
+ *   - rate not set: someone logged hours we can't price (see actualLaborFromClock)
+ *     — the cost is understated, so the margin would be too high.
+ *   - no revenue: margin is undefined without revenue.
+ *
+ * In every non-"ok" case margin_label is "—" and the tone is gray.
+ */
+export function profitSummary(
+  revenue: number,
+  totalCost: number,
+  opts: { ratesComplete?: boolean; hasCostData?: boolean } = {},
+): ProfitSummary {
+  const ratesComplete = opts.ratesComplete ?? true;
+  const hasCostData = opts.hasCostData ?? totalCost > 0;
   const profit = Math.round((revenue - totalCost) * 100) / 100;
-  const margin_pct = revenue > 0
-    ? Math.round((profit / revenue) * 1000) / 10
-    : 0;
+
+  const base = { revenue, total_cost: totalCost, profit };
+
+  if (!hasCostData) {
+    return { ...base, margin_pct: 0, margin_label: '—', tone: 'gray', status: 'no_cost_data' };
+  }
+  if (!ratesComplete) {
+    return { ...base, margin_pct: 0, margin_label: '—', tone: 'gray', status: 'rate_not_set' };
+  }
+  if (revenue <= 0) {
+    return { ...base, margin_pct: 0, margin_label: '—', tone: 'gray', status: 'no_revenue' };
+  }
+  const margin_pct = Math.round((profit / revenue) * 1000) / 10;
   return {
-    revenue,
-    total_cost: totalCost,
-    profit,
+    ...base,
     margin_pct,
+    margin_label: `${margin_pct.toFixed(1)}%`,
     tone: marginToneWithGray(margin_pct, revenue),
+    status: 'ok',
   };
 }
 
