@@ -34,6 +34,10 @@ interface Props {
   initialRevenue: number;
   /** Company-wide overhead percentage. */
   overheadPct: number;
+  /** Company default labor rate (migration 048) — fallback for a clocked-in
+   *  profile with no crew_members rate. null when unset / not yet migrated, in
+   *  which case unrated labor is flagged rather than priced at a fake rate. */
+  companyDefaultRate?: number | null;
 }
 
 const TONE_BG = {
@@ -44,6 +48,7 @@ const TONE_BG = {
 
 export function JobCostingTab({
   jobId, companyId, userId, initialEstimated, initialRevenue, overheadPct,
+  companyDefaultRate = null,
 }: Props) {
   const supabase = createClient();
 
@@ -91,7 +96,10 @@ export function JobCostingTab({
       setCostEntries(entries);
       setClockEvents(events);
 
-      // Pull rates for any profile that clocked in.
+      // Pull rates for any profile that clocked in. Keep raw values — a
+      // missing row or null rate is exactly what flags "rate not set"; the
+      // lib decides the fallback. Pre-coalescing to 25 here would fabricate
+      // a rate and hide the gap.
       const profileIds = Array.from(new Set(events.map((e) => e.profile_id)));
       if (profileIds.length > 0) {
         const { data: rateRows } = await supabase
@@ -102,11 +110,15 @@ export function JobCostingTab({
           // crew_members can list a profile multiple times if on multiple
           // crews — keep the first match.
           const seen = new Map<string, CrewMemberRate>();
-          for (const r of (rateRows ?? []) as CrewMemberRate[]) {
+          for (const r of (rateRows ?? []) as Array<{
+            profile_id: string;
+            hourly_rate: number | null;
+            labor_burden_pct: number | null;
+          }>) {
             if (!seen.has(r.profile_id)) seen.set(r.profile_id, {
               profile_id: r.profile_id,
-              hourly_rate: Number(r.hourly_rate ?? 25),
-              labor_burden_pct: Number(r.labor_burden_pct ?? 25),
+              hourly_rate: r.hourly_rate == null ? null : Number(r.hourly_rate),
+              labor_burden_pct: r.labor_burden_pct == null ? null : Number(r.labor_burden_pct),
             });
           }
           setCrewRates(Array.from(seen.values()));
@@ -121,9 +133,10 @@ export function JobCostingTab({
   // ── Computed ──
   const intervals = useMemo(() => pairClockEvents(clockEvents), [clockEvents]);
   const actualLabor = useMemo(
-    () => actualLaborFromClock(intervals, crewRates),
-    [intervals, crewRates]
+    () => actualLaborFromClock(intervals, crewRates, { companyDefaultRate }),
+    [intervals, crewRates, companyDefaultRate]
   );
+  const ratesComplete = actualLabor.unratedProfileIds.length === 0;
   const entrySums = useMemo(() => sumCostEntries(costEntries), [costEntries]);
   const actualMaterials = entrySums.material;
   const actualEquipment = entrySums.equipment;
@@ -137,9 +150,13 @@ export function JobCostingTab({
     return applyOverhead(actualLabor.cost, actualMaterials, actualEquipment + actualOther, overheadPct);
   }, [actualLabor.cost, actualMaterials, actualEquipment, actualOther, overheadPct]);
 
+  // "Has cost data" = any tracked labor hours OR any logged cost entry. A job
+  // with neither has UNKNOWN cost, not zero cost — so we show "—", never a
+  // fabricated 100% margin.
+  const hasCostData = actualLabor.hours > 0 || costEntries.length > 0;
   const profit = useMemo(
-    () => profitSummary(revenue, actualTotals.total),
-    [revenue, actualTotals.total]
+    () => profitSummary(revenue, actualTotals.total, { ratesComplete, hasCostData }),
+    [revenue, actualTotals.total, ratesComplete, hasCostData]
   );
 
   // ── Handlers ──
@@ -245,18 +262,30 @@ export function JobCostingTab({
           <p className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground">
             Profit margin
           </p>
-          <p className={cn(
-            'text-2xl font-bold tabular-nums',
-            profit.tone === 'green' && 'text-green-700',
-            profit.tone === 'yellow' && 'text-amber-700',
-            profit.tone === 'red' && 'text-red-700',
-            profit.tone === 'gray' && 'text-muted-foreground',
-          )}>
-            {profit.margin_pct.toFixed(1)}%
+          <p
+            data-testid="costing-margin"
+            data-status={profit.status}
+            className={cn(
+              'text-2xl font-bold tabular-nums',
+              profit.tone === 'green' && 'text-green-700',
+              profit.tone === 'yellow' && 'text-amber-700',
+              profit.tone === 'red' && 'text-red-700',
+              profit.tone === 'gray' && 'text-muted-foreground',
+            )}
+          >
+            {profit.margin_label}
           </p>
-          <p className="text-[11px] text-muted-foreground tabular-nums">
-            {fmtUsd(profit.profit)} profit on {fmtUsd(profit.revenue)} revenue
-          </p>
+          {profit.status === 'ok' ? (
+            <p className="text-[11px] text-muted-foreground tabular-nums" data-testid="costing-profit">
+              {fmtUsd(profit.profit)} profit on {fmtUsd(profit.revenue)} revenue
+            </p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground" data-testid="costing-status">
+              {profit.status === 'no_cost_data' && 'No cost data yet — log labor or materials.'}
+              {profit.status === 'rate_not_set' && 'Rate not set — some labor is unpriced.'}
+              {profit.status === 'no_revenue' && 'Set revenue to see margin.'}
+            </p>
+          )}
         </div>
         <Button
           onClick={saveSnapshot}
@@ -271,6 +300,23 @@ export function JobCostingTab({
         </Button>
       </div>
 
+      {/* Rate-not-set warning — labor is understated, so the margin is hidden. */}
+      {!ratesComplete && (
+        <div
+          data-testid="costing-rate-warning"
+          className="rounded-lg border-l-4 border-amber-500 bg-amber-50 px-3 py-2.5 text-sm text-amber-800"
+        >
+          <p className="font-semibold">
+            {actualLabor.unratedProfileIds.length} worker{actualLabor.unratedProfileIds.length === 1 ? '' : 's'} on
+            this job {actualLabor.unratedProfileIds.length === 1 ? 'has' : 'have'} no pay rate set.
+          </p>
+          <p className="text-[12px] text-amber-700/90 mt-0.5">
+            Their hours are tracked but unpriced, so labor cost is understated and the margin is hidden.
+            Set an hourly rate on the crew member (or a company default) to see a true margin.
+          </p>
+        </div>
+      )}
+
       {/* Cost matrix */}
       <div className="rounded-xl border bg-card overflow-hidden">
         <table className="w-full text-sm">
@@ -284,6 +330,7 @@ export function JobCostingTab({
           </thead>
           <tbody className="divide-y">
             <CostRow
+              actualTestId="costing-actual-labor"
               label="Labor"
               sub={`${fmtHours(estLaborHours)} estimated · ${fmtHours(actualLabor.hours)} actual (clock-tracked)`}
               estimatedInput={
@@ -308,6 +355,7 @@ export function JobCostingTab({
               estimated={estLaborCost}
             />
             <CostRow
+              actualTestId="costing-actual-materials"
               label="Materials"
               sub={`Sum of ${costEntries.filter((e) => e.category === 'material').length} cost entries`}
               estimatedInput={
@@ -322,6 +370,7 @@ export function JobCostingTab({
               estimated={estMaterialsCost}
             />
             <CostRow
+              actualTestId="costing-actual-equipment"
               label="Equipment"
               sub={`Sum of ${costEntries.filter((e) => e.category === 'equipment').length} cost entries`}
               estimatedInput={
@@ -336,6 +385,7 @@ export function JobCostingTab({
               estimated={estEquipmentCost}
             />
             <CostRow
+              actualTestId="costing-actual-overhead"
               label={`Overhead (${overheadPct}%)`}
               sub="Auto-applied to labor + materials + equipment"
               estimatedInput={
@@ -481,13 +531,14 @@ export function JobCostingTab({
 }
 
 function CostRow({
-  label, sub, estimatedInput, actual, estimated,
+  label, sub, estimatedInput, actual, estimated, actualTestId,
 }: {
   label: string;
   sub?: string;
   estimatedInput: React.ReactNode;
   actual: number;
   estimated: number;
+  actualTestId?: string;
 }) {
   return (
     <tr>
@@ -498,7 +549,7 @@ function CostRow({
       <td className="px-4 py-2.5 text-right tabular-nums w-32">
         {estimatedInput}
       </td>
-      <td className="px-4 py-2.5 text-right tabular-nums">
+      <td className="px-4 py-2.5 text-right tabular-nums" data-testid={actualTestId}>
         {fmtUsd(actual)}
       </td>
       <td className="px-4 py-2.5 text-right tabular-nums">
