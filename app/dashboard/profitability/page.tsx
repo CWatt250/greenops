@@ -55,9 +55,16 @@ export default async function ProfitabilityPage() {
 
   const allJobs = (jobs ?? []) as unknown as JobWithJoins[];
 
-  // ── Aggregations ──
+  // A job with revenue but zero actual cost hasn't been costed — its stored
+  // "profit" equals revenue and its margin is a fabricated ~100%. Exclude
+  // those from every ranking (they'd top "most profitable" with fake numbers)
+  // and surface them separately so Trent knows to log their labor/materials.
+  const costedJobs = allJobs.filter((j) => Number(j.actual_total_cost ?? 0) > 0);
+  const uncostedCount = allJobs.length - costedJobs.length;
+
+  // ── Aggregations (costed jobs only) ──
   const byClient = new Map<string, { name: string; profit: number; jobs: number }>();
-  for (const j of allJobs) {
+  for (const j of costedJobs) {
     if (!j.client?.id) continue;
     const e = byClient.get(j.client.id) ?? { name: j.client.name, profit: 0, jobs: 0 };
     e.profit += Number(j.profit ?? 0);
@@ -74,7 +81,7 @@ export default async function ProfitabilityPage() {
 
   // Service breakdown — naive: sum profit per first-service-category per job.
   const byService = new Map<string, { profit: number; jobs: number }>();
-  for (const j of allJobs) {
+  for (const j of costedJobs) {
     const items = (j as unknown as { job_line_items?: Array<{ service?: { name: string } | null }> }).job_line_items ?? [];
     const svcName = items[0]?.service?.name ?? 'Other';
     const e = byService.get(svcName) ?? { profit: 0, jobs: 0 };
@@ -88,7 +95,7 @@ export default async function ProfitabilityPage() {
 
   // Crew breakdown
   const byCrew = new Map<string, { name: string; color: string; profit: number; jobs: number; margin: number; revenue: number }>();
-  for (const j of allJobs) {
+  for (const j of costedJobs) {
     if (!j.crew?.id) continue;
     const e = byCrew.get(j.crew.id) ?? {
       name: j.crew.name,
@@ -108,7 +115,7 @@ export default async function ProfitabilityPage() {
 
   // Monthly trend
   const byMonth = new Map<string, { profit: number; revenue: number; jobs: number }>();
-  for (const j of allJobs) {
+  for (const j of costedJobs) {
     const date = j.scheduled_date as string | null;
     if (!date) continue;
     const ym = date.slice(0, 7); // YYYY-MM
@@ -142,6 +149,22 @@ export default async function ProfitabilityPage() {
           'Click any row to drill into the underlying jobs.',
         ]}
       />
+
+      {uncostedCount > 0 && (
+        <div
+          data-testid="uncosted-notice"
+          className="mb-4 rounded-lg border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        >
+          <span className="font-semibold">
+            {uncostedCount} completed job{uncostedCount === 1 ? '' : 's'} ha{uncostedCount === 1 ? 's' : 've'} revenue
+            but no cost data yet.
+          </span>{' '}
+          <span className="text-amber-700/90">
+            They&apos;re excluded from the rankings below — a margin without labor or materials would read as a
+            misleading ~100%. Log labor/materials on each job to bring them in.
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
