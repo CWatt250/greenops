@@ -1424,7 +1424,7 @@ function MethodToggle({
   onChange: (m: 'tap' | 'draw') => void;
 }) {
   return (
-    <div className="inline-flex rounded-lg border bg-background/95 backdrop-blur-sm shadow p-0.5">
+    <div className="pointer-events-auto inline-flex rounded-lg border bg-background/95 backdrop-blur-sm shadow p-0.5">
       {([
         { key: 'tap' as const, label: 'Tap', title: 'Tap — place points one at a time' },
         { key: 'draw' as const, label: 'Draw', title: 'Draw — drag your finger to trace freehand' },
