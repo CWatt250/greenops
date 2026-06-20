@@ -10,6 +10,7 @@ import { JobCostingTab } from '@/components/jobs/job-costing-tab';
 import { JobFormsSection } from '@/components/forms/job-forms-section';
 import { Separator } from '@/components/ui/separator';
 import { formatDate, formatCurrency } from '@/lib/utils';
+import { fileSrc } from '@/lib/storage';
 import { rruleToText } from '@/lib/rrule-helpers';
 import {
   Edit, Calendar, Users, MapPin, Repeat2, FileText, Clock, Activity,
@@ -124,7 +125,7 @@ export default async function JobDetailPage({ params }: Props) {
   const photoRows = (photosRes.data ?? []) as PhotoRow[];
   const photos = photoRows.map((p) => ({
     ...p,
-    publicUrl: supabase.storage.from('job-photos').getPublicUrl(p.storage_path).data.publicUrl,
+    publicUrl: fileSrc('job-photos', p.storage_path),
   }));
 
   const grandTotal = serviceRows.reduce((sum, s) => sum + (s.total ?? 0), 0);
@@ -315,13 +316,13 @@ export default async function JobDetailPage({ params }: Props) {
                 {photos.map((p) => (
                   <a
                     key={p.id}
-                    href={p.publicUrl}
+                    href={p.publicUrl ?? undefined}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="relative aspect-square rounded-lg overflow-hidden border bg-muted/30 hover:opacity-90 transition-opacity"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={p.publicUrl} alt={p.caption ?? 'Job photo'} className="w-full h-full object-cover" />
+                    <img src={p.publicUrl ?? undefined} alt={p.caption ?? 'Job photo'} className="w-full h-full object-cover" />
                     {p.caption && (
                       <span
                         className="absolute bottom-1 left-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider"
@@ -348,7 +349,7 @@ export default async function JobDetailPage({ params }: Props) {
                 <div className="rounded-lg border bg-white p-3 inline-block">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={job.signature_url}
+                    src={fileSrc('job-signatures', job.signature_url) ?? undefined}
                     alt="Customer signature"
                     className="max-h-32"
                   />

@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Loader2, Plus, Trash2, Camera, X, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import { fmtUsd } from '@/lib/job-costing';
+import { fileSrc } from '@/lib/storage';
 import type { JobCostEntry } from '@/types';
 
 /**
@@ -148,9 +149,9 @@ export function MaterialsEntry({
             <li key={e.id} className="flex items-center gap-3 px-3 py-2 text-sm" data-testid="material-row">
               <span className="flex-1 min-w-0">
                 <span className="block truncate font-medium">{e.description}</span>
-                {receiptUrl(e) && (
+                {fileSrc('job-photos', receiptUrl(e)) && (
                   <a
-                    href={receiptUrl(e)!}
+                    href={fileSrc('job-photos', receiptUrl(e))!}
                     target="_blank"
                     rel="noreferrer"
                     className="text-[11px] underline"
