@@ -506,9 +506,9 @@ export default function MeasureMap({
   }
 
   // Enter freehand for a shape kind (area = closed fill, line = open path).
-  // Tapping the already-active kind toggles it back off.
+  // Tapping the already-active kind toggles it back off. (Activating only flips
+  // UI state — the Draw layer is only needed later, at commit time.)
   function startFreehand(kind: 'area' | 'line') {
-    if (!drawRef.current) return;
     if (freehandActive && freehandKind === kind && !freehandPending) {
       setFreehandActive(false);
       clearFreehandDraft();
@@ -608,9 +608,10 @@ export default function MeasureMap({
   // tools do. Returns true if a shape was committed.
   function commitFreehand(path: LngLat[]): boolean {
     const draw = drawRef.current;
+    if (!draw) return false; // map/Draw not ready — bail silently
     const uniq = new Set(path.map((c) => `${c[0].toFixed(7)},${c[1].toFixed(7)}`));
     const minUnique = freehandKind === 'area' ? 3 : 2;
-    if (!draw || uniq.size < minUnique) {
+    if (uniq.size < minUnique) {
       if (path.length >= 2) {
         toast(
           freehandKind === 'area'

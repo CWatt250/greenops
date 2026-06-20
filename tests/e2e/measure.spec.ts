@@ -76,6 +76,39 @@ test.describe('measure', () => {
     });
   });
 
+  test.describe('freehand draw method — toggle actually switches', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+    test('tapping Draw activates freehand; Area then enters paint mode', async ({ page }) => {
+      await page.goto('/dashboard/measure');
+
+      const drawToggle = page.getByRole('button', { name: /draw — drag your finger to trace freehand/i });
+      const tapToggle = page.getByRole('button', { name: /tap — place points one at a time/i });
+      await expect(drawToggle).toBeVisible({ timeout: 15_000 });
+
+      // Starts on Tap.
+      await expect(tapToggle).toHaveAttribute('aria-pressed', 'true');
+      await expect(drawToggle).toHaveAttribute('aria-pressed', 'false');
+
+      // Tapping Draw must flip the toggle.
+      await drawToggle.click();
+      await expect(drawToggle).toHaveAttribute('aria-pressed', 'true');
+      await expect(tapToggle).toHaveAttribute('aria-pressed', 'false');
+
+      // With Draw active, tapping Area enters freehand paint mode (hint shows).
+      // (The hint text renders in both the mobile and the hidden desktop
+      // toolbar, so scope the assertion to the visible one.)
+      const hint = page.getByText(/drag to paint a zone · map locked/i).filter({ visible: true });
+      await page.getByRole('button', { name: /area — drag to paint a zone/i }).click();
+      await expect(hint).toHaveCount(1);
+
+      // Flipping back to Tap exits paint mode (hint gone).
+      await tapToggle.click();
+      await expect(tapToggle).toHaveAttribute('aria-pressed', 'true');
+      await expect(hint).toHaveCount(0);
+    });
+  });
+
   test.describe('freehand draw method — fine pointer (desktop)', () => {
     test.use({ viewport: { width: 1280, height: 800 }, hasTouch: false, isMobile: false });
 
