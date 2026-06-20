@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { fileSrc } from '@/lib/storage';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -164,9 +165,10 @@ export function ComplaintQueue({ complaints, onUpdate }: Props) {
                     <p className="text-xs text-muted-foreground mb-2">Photos</p>
                     <div className="flex gap-2 flex-wrap">
                       {selected.photo_urls.map((url, i) => (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
                           key={i}
-                          src={url}
+                          src={fileSrc('job-photos', url) ?? undefined}
                           alt={`Photo ${i + 1}`}
                           className="h-20 w-20 rounded-lg object-cover border"
                         />

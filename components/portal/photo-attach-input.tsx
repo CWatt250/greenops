@@ -9,6 +9,9 @@ export interface AttachedPhoto {
   id: string;
   url: string;
   storagePath: string;
+  /** Local object URL for the in-form thumbnail — bucket-independent, so the
+   *  preview works even when the storage bucket is private. Not persisted. */
+  previewUrl?: string;
 }
 
 interface Props {
@@ -64,6 +67,7 @@ export function PhotoAttachInput({ bucket = 'job-photos', pathPrefix, photos, on
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
           url: pub.publicUrl,
           storagePath: path,
+          previewUrl: URL.createObjectURL(file),
         });
       } catch (err) {
         toast.error((err as Error).message ?? 'Photo upload failed.');
@@ -74,6 +78,7 @@ export function PhotoAttachInput({ bucket = 'job-photos', pathPrefix, photos, on
   }
 
   async function remove(p: AttachedPhoto) {
+    if (p.previewUrl) URL.revokeObjectURL(p.previewUrl);
     try {
       await supabase.storage.from(bucket).remove([p.storagePath]);
     } catch {
@@ -111,7 +116,7 @@ export function PhotoAttachInput({ bucket = 'job-photos', pathPrefix, photos, on
           {photos.map((p) => (
             <li key={p.id} className="relative aspect-square rounded-lg overflow-hidden border bg-gray-50">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={p.url} alt="" className="w-full h-full object-cover" />
+              <img src={p.previewUrl ?? p.url} alt="" className="w-full h-full object-cover" />
               <button
                 type="button"
                 onClick={() => remove(p)}

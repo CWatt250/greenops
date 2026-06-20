@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Camera, X, PenLine } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { fileSrc } from '@/lib/storage';
 import type { Job } from '@/types';
 
 const STATUS_CONFIG = {
@@ -133,7 +134,7 @@ export function JobHistoryCard({ job, isUpcoming, photos = [] }: Props) {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setLightbox(job.signature_url!)}
+                  onClick={() => setLightbox(fileSrc('job-signatures', job.signature_url))}
                   className="text-xs text-gray-600 underline-offset-2 hover:underline"
                 >
                   View

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { localDateStr } from '@/lib/dates';
 import { createClient } from '@/lib/supabase/client';
+import { fileSrc } from '@/lib/storage';
 import { JobHistoryCard, type JobPhoto } from '@/components/portal/job-history-card';
 import { LiveIndicator } from '@/components/shared/live-indicator';
 import { useLiveData } from '@/lib/hooks/use-live-data';
@@ -67,7 +68,7 @@ export default function PortalJobsPage() {
         .in('job_id', completedIds);
       const grouped: Record<string, JobPhoto[]> = {};
       for (const row of (photoRows ?? []) as Array<{ id: string; job_id: string; storage_path: string; caption: string | null }>) {
-        const url = supabase.storage.from('job-photos').getPublicUrl(row.storage_path).data.publicUrl;
+        const url = fileSrc('job-photos', row.storage_path) ?? '';
         (grouped[row.job_id] ??= []).push({ id: row.id, url, caption: row.caption });
       }
       setPhotosByJob(grouped);
