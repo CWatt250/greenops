@@ -527,14 +527,24 @@ export default function MeasureMap({
     freehandDrawingRef.current = false;
     freehandLastScreenRef.current = null;
     e.currentTarget.releasePointerCapture?.(e.pointerId);
-    commitFreehand(freehandPathRef.current);
+    const committed = commitFreehand(freehandPathRef.current);
     freehandPathRef.current = [];
     setFreehandPath([]);
+    // On a successful zone, exit highlight mode (like the Area tool returns to
+    // select after each shape) so the capture overlay drops and the freshly
+    // opened detail / the map are interactive again. A too-small scribble keeps
+    // the tool active so the user can simply retry.
+    if (committed) {
+      setFreehandActive(false);
+    }
   }
 
-  // Close the freehand ring and commit it as a polygon through the SAME path as
-  // the click-to-place tools (so labelling / save / undo all behave identically).
-  function commitFreehand(path: LngLat[]) {
+  // Close the freehand ring and commit it as a polygon. Builds the shape and
+  // appends it to React state directly (not via a Draw-layer re-read) so the
+  // measurement is picked up immediately, mirrors the Draw layer for editing,
+  // and opens the shape's detail just like the click-to-place tools do.
+  // Returns true if a shape was committed.
+  function commitFreehand(path: LngLat[]): boolean {
     const draw = drawRef.current;
     const uniq = new Set(path.map((c) => `${c[0].toFixed(7)},${c[1].toFixed(7)}`));
     if (!draw || uniq.size < 3) {
@@ -546,21 +556,41 @@ export default function MeasureMap({
           duration: 2500,
         });
       }
-      return;
+      return false;
     }
-    const ring = [...path, path[0]];
-    const fc: GeoJSON.FeatureCollection = {
-      type: 'FeatureCollection',
-      features: [{
-        type: 'Feature',
-        id: String(Date.now()),
-        properties: {},
-        geometry: { type: 'Polygon', coordinates: [ring] },
-      }],
+
+    const id = String(Date.now());
+    const geometry: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[...path, path[0]]] };
+    const type: ShapeType = 'turf';
+    const polyCount = shapesRef.current.filter((s) => s.kind === 'polygon').length;
+    const newShape: MeasuredShape = {
+      id,
+      label: suggestLabel(geometry, type, centerRef.current) ?? `Area ${polyCount + 1}`,
+      kind: 'polygon',
+      type,
+      area_sqft: polygonAreaSqFt(geometry),
+      length_ft: 0,
+      geometry,
     };
+
+    // Mirror the shape into the Draw layer so it renders + stays selectable, and
+    // append it to React state so the panel/sheet pick it up right away.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (draw as any).add(fc);
-    handleChangeRef.current();
+    (draw as any).add({
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', id, properties: {}, geometry }],
+    } as GeoJSON.FeatureCollection);
+    onShapesRef.current([...shapesRef.current, newShape]);
+
+    // Open the measurement detail for the new zone (parity with click-to-place,
+    // which auto-selects the shape it just drew).
+    const map = mapRef.current?.getMap();
+    const c = computeCentroid(geometry);
+    if (map && c) {
+      const px = map.project(c);
+      setEditing({ shapeId: id, position: { x: px.x, y: px.y } });
+    }
+    return true;
   }
 
   // Disable map pan / pinch-zoom / rotate while freehand is active so the draw
