@@ -61,6 +61,37 @@ test.describe('measure', () => {
     await expect(page.getByText(/^\d[\d,]* ft$/).first()).toBeVisible({ timeout: 10_000 });
   });
 
+  // The freehand "highlighter" zone tool is touch/tablet-only, gated purely on
+  // the CSS (pointer: coarse) capability (no JS device sniffing). These two
+  // checks need no Mapbox token — the toolbar renders regardless of map tiles —
+  // so they run in CI alongside the token-gated draw tests above.
+  test.describe('freehand highlighter — coarse pointer (touch/tablet)', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+    test('Highlight toggle is visible on a touch viewport', async ({ page }) => {
+      await page.goto('/dashboard/measure');
+      await expect(
+        page.getByRole('button', { name: /highlight — drag your finger to trace a zone/i }),
+      ).toBeVisible({ timeout: 15_000 });
+    });
+  });
+
+  test.describe('freehand highlighter — fine pointer (desktop)', () => {
+    test.use({ viewport: { width: 1280, height: 800 }, hasTouch: false, isMobile: false });
+
+    test('Highlight toggle is NOT rendered on a desktop viewport', async ({ page }) => {
+      await page.goto('/dashboard/measure');
+      // The tool itself still loads (address search visible)…
+      await expect(
+        page.getByRole('textbox', { name: /address to measure/i }),
+      ).toBeVisible({ timeout: 15_000 });
+      // …but the freehand toggle is absent on a fine-pointer device.
+      await expect(
+        page.getByRole('button', { name: /highlight — drag your finger to trace a zone/i }),
+      ).toHaveCount(0);
+    });
+  });
+
   test('line tool labels each drawn segment with its distance', async ({ page }) => {
     test.skip(!hasRealMapboxToken(), 'Requires a real NEXT_PUBLIC_MAPBOX_TOKEN (geocoding + tiles).');
 

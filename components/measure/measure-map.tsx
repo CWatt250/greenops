@@ -17,8 +17,9 @@ import {
   segmentLengthFt, formatFeetLabel, segmentMidpoint, segmentLabels, shapeSegmentLabels,
   type MeasuredShape, type ShapeType, type LngLat,
 } from '@/lib/measurement';
-import { Layers, Pentagon, Slash, Trash2, HelpCircle, Undo2, Eraser } from 'lucide-react';
+import { Layers, Pentagon, Slash, Trash2, HelpCircle, Undo2, Eraser, Highlighter } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useMediaQuery } from '@/lib/hooks/use-media-query';
 import { toast } from 'sonner';
 import { ShapeEditPopup } from './shape-edit-popup';
 import { CrosshairOverlay } from './crosshair-overlay';
@@ -97,6 +98,14 @@ export default function MeasureMap({
   const [mobilePoints, setMobilePoints] = useState<[number, number][]>([]);
   const [mobileTool, setMobileTool] = useState<'polygon' | 'line' | null>(null);
   const handleChangeRef = useRef<() => void>(() => {});
+
+  // Freehand "highlighter" mode — touch/tablet only. Gated on the CSS
+  // (pointer: coarse) capability (no JS device sniffing) so desktop renders
+  // byte-identically. `freehandActive` mirrors the live Draw mode and is kept
+  // in sync via the draw.modechange handler so toggling, completing a drag, or
+  // switching to another tool all converge on the right button state.
+  const isCoarse = useMediaQuery('(pointer: coarse)');
+  const [freehandActive, setFreehandActive] = useState(false);
 
   // ── Live distance state ──────────────────────────────────────────────────
   // Mobile: the geographic coord under the fixed centre crosshair, recomputed
@@ -180,11 +189,18 @@ export default function MeasureMap({
     if (!map) return;
 
     const MapboxDraw = (await import('@mapbox/mapbox-gl-draw')).default;
+    // Lazy-load the freehand highlighter mode alongside Draw so it stays out of
+    // the main bundle (same pattern as Draw itself). Registered as a SEPARATE
+    // named mode — draw_polygon (click-to-place Area) is left untouched.
+    const { default: DrawFreehand, FREEHAND_TOO_SMALL_EVENT } =
+      await import('./freehand-mode');
 
     const draw = new MapboxDraw({
       displayControlsDefault: false,
       controls: {}, // we render our own panel
       defaultMode: 'simple_select',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      modes: { ...(MapboxDraw as any).modes, draw_freehand: DrawFreehand },
       styles: [
         // Polygon fill — coloured by user_color, set when type changes.
         {
@@ -327,6 +343,11 @@ export default function MeasureMap({
     // draw_polygon and the next click would start another shape.
     function handleModeChange(e: { mode: string }) {
       setActiveMode(e.mode as typeof activeMode);
+      // Mirror the live Draw mode into React. This is the single source of
+      // truth for the Highlight button's active state — it flips off whether
+      // the user toggles out, completes a drag (the mode auto-returns to
+      // simple_select), or switches to Area/Line.
+      setFreehandActive(e.mode === 'draw_freehand');
       // Leaving a draw mode (finish / cancel / escape) tears down the live
       // rubber-band — the completed-shape edge labels take over from here.
       if (e.mode !== 'draw_polygon' && e.mode !== 'draw_line_string') {
@@ -376,6 +397,14 @@ export default function MeasureMap({
     map.on('draw.selectionchange', handleSelectionChange);
     map.on('draw.modechange', handleModeChange);
     map.on('draw.render', handleRender);
+    // A freehand swipe that simplifies to < 3 unique points isn't a real
+    // polygon — the mode discards it and pings us to nudge the user.
+    map.on(FREEHAND_TOO_SMALL_EVENT, () => {
+      toast('Shape too small — try drawing a larger area', {
+        position: 'top-center',
+        duration: 2500,
+      });
+    });
   }, []);
 
   // Re-position the editor popup as the user pans/zooms.
@@ -447,8 +476,51 @@ export default function MeasureMap({
     };
   }, [syncShapesRef]);
 
+  // Toggle the freehand highlighter. Entering discards any in-progress mobile
+  // crosshair drawing first; the active-state itself is driven by modechange.
+  function toggleFreehand() {
+    const draw = drawRef.current;
+    if (!draw) return;
+    if (freehandActive) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (draw as any).changeMode('simple_select');
+      return;
+    }
+    setMobileTool(null);
+    setMobilePoints([]);
+    setEditing(null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (draw as any).changeMode('draw_freehand');
+  }
+
+  // Disable map pan / pinch-zoom / rotate while freehand is active so the draw
+  // gesture isn't fought by the camera, and re-enable on exit. (The upstream
+  // mode also toggles dragPan; this covers the multi-touch handlers too.)
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const m = map as any;
+    const toggle = (on: boolean) => {
+      for (const h of [m.dragPan, m.touchZoomRotate, m.doubleClickZoom, m.dragRotate]) {
+        if (!h) continue;
+        if (on) h.enable();
+        else h.disable();
+      }
+    };
+    toggle(!freehandActive);
+    return () => toggle(true);
+  }, [freehandActive, drawReady]);
+
   function setMode(mode: 'simple_select' | 'draw_polygon' | 'draw_line_string') {
     if (!drawRef.current) return;
+
+    // Switching to Area / Line / select exits an active freehand draw cleanly
+    // — draw_polygon.onStop drops the in-progress highlight.
+    if (freehandActive) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (drawRef.current as any).changeMode('simple_select');
+    }
 
     if (isMobile) {
       if (mode === 'draw_polygon') {
@@ -806,6 +878,17 @@ export default function MeasureMap({
             icon={<Slash className="h-5 w-5" />}
             title="Line — measure distance (click to add a vertex, double-click to finish)"
           />
+          {/* Freehand highlighter — touch/tablet only (pointer: coarse). */}
+          {isCoarse && (
+            <ToolButton
+              label="Hi-lite"
+              sublabel="Freehand zone"
+              active={freehandActive}
+              onClick={toggleFreehand}
+              icon={<Highlighter className="h-5 w-5" />}
+              title="Highlight — drag your finger to trace a zone"
+            />
+          )}
           <div className="h-px bg-border my-0.5" aria-hidden />
           <ToolButton
             label="Undo"
@@ -836,6 +919,16 @@ export default function MeasureMap({
             destructive
           />
         </div>
+        {/* Freehand hint — coarse-pointer tablets that render the wide toolbar. */}
+        {isCoarse && freehandActive && (
+          <div
+            className="inline-flex items-center gap-1.5 rounded-full border-2 border-white shadow-md px-3 py-1 text-[11px] font-bold text-white"
+            style={{ backgroundColor: 'var(--orange)' }}
+          >
+            <Highlighter className="h-3.5 w-3.5" />
+            Drag to highlight an area
+          </div>
+        )}
         <button
           type="button"
           onClick={() => setHelpOpen((o) => !o)}
@@ -906,6 +999,17 @@ export default function MeasureMap({
           />
         )}
 
+        {/* Freehand hint — visible cue that highlighter draw mode is on. */}
+        {isCoarse && freehandActive && (
+          <div
+            className="pointer-events-none inline-flex items-center gap-1.5 rounded-full border-2 border-white shadow-md px-3 py-1 text-[11px] font-bold text-white"
+            style={{ backgroundColor: 'var(--orange)' }}
+          >
+            <Highlighter className="h-3.5 w-3.5" />
+            Drag to highlight an area
+          </div>
+        )}
+
         {/* Area/Line/Undo/Delete toolbar — hidden while drawing since the
             compact bar above handles in-drawing actions. */}
         {!mobileTool && (
@@ -920,6 +1024,16 @@ export default function MeasureMap({
               active={isMobile ? mobileTool === 'line' : activeMode === 'draw_line_string'}
               onClick={() => setMode('draw_line_string')}
             />
+            {/* Freehand highlighter — touch/tablet only (pointer: coarse). */}
+            {isCoarse && (
+              <CompactToolButton
+                label="Highlight"
+                title="Highlight — drag your finger to trace a zone"
+                active={freehandActive}
+                onClick={toggleFreehand}
+                icon={<Highlighter className="h-4 w-4" />}
+              />
+            )}
             <div className="w-px h-6 bg-border" aria-hidden />
             <CompactToolButton
               label="Undo"
@@ -1020,21 +1134,25 @@ function DistanceLabel({ children, live = false }: { children: React.ReactNode; 
 }
 
 function CompactToolButton({
-  label, active, onClick, disabled = false, destructive = false,
+  label, active, onClick, disabled = false, destructive = false, icon, title,
 }: {
   label: string;
   active?: boolean;
   onClick: () => void;
   disabled?: boolean;
   destructive?: boolean;
+  icon?: React.ReactNode;
+  title?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      title={title}
+      aria-label={title ?? label}
       className={cn(
-        'flex flex-col items-center justify-center gap-0.5 w-10 h-10 rounded-lg transition-all text-[11px] font-semibold',
+        'flex flex-col items-center justify-center gap-0.5 min-w-10 px-1.5 h-10 rounded-lg transition-all text-[11px] font-semibold',
         active
           ? 'bg-[var(--orange)] text-white shadow'
           : destructive
@@ -1043,6 +1161,7 @@ function CompactToolButton({
         disabled && 'opacity-40 cursor-not-allowed pointer-events-none'
       )}
     >
+      {icon}
       {label}
     </button>
   );
