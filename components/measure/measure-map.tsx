@@ -101,11 +101,17 @@ export default function MeasureMap({
 
   // Freehand "highlighter" mode — touch/tablet only. Gated on the CSS
   // (pointer: coarse) capability (no JS device sniffing) so desktop renders
-  // byte-identically. `freehandActive` mirrors the live Draw mode and is kept
-  // in sync via the draw.modechange handler so toggling, completing a drag, or
-  // switching to another tool all converge on the right button state.
+  // byte-identically. Implemented as a pointer-drag overlay (NOT a Mapbox Draw
+  // mode): press-and-drag a finger to paint a live filled zone that follows the
+  // pointer, lift to commit it through the same path as the click-to-place
+  // tools. `freehandActive` toggles the capture overlay; `freehandPath` holds
+  // the in-progress ring (lng/lat) for the live highlight.
   const isCoarse = useMediaQuery('(pointer: coarse)');
   const [freehandActive, setFreehandActive] = useState(false);
+  const [freehandPath, setFreehandPath] = useState<LngLat[]>([]);
+  const freehandPathRef = useRef<LngLat[]>([]);
+  const freehandDrawingRef = useRef(false);
+  const freehandLastScreenRef = useRef<{ x: number; y: number } | null>(null);
 
   // ── Live distance state ──────────────────────────────────────────────────
   // Mobile: the geographic coord under the fixed centre crosshair, recomputed
@@ -189,18 +195,11 @@ export default function MeasureMap({
     if (!map) return;
 
     const MapboxDraw = (await import('@mapbox/mapbox-gl-draw')).default;
-    // Lazy-load the freehand highlighter mode alongside Draw so it stays out of
-    // the main bundle (same pattern as Draw itself). Registered as a SEPARATE
-    // named mode — draw_polygon (click-to-place Area) is left untouched.
-    const { default: DrawFreehand, FREEHAND_TOO_SMALL_EVENT } =
-      await import('./freehand-mode');
 
     const draw = new MapboxDraw({
       displayControlsDefault: false,
       controls: {}, // we render our own panel
       defaultMode: 'simple_select',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      modes: { ...(MapboxDraw as any).modes, draw_freehand: DrawFreehand },
       styles: [
         // Polygon fill — coloured by user_color, set when type changes.
         {
@@ -343,11 +342,6 @@ export default function MeasureMap({
     // draw_polygon and the next click would start another shape.
     function handleModeChange(e: { mode: string }) {
       setActiveMode(e.mode as typeof activeMode);
-      // Mirror the live Draw mode into React. This is the single source of
-      // truth for the Highlight button's active state — it flips off whether
-      // the user toggles out, completes a drag (the mode auto-returns to
-      // simple_select), or switches to Area/Line.
-      setFreehandActive(e.mode === 'draw_freehand');
       // Leaving a draw mode (finish / cancel / escape) tears down the live
       // rubber-band — the completed-shape edge labels take over from here.
       if (e.mode !== 'draw_polygon' && e.mode !== 'draw_line_string') {
@@ -397,14 +391,6 @@ export default function MeasureMap({
     map.on('draw.selectionchange', handleSelectionChange);
     map.on('draw.modechange', handleModeChange);
     map.on('draw.render', handleRender);
-    // A freehand swipe that simplifies to < 3 unique points isn't a real
-    // polygon — the mode discards it and pings us to nudge the user.
-    map.on(FREEHAND_TOO_SMALL_EVENT, () => {
-      toast('Shape too small — try drawing a larger area', {
-        position: 'top-center',
-        duration: 2500,
-      });
-    });
   }, []);
 
   // Re-position the editor popup as the user pans/zooms.
@@ -476,21 +462,105 @@ export default function MeasureMap({
     };
   }, [syncShapesRef]);
 
-  // Toggle the freehand highlighter. Entering discards any in-progress mobile
-  // crosshair drawing first; the active-state itself is driven by modechange.
+  // Reset the in-progress freehand stroke (no committed shape touched).
+  function clearFreehandDraft() {
+    freehandDrawingRef.current = false;
+    freehandLastScreenRef.current = null;
+    freehandPathRef.current = [];
+    setFreehandPath([]);
+  }
+
+  // Toggle the freehand highlighter. Entering exits any in-progress crosshair
+  // drawing first; leaving discards the in-progress stroke.
   function toggleFreehand() {
-    const draw = drawRef.current;
-    if (!draw) return;
+    if (!drawRef.current) return;
     if (freehandActive) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (draw as any).changeMode('simple_select');
+      setFreehandActive(false);
+      clearFreehandDraft();
       return;
     }
     setMobileTool(null);
     setMobilePoints([]);
     setEditing(null);
+    clearFreehandDraft();
+    setFreehandActive(true);
+  }
+
+  // Convert a pointer's viewport coords to a map lng/lat via the canvas rect.
+  const screenToLngLat = useCallback((clientX: number, clientY: number): LngLat | null => {
+    const map = mapRef.current?.getMap();
+    if (!map) return null;
+    const rect = map.getCanvas().getBoundingClientRect();
+    const c = map.unproject([clientX - rect.left, clientY - rect.top]);
+    return [c.lng, c.lat];
+  }, []);
+
+  function onFreehandPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    freehandDrawingRef.current = true;
+    freehandLastScreenRef.current = { x: e.clientX, y: e.clientY };
+    const ll = screenToLngLat(e.clientX, e.clientY);
+    const start = ll ? [ll] : [];
+    freehandPathRef.current = start;
+    setFreehandPath(start);
+  }
+
+  function onFreehandPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!freehandDrawingRef.current) return;
+    // Decimate to ~3px steps so the ring stays light and smooth.
+    const last = freehandLastScreenRef.current;
+    if (last) {
+      const dx = e.clientX - last.x;
+      const dy = e.clientY - last.y;
+      if (dx * dx + dy * dy < 9) return;
+    }
+    freehandLastScreenRef.current = { x: e.clientX, y: e.clientY };
+    const ll = screenToLngLat(e.clientX, e.clientY);
+    if (!ll) return;
+    const next = [...freehandPathRef.current, ll];
+    freehandPathRef.current = next;
+    setFreehandPath(next);
+  }
+
+  function onFreehandPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    if (!freehandDrawingRef.current) return;
+    freehandDrawingRef.current = false;
+    freehandLastScreenRef.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    commitFreehand(freehandPathRef.current);
+    freehandPathRef.current = [];
+    setFreehandPath([]);
+  }
+
+  // Close the freehand ring and commit it as a polygon through the SAME path as
+  // the click-to-place tools (so labelling / save / undo all behave identically).
+  function commitFreehand(path: LngLat[]) {
+    const draw = drawRef.current;
+    const uniq = new Set(path.map((c) => `${c[0].toFixed(7)},${c[1].toFixed(7)}`));
+    if (!draw || uniq.size < 3) {
+      // A genuine drag that collapsed to a sliver gets a nudge; a stray tap is
+      // ignored silently.
+      if (path.length >= 2) {
+        toast('Shape too small — try drawing a larger area', {
+          position: 'top-center',
+          duration: 2500,
+        });
+      }
+      return;
+    }
+    const ring = [...path, path[0]];
+    const fc: GeoJSON.FeatureCollection = {
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        id: String(Date.now()),
+        properties: {},
+        geometry: { type: 'Polygon', coordinates: [ring] },
+      }],
+    };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (draw as any).changeMode('draw_freehand');
+    (draw as any).add(fc);
+    handleChangeRef.current();
   }
 
   // Disable map pan / pinch-zoom / rotate while freehand is active so the draw
@@ -515,11 +585,11 @@ export default function MeasureMap({
   function setMode(mode: 'simple_select' | 'draw_polygon' | 'draw_line_string') {
     if (!drawRef.current) return;
 
-    // Switching to Area / Line / select exits an active freehand draw cleanly
-    // — draw_polygon.onStop drops the in-progress highlight.
+    // Switching to Area / Line / select exits an active freehand draw cleanly,
+    // discarding the in-progress highlight.
     if (freehandActive) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (drawRef.current as any).changeMode('simple_select');
+      setFreehandActive(false);
+      clearFreehandDraft();
     }
 
     if (isMobile) {
@@ -829,7 +899,53 @@ export default function MeasureMap({
             />
           </Marker>
         ))}
+
+        {/* Freehand highlighter — live filled zone following the finger. Once
+            three points exist it closes into a translucent orange fill with a
+            2px border, like a highlighter pen; before that it's just a stroke. */}
+        {freehandActive && freehandPath.length >= 2 && (
+          <Source
+            id="freehand-preview"
+            type="geojson"
+            data={({
+              type: 'Feature',
+              properties: {},
+              geometry: freehandPath.length >= 3
+                ? { type: 'Polygon', coordinates: [[...freehandPath, freehandPath[0]]] }
+                : { type: 'LineString', coordinates: freehandPath },
+            }) as GeoJSON.Feature}
+          >
+            {freehandPath.length >= 3 && (
+              <Layer
+                id="freehand-preview-fill"
+                type="fill"
+                paint={{ 'fill-color': '#F15A24', 'fill-opacity': 0.3 }}
+              />
+            )}
+            <Layer
+              id="freehand-preview-line"
+              type="line"
+              layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+              paint={{ 'line-color': '#F15A24', 'line-width': 2 }}
+            />
+          </Source>
+        )}
       </Map>
+
+      {/* Freehand capture overlay — sits above the map canvas but below the
+          floating toolbars (z-30 / z-10) so the Highlight toggle stays tappable.
+          Captures pointer drags to paint a zone; touch-action:none stops the
+          browser from hijacking the gesture as a scroll/zoom. */}
+      {freehandActive && (
+        <div
+          className="absolute inset-0 z-[5]"
+          style={{ touchAction: 'none', cursor: 'crosshair' }}
+          onPointerDown={onFreehandPointerDown}
+          onPointerMove={onFreehandPointerMove}
+          onPointerUp={onFreehandPointerUp}
+          onPointerCancel={onFreehandPointerUp}
+        />
+      )}
 
       {/* Style toggle (top-left) */}
       <div className="absolute top-3 left-3 inline-flex rounded-lg border bg-background/95 backdrop-blur-sm shadow p-0.5 z-10">
@@ -926,7 +1042,7 @@ export default function MeasureMap({
             style={{ backgroundColor: 'var(--orange)' }}
           >
             <Highlighter className="h-3.5 w-3.5" />
-            Drag to highlight an area
+            Drag to paint a zone · map locked
           </div>
         )}
         <button
@@ -1006,7 +1122,7 @@ export default function MeasureMap({
             style={{ backgroundColor: 'var(--orange)' }}
           >
             <Highlighter className="h-3.5 w-3.5" />
-            Drag to highlight an area
+            Drag to paint a zone · map locked
           </div>
         )}
 
