@@ -17,7 +17,7 @@ import {
   segmentLengthFt, formatFeetLabel, segmentMidpoint, segmentLabels, shapeSegmentLabels,
   type MeasuredShape, type ShapeType, type LngLat,
 } from '@/lib/measurement';
-import { Layers, Pentagon, Slash, Trash2, HelpCircle, Undo2, Eraser, Highlighter } from 'lucide-react';
+import { Layers, Pentagon, Slash, Trash2, HelpCircle, Undo2, Eraser, Highlighter, Check, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useMediaQuery } from '@/lib/hooks/use-media-query';
 import { toast } from 'sonner';
@@ -109,6 +109,10 @@ export default function MeasureMap({
   const isCoarse = useMediaQuery('(pointer: coarse)');
   const [freehandActive, setFreehandActive] = useState(false);
   const [freehandPath, setFreehandPath] = useState<LngLat[]>([]);
+  // After a finger-lift the painted outline is held as "pending" — it stays on
+  // screen until the user taps Complete (commit) or Redo (discard). Avoids
+  // relying on a reliable pointerup, which some mobile browsers swallow.
+  const [freehandPending, setFreehandPending] = useState(false);
   const freehandPathRef = useRef<LngLat[]>([]);
   const freehandDrawingRef = useRef(false);
   const freehandLastScreenRef = useRef<{ x: number; y: number } | null>(null);
@@ -468,6 +472,7 @@ export default function MeasureMap({
     freehandLastScreenRef.current = null;
     freehandPathRef.current = [];
     setFreehandPath([]);
+    setFreehandPending(false);
   }
 
   // Toggle the freehand highlighter. Entering exits any in-progress crosshair
@@ -497,6 +502,8 @@ export default function MeasureMap({
 
   function onFreehandPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     e.currentTarget.setPointerCapture?.(e.pointerId);
+    // Starting a fresh stroke clears any pending (un-completed) outline.
+    setFreehandPending(false);
     freehandDrawingRef.current = true;
     freehandLastScreenRef.current = { x: e.clientX, y: e.clientY };
     const ll = screenToLngLat(e.clientX, e.clientY);
@@ -527,16 +534,36 @@ export default function MeasureMap({
     freehandDrawingRef.current = false;
     freehandLastScreenRef.current = null;
     e.currentTarget.releasePointerCapture?.(e.pointerId);
-    const committed = commitFreehand(freehandPathRef.current);
-    freehandPathRef.current = [];
-    setFreehandPath([]);
-    // On a successful zone, exit highlight mode (like the Area tool returns to
-    // select after each shape) so the capture overlay drops and the freshly
-    // opened detail / the map are interactive again. A too-small scribble keeps
-    // the tool active so the user can simply retry.
-    if (committed) {
+    const path = freehandPathRef.current;
+    const uniq = new Set(path.map((c) => `${c[0].toFixed(7)},${c[1].toFixed(7)}`));
+    if (uniq.size < 3) {
+      // A genuine drag that collapsed to a sliver gets a nudge; a stray tap is
+      // ignored silently. Either way, clear and let the user try again.
+      if (path.length >= 2) {
+        toast('Shape too small — try drawing a larger area', {
+          position: 'top-center',
+          duration: 2500,
+        });
+      }
+      clearFreehandDraft();
+      return;
+    }
+    // Hold the painted outline on screen awaiting an explicit Complete tap.
+    setFreehandPending(true);
+  }
+
+  // Commit the pending freehand outline, then exit the tool. Triggered by the
+  // Complete button (not the finger-lift) so completion is deterministic.
+  function completeFreehand() {
+    if (commitFreehand(freehandPathRef.current)) {
+      clearFreehandDraft();
       setFreehandActive(false);
     }
+  }
+
+  // Discard the pending outline but stay in highlight mode to redraw.
+  function redoFreehand() {
+    clearFreehandDraft();
   }
 
   // Close the freehand ring and commit it as a polygon. Builds the shape and
@@ -548,8 +575,6 @@ export default function MeasureMap({
     const draw = drawRef.current;
     const uniq = new Set(path.map((c) => `${c[0].toFixed(7)},${c[1].toFixed(7)}`));
     if (!draw || uniq.size < 3) {
-      // A genuine drag that collapsed to a sliver gets a nudge; a stray tap is
-      // ignored silently.
       if (path.length >= 2) {
         toast('Shape too small — try drawing a larger area', {
           position: 'top-center',
@@ -1066,13 +1091,35 @@ export default function MeasureMap({
           />
         </div>
         {/* Freehand hint — coarse-pointer tablets that render the wide toolbar. */}
-        {isCoarse && freehandActive && (
+        {isCoarse && freehandActive && !freehandPending && (
           <div
             className="inline-flex items-center gap-1.5 rounded-full border-2 border-white shadow-md px-3 py-1 text-[11px] font-bold text-white"
             style={{ backgroundColor: 'var(--orange)' }}
           >
             <Highlighter className="h-3.5 w-3.5" />
             Drag to paint a zone · map locked
+          </div>
+        )}
+        {/* Freehand Complete / Redo for tablets — explicit finish, not a lift. */}
+        {isCoarse && freehandActive && freehandPending && (
+          <div className="inline-flex items-center gap-1.5 rounded-xl border bg-background/95 backdrop-blur-sm shadow-md p-1">
+            <button
+              type="button"
+              onClick={completeFreehand}
+              className="h-9 px-3 rounded-lg font-bold text-xs text-white flex items-center justify-center gap-1 shadow"
+              style={{ backgroundColor: 'var(--orange)' }}
+            >
+              <Check className="h-3.5 w-3.5" />
+              Complete
+            </button>
+            <button
+              type="button"
+              onClick={redoFreehand}
+              className="h-9 px-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 text-muted-foreground hover:text-foreground"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Redo
+            </button>
           </div>
         )}
         <button
@@ -1145,8 +1192,9 @@ export default function MeasureMap({
           />
         )}
 
-        {/* Freehand hint — visible cue that highlighter draw mode is on. */}
-        {isCoarse && freehandActive && (
+        {/* Freehand hint — visible cue that highlighter draw mode is on
+            (before a stroke is painted). */}
+        {isCoarse && freehandActive && !freehandPending && (
           <div
             className="pointer-events-none inline-flex items-center gap-1.5 rounded-full border-2 border-white shadow-md px-3 py-1 text-[11px] font-bold text-white"
             style={{ backgroundColor: 'var(--orange)' }}
@@ -1156,9 +1204,33 @@ export default function MeasureMap({
           </div>
         )}
 
-        {/* Area/Line/Undo/Delete toolbar — hidden while drawing since the
-            compact bar above handles in-drawing actions. */}
-        {!mobileTool && (
+        {/* Freehand Complete / Redo — shown once an outline is painted and held
+            pending, so finishing is an explicit tap, not a finicky finger-lift. */}
+        {isCoarse && freehandActive && freehandPending && (
+          <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border bg-background/95 backdrop-blur-sm shadow-lg p-1.5">
+            <button
+              type="button"
+              onClick={completeFreehand}
+              className="h-11 px-5 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-1.5 shadow"
+              style={{ backgroundColor: 'var(--orange)' }}
+            >
+              <Check className="h-4 w-4" />
+              Complete zone
+            </button>
+            <button
+              type="button"
+              onClick={redoFreehand}
+              className="h-11 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 text-muted-foreground hover:text-foreground border"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Redo
+            </button>
+          </div>
+        )}
+
+        {/* Area/Line/Undo/Delete toolbar — hidden while drawing or while a
+            freehand outline is pending (the Complete bar handles that). */}
+        {!mobileTool && !freehandPending && (
           <div className="pointer-events-auto flex items-center gap-2 rounded-xl border bg-background/95 backdrop-blur-sm shadow-lg px-2.5 py-1.5">
             <CompactToolButton
               label="Area"
