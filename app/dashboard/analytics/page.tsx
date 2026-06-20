@@ -14,7 +14,9 @@ import type { ClientRevenueRow } from '@/components/analytics/client-revenue-tab
 import type { Crew } from '@/types';
 
 function monthLabel(iso: string) {
-  const d = new Date(iso);
+  // Pin to local noon so the month label doesn't slip a day (and month) in
+  // timezones west of UTC. See app/dashboard/analytics/revenue/page.tsx.
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
   return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 }
 

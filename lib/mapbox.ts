@@ -3,6 +3,12 @@ export const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '';
 // Tri-Cities, WA — proximity bias for geocoding queries
 const TRI_CITIES_PROXIMITY = '-119.1734,46.2087';
 
+/** Surface Mapbox network/parse failures instead of swallowing them silently —
+ *  callers still degrade gracefully (null / []), but the cause is now visible. */
+function logMapboxError(where: string, err: unknown) {
+  console.error(`[mapbox] ${where} failed:`, err);
+}
+
 export async function geocodeAddress(
   address: string
 ): Promise<[number, number] | null> {
@@ -16,7 +22,9 @@ export async function geocodeAddress(
     if (data.features?.length > 0) {
       return data.features[0].center as [number, number]; // [lng, lat]
     }
-  } catch {}
+  } catch (err) {
+    logMapboxError('geocodeAddress', err);
+  }
   return null;
 }
 
@@ -77,7 +85,8 @@ export async function searchPlaces(query: string): Promise<PlaceSuggestion[]> {
     const data = await res.json();
     const features = (data.features ?? []) as MapboxFeature[];
     return features.map(parseFeature);
-  } catch {
+  } catch (err) {
+    logMapboxError('searchPlaces', err);
     return [];
   }
 }
@@ -100,7 +109,8 @@ export async function geocodeAddressDetailed(
     const f = (data.features ?? [])[0] as MapboxFeature | undefined;
     if (!f) return null;
     return parseFeature(f);
-  } catch {
+  } catch (err) {
+    logMapboxError('geocodeAddressDetailed', err);
     return null;
   }
 }
@@ -116,7 +126,9 @@ export async function getRoutePolyline(
     );
     const data = await res.json();
     if (data.routes?.[0]?.geometry) return data.routes[0].geometry as GeoJSON.LineString;
-  } catch {}
+  } catch (err) {
+    logMapboxError('getRoutePolyline', err);
+  }
   return null;
 }
 
@@ -131,7 +143,9 @@ export async function getDriveMatrix(
     );
     const data = await res.json();
     if (data.durations) return data.durations as number[][];
-  } catch {}
+  } catch (err) {
+    logMapboxError('getDriveMatrix', err);
+  }
   return null;
 }
 
@@ -151,6 +165,8 @@ export async function getRouteLegs(
         distance_meters: leg.distance,
       }));
     }
-  } catch {}
+  } catch (err) {
+    logMapboxError('getRouteLegs', err);
+  }
   return null;
 }

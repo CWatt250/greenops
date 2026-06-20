@@ -33,7 +33,11 @@ function pct(a: number, b: number) {
 }
 
 function monthLabel(iso: string) {
-  const d = new Date(iso);
+  // `iso` is a Postgres date_trunc('month') value (e.g. "2026-06-01..."). Parse
+  // only the calendar date and pin to local noon so the month never slips a day
+  // — and thus a whole month — when rendered west of UTC (Pacific showed "May"
+  // for June otherwise).
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
   return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }
 

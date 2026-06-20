@@ -1,8 +1,18 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 
 const ORS_OPTIMIZATION_URL = 'https://api.openrouteservice.org/optimization';
 
 export async function POST(req: Request) {
+  // Require a signed-in user. This endpoint forwards to OpenRouteService using
+  // the server's API key, so leaving it open would let anyone drain our routing
+  // credits. The only caller is the (authenticated) route builder.
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  }
+
   const apiKey = process.env.ORS_API_KEY;
   if (!apiKey) {
     return NextResponse.json(

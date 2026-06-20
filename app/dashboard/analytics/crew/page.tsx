@@ -14,7 +14,10 @@ import { cn } from '@/lib/utils';
 import type { Crew, Job } from '@/types';
 
 function monthLabel(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  // Pin to local noon so the month label doesn't slip a day (and month) in
+  // timezones west of UTC. See app/dashboard/analytics/revenue/page.tsx.
+  return new Date(`${iso.slice(0, 10)}T12:00:00`)
+    .toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 }
 
 const TrendTooltip = ({ active, payload, label }: {
