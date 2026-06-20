@@ -99,15 +99,19 @@ export default function MeasureMap({
   const [mobileTool, setMobileTool] = useState<'polygon' | 'line' | null>(null);
   const handleChangeRef = useRef<() => void>(() => {});
 
-  // Freehand "highlighter" mode — touch/tablet only. Gated on the CSS
-  // (pointer: coarse) capability (no JS device sniffing) so desktop renders
-  // byte-identically. Implemented as a pointer-drag overlay (NOT a Mapbox Draw
-  // mode): press-and-drag a finger to paint a live filled zone that follows the
-  // pointer, lift to commit it through the same path as the click-to-place
-  // tools. `freehandActive` toggles the capture overlay; `freehandPath` holds
-  // the in-progress ring (lng/lat) for the live highlight.
+  // Drawing method (the "how"): tap to place points vs drag a finger freehand.
+  // Freehand (`draw`) is touch/tablet only, gated on the CSS (pointer: coarse)
+  // capability — no JS device sniffing, so fine-pointer desktop stays exactly
+  // as before (always `tap`, toggle hidden).
   const isCoarse = useMediaQuery('(pointer: coarse)');
+  const [drawMethod, setDrawMethod] = useState<'tap' | 'draw'>('tap');
+
+  // Freehand pointer-drag overlay (NOT a Mapbox Draw mode): press-and-drag a
+  // finger to trace a shape that follows the pointer, lift to hold it pending,
+  // then Complete to commit it through the same path as the tap tools.
+  // `freehandKind` picks area (closed fill) vs line (open path).
   const [freehandActive, setFreehandActive] = useState(false);
+  const [freehandKind, setFreehandKind] = useState<'area' | 'line'>('area');
   const [freehandPath, setFreehandPath] = useState<LngLat[]>([]);
   // After a finger-lift the painted outline is held as "pending" — it stays on
   // screen until the user taps Complete (commit) or Redo (discard). Avoids
@@ -475,11 +479,37 @@ export default function MeasureMap({
     setFreehandPending(false);
   }
 
-  // Toggle the freehand highlighter. Entering exits any in-progress crosshair
-  // drawing first; leaving discards the in-progress stroke.
-  function toggleFreehand() {
+  // Switch the drawing method (tap vs draw). Cancels anything in progress so
+  // the switch is a clean slate; the user then picks Area or Line.
+  function chooseMethod(m: 'tap' | 'draw') {
+    if (m === drawMethod) return;
+    if (freehandActive) setFreehandActive(false);
+    clearFreehandDraft();
+    if (mobileTool) { setMobileTool(null); setMobilePoints([]); }
+    if (activeMode !== 'simple_select' && drawRef.current) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (drawRef.current as any).changeMode('simple_select');
+      setActiveMode('simple_select');
+    }
+    setEditing(null);
+    setDrawMethod(m);
+  }
+
+  // Start (or toggle off) a shape using the current method. Draw routes to the
+  // freehand overlay; tap routes to the existing crosshair / native tools.
+  function selectShape(kind: 'area' | 'line') {
+    if (drawMethod === 'draw' && isCoarse) {
+      startFreehand(kind);
+    } else {
+      setMode(kind === 'area' ? 'draw_polygon' : 'draw_line_string');
+    }
+  }
+
+  // Enter freehand for a shape kind (area = closed fill, line = open path).
+  // Tapping the already-active kind toggles it back off.
+  function startFreehand(kind: 'area' | 'line') {
     if (!drawRef.current) return;
-    if (freehandActive) {
+    if (freehandActive && freehandKind === kind && !freehandPending) {
       setFreehandActive(false);
       clearFreehandDraft();
       return;
@@ -488,6 +518,7 @@ export default function MeasureMap({
     setMobilePoints([]);
     setEditing(null);
     clearFreehandDraft();
+    setFreehandKind(kind);
     setFreehandActive(true);
   }
 
@@ -536,14 +567,18 @@ export default function MeasureMap({
     e.currentTarget.releasePointerCapture?.(e.pointerId);
     const path = freehandPathRef.current;
     const uniq = new Set(path.map((c) => `${c[0].toFixed(7)},${c[1].toFixed(7)}`));
-    if (uniq.size < 3) {
+    // Areas need a closeable ring (3 pts); lines just need two ends.
+    const minUnique = freehandKind === 'area' ? 3 : 2;
+    if (uniq.size < minUnique) {
       // A genuine drag that collapsed to a sliver gets a nudge; a stray tap is
       // ignored silently. Either way, clear and let the user try again.
       if (path.length >= 2) {
-        toast('Shape too small — try drawing a larger area', {
-          position: 'top-center',
-          duration: 2500,
-        });
+        toast(
+          freehandKind === 'area'
+            ? 'Shape too small — try drawing a larger area'
+            : 'Line too short — try drawing a longer line',
+          { position: 'top-center', duration: 2500 },
+        );
       }
       clearFreehandDraft();
       return;
@@ -566,37 +601,55 @@ export default function MeasureMap({
     clearFreehandDraft();
   }
 
-  // Close the freehand ring and commit it as a polygon. Builds the shape and
-  // appends it to React state directly (not via a Draw-layer re-read) so the
-  // measurement is picked up immediately, mirrors the Draw layer for editing,
-  // and opens the shape's detail just like the click-to-place tools do.
-  // Returns true if a shape was committed.
+  // Commit the freehand stroke as an area (closed polygon) or line (open path).
+  // Builds the shape and appends it to React state directly (not via a Draw-
+  // layer re-read) so the measurement is picked up immediately, mirrors the
+  // Draw layer for editing, and opens the shape's detail just like the tap
+  // tools do. Returns true if a shape was committed.
   function commitFreehand(path: LngLat[]): boolean {
     const draw = drawRef.current;
     const uniq = new Set(path.map((c) => `${c[0].toFixed(7)},${c[1].toFixed(7)}`));
-    if (!draw || uniq.size < 3) {
+    const minUnique = freehandKind === 'area' ? 3 : 2;
+    if (!draw || uniq.size < minUnique) {
       if (path.length >= 2) {
-        toast('Shape too small — try drawing a larger area', {
-          position: 'top-center',
-          duration: 2500,
-        });
+        toast(
+          freehandKind === 'area'
+            ? 'Shape too small — try drawing a larger area'
+            : 'Line too short — try drawing a longer line',
+          { position: 'top-center', duration: 2500 },
+        );
       }
       return false;
     }
 
     const id = String(Date.now());
-    const geometry: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[...path, path[0]]] };
-    const type: ShapeType = 'turf';
-    const polyCount = shapesRef.current.filter((s) => s.kind === 'polygon').length;
-    const newShape: MeasuredShape = {
-      id,
-      label: suggestLabel(geometry, type, centerRef.current) ?? `Area ${polyCount + 1}`,
-      kind: 'polygon',
-      type,
-      area_sqft: polygonAreaSqFt(geometry),
-      length_ft: 0,
-      geometry,
-    };
+    let geometry: GeoJSON.Polygon | GeoJSON.LineString;
+    let newShape: MeasuredShape;
+    if (freehandKind === 'area') {
+      const g: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[...path, path[0]]] };
+      const type: ShapeType = 'turf';
+      const n = shapesRef.current.filter((s) => s.kind === 'polygon').length + 1;
+      geometry = g;
+      newShape = {
+        id, kind: 'polygon', type,
+        label: suggestLabel(g, type, centerRef.current) ?? `Area ${n}`,
+        area_sqft: polygonAreaSqFt(g),
+        length_ft: 0,
+        geometry: g,
+      };
+    } else {
+      const g: GeoJSON.LineString = { type: 'LineString', coordinates: path };
+      const type: ShapeType = 'edging';
+      const n = shapesRef.current.filter((s) => s.kind === 'line').length + 1;
+      geometry = g;
+      newShape = {
+        id, kind: 'line', type,
+        label: suggestLabel(g, type, centerRef.current) ?? `Line ${n}`,
+        area_sqft: 0,
+        length_ft: lineLengthFt(g),
+        geometry: g,
+      };
+    }
 
     // Mirror the shape into the Draw layer so it renders + stays selectable, and
     // append it to React state so the panel/sheet pick it up right away.
@@ -607,8 +660,8 @@ export default function MeasureMap({
     } as GeoJSON.FeatureCollection);
     onShapesRef.current([...shapesRef.current, newShape]);
 
-    // Open the measurement detail for the new zone (parity with click-to-place,
-    // which auto-selects the shape it just drew).
+    // Open the measurement detail for the new shape (parity with the tap tools,
+    // which auto-select the shape they just drew).
     const map = mapRef.current?.getMap();
     const c = computeCentroid(geometry);
     if (map && c) {
@@ -862,6 +915,15 @@ export default function MeasureMap({
   }).filter((x): x is { id: string; lng: number; lat: number; n: number; color: string } => x !== null);
 
   const noShapes = shapes.length === 0;
+
+  // Active state for the Area/Line buttons depends on the current method:
+  // in Draw it's the freehand kind; in Tap it's the crosshair / native mode.
+  const areaActive = drawMethod === 'draw'
+    ? (freehandActive && freehandKind === 'area')
+    : (isMobile ? mobileTool === 'polygon' : activeMode === 'draw_polygon');
+  const lineActive = drawMethod === 'draw'
+    ? (freehandActive && freehandKind === 'line')
+    : (isMobile ? mobileTool === 'line' : activeMode === 'draw_line_string');
   const editingShape = editing
     ? shapes.find((s) => s.id === editing.shapeId) ?? null
     : null;
@@ -955,9 +1017,9 @@ export default function MeasureMap({
           </Marker>
         ))}
 
-        {/* Freehand highlighter — live filled zone following the finger. Once
-            three points exist it closes into a translucent orange fill with a
-            2px border, like a highlighter pen; before that it's just a stroke. */}
+        {/* Freehand preview — live shape following the finger. An area closes
+            into a translucent orange fill (once 3 points exist) like a
+            highlighter pen; a line stays an open 2px stroke. */}
         {freehandActive && freehandPath.length >= 2 && (
           <Source
             id="freehand-preview"
@@ -965,12 +1027,12 @@ export default function MeasureMap({
             data={({
               type: 'Feature',
               properties: {},
-              geometry: freehandPath.length >= 3
+              geometry: freehandKind === 'area' && freehandPath.length >= 3
                 ? { type: 'Polygon', coordinates: [[...freehandPath, freehandPath[0]]] }
                 : { type: 'LineString', coordinates: freehandPath },
             }) as GeoJSON.Feature}
           >
-            {freehandPath.length >= 3 && (
+            {freehandKind === 'area' && freehandPath.length >= 3 && (
               <Layer
                 id="freehand-preview-fill"
                 type="fill"
@@ -988,7 +1050,7 @@ export default function MeasureMap({
       </Map>
 
       {/* Freehand capture overlay — sits above the map canvas but below the
-          floating toolbars (z-30 / z-10) so the Highlight toggle stays tappable.
+          floating toolbars (z-30 / z-10) so the Tap/Draw toggle stays tappable.
           Captures pointer drags to paint a zone; touch-action:none stops the
           browser from hijacking the gesture as a scroll/zoom. */}
       {freehandActive && (
@@ -1032,34 +1094,35 @@ export default function MeasureMap({
           {shapes.length} shape{shapes.length === 1 ? '' : 's'} drawn
         </div>
 
+        {/* Method toggle (Tap / Draw) — touch/tablet only. On fine-pointer
+            desktop this is hidden and the method stays 'tap' (unchanged). */}
+        {isCoarse && (
+          <div className="self-end">
+            <MethodToggle method={drawMethod} onChange={chooseMethod} />
+          </div>
+        )}
+
         <div className="rounded-xl border bg-background/95 backdrop-blur-sm shadow-md p-1.5 flex flex-col gap-1">
           <ToolButton
             label="Area"
             sublabel="Polygon"
-            active={activeMode === 'draw_polygon'}
-            onClick={() => setMode('draw_polygon')}
+            active={areaActive}
+            onClick={() => selectShape('area')}
             icon={<Pentagon className="h-5 w-5" />}
-            title="Polygon — measure area (click to add a vertex, double-click to close)"
+            title={drawMethod === 'draw'
+              ? 'Area — drag your finger to paint a zone'
+              : 'Polygon — measure area (click to add a vertex, double-click to close)'}
           />
           <ToolButton
             label="Line"
             sublabel="Distance"
-            active={activeMode === 'draw_line_string'}
-            onClick={() => setMode('draw_line_string')}
+            active={lineActive}
+            onClick={() => selectShape('line')}
             icon={<Slash className="h-5 w-5" />}
-            title="Line — measure distance (click to add a vertex, double-click to finish)"
+            title={drawMethod === 'draw'
+              ? 'Line — drag your finger to trace a path'
+              : 'Line — measure distance (click to add a vertex, double-click to finish)'}
           />
-          {/* Freehand highlighter — touch/tablet only (pointer: coarse). */}
-          {isCoarse && (
-            <ToolButton
-              label="Hi-lite"
-              sublabel="Freehand zone"
-              active={freehandActive}
-              onClick={toggleFreehand}
-              icon={<Highlighter className="h-5 w-5" />}
-              title="Highlight — drag your finger to trace a zone"
-            />
-          )}
           <div className="h-px bg-border my-0.5" aria-hidden />
           <ToolButton
             label="Undo"
@@ -1097,7 +1160,7 @@ export default function MeasureMap({
             style={{ backgroundColor: 'var(--orange)' }}
           >
             <Highlighter className="h-3.5 w-3.5" />
-            Drag to paint a zone · map locked
+            {freehandKind === 'area' ? 'Drag to paint a zone' : 'Drag to trace a line'} · map locked
           </div>
         )}
         {/* Freehand Complete / Redo for tablets — explicit finish, not a lift. */}
@@ -1110,7 +1173,7 @@ export default function MeasureMap({
               style={{ backgroundColor: 'var(--orange)' }}
             >
               <Check className="h-3.5 w-3.5" />
-              Complete
+              Complete {freehandKind === 'area' ? 'zone' : 'line'}
             </button>
             <button
               type="button"
@@ -1200,7 +1263,7 @@ export default function MeasureMap({
             style={{ backgroundColor: 'var(--orange)' }}
           >
             <Highlighter className="h-3.5 w-3.5" />
-            Drag to paint a zone · map locked
+            {freehandKind === 'area' ? 'Drag to paint a zone' : 'Drag to trace a line'} · map locked
           </div>
         )}
 
@@ -1215,7 +1278,7 @@ export default function MeasureMap({
               style={{ backgroundColor: 'var(--orange)' }}
             >
               <Check className="h-4 w-4" />
-              Complete zone
+              Complete {freehandKind === 'area' ? 'zone' : 'line'}
             </button>
             <button
               type="button"
@@ -1228,30 +1291,28 @@ export default function MeasureMap({
           </div>
         )}
 
+        {/* Method toggle (Tap / Draw) — touch/tablet only, sits above the shape
+            row. The shape buttons below use whichever method is selected. */}
+        {isCoarse && !mobileTool && !freehandPending && (
+          <MethodToggle method={drawMethod} onChange={chooseMethod} />
+        )}
+
         {/* Area/Line/Undo/Delete toolbar — hidden while drawing or while a
             freehand outline is pending (the Complete bar handles that). */}
         {!mobileTool && !freehandPending && (
           <div className="pointer-events-auto flex items-center gap-2 rounded-xl border bg-background/95 backdrop-blur-sm shadow-lg px-2.5 py-1.5">
             <CompactToolButton
               label="Area"
-              active={isMobile ? mobileTool === 'polygon' : activeMode === 'draw_polygon'}
-              onClick={() => setMode('draw_polygon')}
+              title={drawMethod === 'draw' ? 'Area — drag to paint a zone' : 'Area — tap to place corners'}
+              active={areaActive}
+              onClick={() => selectShape('area')}
             />
             <CompactToolButton
               label="Line"
-              active={isMobile ? mobileTool === 'line' : activeMode === 'draw_line_string'}
-              onClick={() => setMode('draw_line_string')}
+              title={drawMethod === 'draw' ? 'Line — drag to trace a path' : 'Line — tap to place points'}
+              active={lineActive}
+              onClick={() => selectShape('line')}
             />
-            {/* Freehand highlighter — touch/tablet only (pointer: coarse). */}
-            {isCoarse && (
-              <CompactToolButton
-                label="Highlight"
-                title="Highlight — drag your finger to trace a zone"
-                active={freehandActive}
-                onClick={toggleFreehand}
-                icon={<Highlighter className="h-4 w-4" />}
-              />
-            )}
             <div className="w-px h-6 bg-border" aria-hidden />
             <CompactToolButton
               label="Undo"
@@ -1347,6 +1408,45 @@ function DistanceLabel({ children, live = false }: { children: React.ReactNode; 
       style={{ color: 'var(--orange-deep)', borderColor: 'var(--orange)' }}
     >
       {children}
+    </div>
+  );
+}
+
+/**
+ * Tap / Draw method toggle — the "how" half of the toolbar. Tap places points
+ * one at a time (precise); Draw drags a finger to trace freehand (fast). Styled
+ * to match the satellite/streets segmented control. Touch/tablet only.
+ */
+function MethodToggle({
+  method, onChange,
+}: {
+  method: 'tap' | 'draw';
+  onChange: (m: 'tap' | 'draw') => void;
+}) {
+  return (
+    <div className="inline-flex rounded-lg border bg-background/95 backdrop-blur-sm shadow p-0.5">
+      {([
+        { key: 'tap' as const, label: 'Tap', title: 'Tap — place points one at a time' },
+        { key: 'draw' as const, label: 'Draw', title: 'Draw — drag your finger to trace freehand' },
+      ]).map((m) => (
+        <button
+          key={m.key}
+          type="button"
+          onClick={() => onChange(m.key)}
+          title={m.title}
+          aria-label={m.title}
+          aria-pressed={method === m.key}
+          className={cn(
+            'rounded-md px-3 py-1 text-[11px] font-semibold transition-colors flex items-center gap-1',
+            method === m.key
+              ? 'bg-[var(--orange)] text-white'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {m.key === 'draw' && <Highlighter className="h-3 w-3" />}
+          {m.label}
+        </button>
+      ))}
     </div>
   );
 }

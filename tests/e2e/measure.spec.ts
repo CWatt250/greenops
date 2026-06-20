@@ -61,33 +61,33 @@ test.describe('measure', () => {
     await expect(page.getByText(/^\d[\d,]* ft$/).first()).toBeVisible({ timeout: 10_000 });
   });
 
-  // The freehand "highlighter" zone tool is touch/tablet-only, gated purely on
-  // the CSS (pointer: coarse) capability (no JS device sniffing). These two
-  // checks need no Mapbox token — the toolbar renders regardless of map tiles —
-  // so they run in CI alongside the token-gated draw tests above.
-  test.describe('freehand highlighter — coarse pointer (touch/tablet)', () => {
+  // The freehand "Draw" method is touch/tablet-only, gated purely on the CSS
+  // (pointer: coarse) capability (no JS device sniffing) via the Tap/Draw
+  // toggle. These checks need no Mapbox token — the toolbar renders regardless
+  // of map tiles — so they run in CI alongside the token-gated draw tests above.
+  test.describe('freehand draw method — coarse pointer (touch/tablet)', () => {
     test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
-    test('Highlight toggle is visible on a touch viewport', async ({ page }) => {
+    test('Tap/Draw toggle is visible on a touch viewport', async ({ page }) => {
       await page.goto('/dashboard/measure');
       await expect(
-        page.getByRole('button', { name: /highlight — drag your finger to trace a zone/i }),
+        page.getByRole('button', { name: /draw — drag your finger to trace freehand/i }),
       ).toBeVisible({ timeout: 15_000 });
     });
   });
 
-  test.describe('freehand highlighter — fine pointer (desktop)', () => {
+  test.describe('freehand draw method — fine pointer (desktop)', () => {
     test.use({ viewport: { width: 1280, height: 800 }, hasTouch: false, isMobile: false });
 
-    test('Highlight toggle is NOT rendered on a desktop viewport', async ({ page }) => {
+    test('Draw method toggle is NOT rendered on a desktop viewport', async ({ page }) => {
       await page.goto('/dashboard/measure');
       // The tool itself still loads (address search visible)…
       await expect(
         page.getByRole('textbox', { name: /address to measure/i }),
       ).toBeVisible({ timeout: 15_000 });
-      // …but the freehand toggle is absent on a fine-pointer device.
+      // …but the freehand Draw toggle is absent on a fine-pointer device.
       await expect(
-        page.getByRole('button', { name: /highlight — drag your finger to trace a zone/i }),
+        page.getByRole('button', { name: /draw — drag your finger to trace freehand/i }),
       ).toHaveCount(0);
     });
   });
