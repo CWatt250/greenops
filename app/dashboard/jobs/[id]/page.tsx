@@ -11,6 +11,7 @@ import { JobFormsSection } from '@/components/forms/job-forms-section';
 import { Separator } from '@/components/ui/separator';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { fileSrc } from '@/lib/storage';
+import { JobPhotosUploader } from '@/components/jobs/job-photos-uploader';
 import { rruleToText } from '@/lib/rrule-helpers';
 import {
   Edit, Calendar, Users, MapPin, Repeat2, FileText, Clock, Activity,
@@ -304,13 +305,21 @@ export default async function JobDetailPage({ params }: Props) {
           </div>
         )}
 
-        {/* Photos + signature (captured at job complete) */}
-        {(photos.length > 0 || job.signature_url) && (
+        {/* Photos + signature (crew captures at completion; office can add any time) */}
+        {(companyId || photos.length > 0 || job.signature_url) && (
           <div className="rounded-xl border bg-card p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <span aria-hidden>📸</span>
-              <h2 className="text-sm font-semibold">Completion proof</h2>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <span aria-hidden>📸</span>
+                <h2 className="text-sm font-semibold">Photos &amp; proof</h2>
+              </div>
+              {companyId && <JobPhotosUploader companyId={companyId} jobId={id} />}
             </div>
+            {photos.length === 0 && !job.signature_url && (
+              <p className="text-xs text-muted-foreground">
+                No photos yet — tap <span className="font-medium">Add photos</span> to attach some.
+              </p>
+            )}
             {photos.length > 0 && (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
                 {photos.map((p) => (
