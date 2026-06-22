@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { fileSrc } from '@/lib/storage';
 import { JobPhotosUploader } from '@/components/jobs/job-photos-uploader';
+import { JobPhotoGrid } from '@/components/jobs/job-photo-grid';
 import { rruleToText } from '@/lib/rrule-helpers';
 import {
   Edit, Calendar, Users, MapPin, Repeat2, FileText, Clock, Activity,
@@ -84,11 +85,13 @@ export default async function JobDetailPage({ params }: Props) {
   const { data: profile } = userId
     ? await supabase
         .from('profiles')
-        .select('company_id, company:companies(overhead_pct)')
+        .select('company_id, role, company:companies(overhead_pct)')
         .eq('id', userId)
         .single()
     : { data: null };
   const companyId = (profile as { company_id?: string } | null)?.company_id ?? null;
+  const viewerRole = (profile as { role?: string } | null)?.role ?? null;
+  const canManagePhotos = viewerRole === 'owner' || viewerRole === 'dispatcher';
   const overheadPct = Number(
     (profile as { company?: { overhead_pct?: number } | null } | null)?.company?.overhead_pct ?? 15
   );
@@ -123,11 +126,7 @@ export default async function JobDetailPage({ params }: Props) {
   const activity = (activityRes.data ?? []) as (ActivityLog & { actor: { full_name: string | null } | null })[];
 
   type PhotoRow = { id: string; storage_path: string; caption: string | null; created_at: string };
-  const photoRows = (photosRes.data ?? []) as PhotoRow[];
-  const photos = photoRows.map((p) => ({
-    ...p,
-    publicUrl: fileSrc('job-photos', p.storage_path),
-  }));
+  const photos = (photosRes.data ?? []) as PhotoRow[];
 
   const grandTotal = serviceRows.reduce((sum, s) => sum + (s.total ?? 0), 0);
 
@@ -321,28 +320,7 @@ export default async function JobDetailPage({ params }: Props) {
               </p>
             )}
             {photos.length > 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
-                {photos.map((p) => (
-                  <a
-                    key={p.id}
-                    href={p.publicUrl ?? undefined}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="relative aspect-square rounded-lg overflow-hidden border bg-muted/30 hover:opacity-90 transition-opacity"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={p.publicUrl ?? undefined} alt={p.caption ?? 'Job photo'} className="w-full h-full object-cover" />
-                    {p.caption && (
-                      <span
-                        className="absolute bottom-1 left-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider"
-                        style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
-                      >
-                        {p.caption}
-                      </span>
-                    )}
-                  </a>
-                ))}
-              </div>
+              <JobPhotoGrid photos={photos} canDelete={canManagePhotos} />
             )}
             {job.signature_url && (
               <div>
