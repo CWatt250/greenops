@@ -245,8 +245,8 @@ export function JobCostingTab({
   return (
     <div className="space-y-5">
       {/* Header — revenue input + save */}
-      <div className="rounded-xl border bg-card p-4 flex items-end gap-4 flex-wrap">
-        <div className="flex-1 min-w-[200px]">
+      <div className="rounded-xl border bg-card p-4 flex flex-col md:flex-row md:items-end gap-3 md:gap-4">
+        <div className="w-full md:flex-1 md:min-w-[200px]">
           <Label htmlFor="job-revenue" className="text-xs">Revenue (from invoice)</Label>
           <Input
             id="job-revenue"
@@ -255,10 +255,10 @@ export function JobCostingTab({
             step={0.01}
             value={revenue}
             onChange={(e) => setRevenue(parseFloat(e.target.value) || 0)}
-            className="h-9 text-sm tabular-nums"
+            className="h-9 text-base md:text-sm tabular-nums"
           />
         </div>
-        <div className="text-right">
+        <div className="text-left md:text-right">
           <p className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground">
             Profit margin
           </p>
@@ -290,7 +290,7 @@ export function JobCostingTab({
         <Button
           onClick={saveSnapshot}
           disabled={savingEstimates}
-          className="gap-1.5"
+          className="gap-1.5 w-full md:w-auto"
           style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
         >
           {savingEstimates
@@ -319,7 +319,8 @@ export function JobCostingTab({
 
       {/* Cost matrix */}
       <div className="rounded-xl border bg-card overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[520px]">
           <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="text-left px-4 py-2.5 font-semibold">Cost type</th>
@@ -410,6 +411,7 @@ export function JobCostingTab({
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Cost entries section */}
@@ -466,7 +468,7 @@ export function JobCostingTab({
                 value={entryCategory}
                 onValueChange={(v) => setEntryCategory((v ?? 'material') as JobCostCategory)}
               >
-                <SelectTrigger className="h-8 text-xs">
+                <SelectTrigger className="h-10 sm:h-8 text-base sm:text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -482,7 +484,7 @@ export function JobCostingTab({
                 value={entryDesc}
                 onChange={(e) => setEntryDesc(e.target.value)}
                 placeholder="20 bags mulch"
-                className="h-8 text-xs"
+                className="h-10 sm:h-8 text-base sm:text-xs"
               />
             </div>
             <div>
@@ -491,7 +493,7 @@ export function JobCostingTab({
                 type="number" step={0.5} min={0}
                 value={entryQty}
                 onChange={(e) => setEntryQty(parseFloat(e.target.value) || 0)}
-                className="h-8 text-xs tabular-nums"
+                className="h-10 sm:h-8 text-base sm:text-xs tabular-nums"
               />
             </div>
             <div>
@@ -500,14 +502,14 @@ export function JobCostingTab({
                 type="number" step={0.01} min={0}
                 value={entryUnitCost}
                 onChange={(e) => setEntryUnitCost(parseFloat(e.target.value) || 0)}
-                className="h-8 text-xs tabular-nums"
+                className="h-10 sm:h-8 text-base sm:text-xs tabular-nums"
               />
             </div>
             <Button
               onClick={addEntry}
               disabled={adding || !entryDesc.trim()}
               size="sm"
-              className="gap-1.5 h-8"
+              className="gap-1.5 h-10 sm:h-8 w-full sm:w-auto"
               style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
             >
               {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}

@@ -97,7 +97,7 @@ export function JobActions({ jobId, jobTitle, status, clientId, crewId }: Props)
 
   return (
     <>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 flex-wrap">
         <Button
           variant="outline"
           size="sm"

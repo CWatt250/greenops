@@ -137,8 +137,8 @@ export default async function JobDetailPage({ params }: Props) {
   return (
     <div className="max-w-3xl">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div className="flex-1">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-4 mb-6">
+        <div className="md:flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
             <Link href="/dashboard/jobs" className="text-xs text-muted-foreground hover:underline">
               ← Jobs
@@ -149,7 +149,7 @@ export default async function JobDetailPage({ params }: Props) {
           {/* Status workflow */}
           <StatusWorkflow jobId={job.id} status={job.status} />
         </div>
-        <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+        <div className="flex items-center gap-1 shrink-0 flex-wrap md:justify-end">
           <Link
             href={`/dashboard/jobs/${id}/edit`}
             className={buttonVariants({ variant: 'outline', size: 'sm' })}
@@ -270,21 +270,23 @@ export default async function JobDetailPage({ params }: Props) {
               {serviceRows.map((s) => (
                 <div
                   key={s.id}
-                  className="grid grid-cols-[1fr_60px_70px_90px] gap-3 items-center text-sm"
+                  className="flex flex-col gap-1 md:grid md:grid-cols-[1fr_60px_70px_90px] md:gap-3 md:items-center text-sm"
                 >
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-medium">{s.name}</p>
                     {s.category && (
                       <p className="text-xs text-muted-foreground capitalize">{s.category}</p>
                     )}
                   </div>
-                  <span className="text-muted-foreground text-center tabular-nums">×{s.quantity}</span>
-                  <span className="text-right tabular-nums text-muted-foreground">
-                    {s.duration_minutes != null ? `${s.duration_minutes} min` : '—'}
-                  </span>
-                  <span className="text-right tabular-nums font-semibold">
-                    {formatCurrency(s.total ?? 0)}
-                  </span>
+                  <div className="flex items-center justify-between gap-3 md:contents">
+                    <span className="text-muted-foreground tabular-nums md:text-center">×{s.quantity}</span>
+                    <span className="tabular-nums text-muted-foreground md:text-right">
+                      {s.duration_minutes != null ? `${s.duration_minutes} min` : '—'}
+                    </span>
+                    <span className="tabular-nums font-semibold md:text-right">
+                      {formatCurrency(s.total ?? 0)}
+                    </span>
+                  </div>
                 </div>
               ))}
 

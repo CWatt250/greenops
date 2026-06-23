@@ -106,3 +106,27 @@ test('add a catalog service to a job via the searchable dropdown', async ({ page
   await expect(page.getByLabel('Service name')).toHaveValue(/Edging/i);
   await expect(page.getByTestId('services-total-price')).toBeVisible();
 });
+
+test.describe('job detail — mobile responsiveness', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test('job detail page has no horizontal overflow on a 390px phone', async ({ page }) => {
+    await page.goto('/dashboard/jobs');
+    // Resolve the first real job's URL (exclude New/Edit) and navigate directly,
+    // sidestepping mobile card-overlay click interception.
+    const jobLink = page
+      .locator('a[href^="/dashboard/jobs/"]:not([href$="/new"]):not([href$="/edit"])')
+      .first();
+    await expect(jobLink).toBeVisible({ timeout: 15_000 });
+    const href = await jobLink.getAttribute('href');
+    expect(href).toMatch(/\/dashboard\/jobs\/[0-9a-f-]{36}/);
+    await page.goto(href!);
+
+    // Let the costing tab + forms finish their async loads, then measure overflow.
+    await page.waitForLoadState('networkidle');
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
+  });
+});
