@@ -317,19 +317,16 @@ export function JobCostingTab({
         </div>
       )}
 
-      {/* Cost matrix */}
-      <div className="rounded-xl border bg-card overflow-hidden">
-        <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[520px]">
-          <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="text-left px-4 py-2.5 font-semibold">Cost type</th>
-              <th className="text-right px-4 py-2.5 font-semibold w-32">Estimated</th>
-              <th className="text-right px-4 py-2.5 font-semibold w-32">Actual</th>
-              <th className="text-right px-4 py-2.5 font-semibold w-32">Variance</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
+      {/* Cost matrix — stacked rows on mobile, 4-column grid on desktop. */}
+      <div data-testid="cost-matrix" className="rounded-xl border bg-card overflow-hidden text-sm">
+        {/* Column headers (desktop only) */}
+        <div className="hidden md:grid md:grid-cols-[1fr_8rem_8rem_8rem] md:gap-3 px-4 py-2.5 bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground font-semibold">
+          <span>Cost type</span>
+          <span className="text-right">Estimated</span>
+          <span className="text-right">Actual</span>
+          <span className="text-right">Variance</span>
+        </div>
+        <div className="divide-y">
             <CostRow
               actualTestId="costing-actual-labor"
               label="Labor"
@@ -340,14 +337,14 @@ export function JobCostingTab({
                     type="number" step={0.5} min={0}
                     value={estLaborHours}
                     onChange={(e) => setEstLaborHours(parseFloat(e.target.value) || 0)}
-                    className="h-7 text-xs tabular-nums"
+                    className="h-9 md:h-7 text-base md:text-xs tabular-nums"
                     placeholder="hrs"
                   />
                   <Input
                     type="number" step={0.01} min={0}
                     value={estLaborCost}
                     onChange={(e) => setEstLaborCost(parseFloat(e.target.value) || 0)}
-                    className="h-7 text-xs tabular-nums"
+                    className="h-9 md:h-7 text-base md:text-xs tabular-nums"
                     placeholder="$"
                   />
                 </div>
@@ -364,7 +361,7 @@ export function JobCostingTab({
                   type="number" step={0.01} min={0}
                   value={estMaterialsCost}
                   onChange={(e) => setEstMaterialsCost(parseFloat(e.target.value) || 0)}
-                  className="h-7 text-xs tabular-nums"
+                  className="h-9 md:h-7 text-base md:text-xs tabular-nums"
                 />
               }
               actual={actualMaterials}
@@ -379,7 +376,7 @@ export function JobCostingTab({
                   type="number" step={0.01} min={0}
                   value={estEquipmentCost}
                   onChange={(e) => setEstEquipmentCost(parseFloat(e.target.value) || 0)}
-                  className="h-7 text-xs tabular-nums"
+                  className="h-9 md:h-7 text-base md:text-xs tabular-nums"
                 />
               }
               actual={actualEquipment}
@@ -397,20 +394,20 @@ export function JobCostingTab({
               actual={actualTotals.overhead}
               estimated={estimatedTotals.overhead}
             />
-            <tr className="font-bold bg-muted/30">
-              <td className="px-4 py-2.5">Total cost</td>
-              <td className="px-4 py-2.5 text-right tabular-nums">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-4 py-3 font-bold bg-muted/30 md:grid-cols-[1fr_8rem_8rem_8rem] md:gap-3 md:items-center md:py-2.5">
+              <span className="col-span-2 md:col-span-1">Total cost</span>
+              <span className="tabular-nums md:text-right">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground mr-1 md:hidden">Est</span>
                 {fmtUsd(estimatedTotals.total)}
-              </td>
-              <td className="px-4 py-2.5 text-right tabular-nums">
+              </span>
+              <span className="tabular-nums md:text-right">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground mr-1 md:hidden">Actual</span>
                 {fmtUsd(actualTotals.total)}
-              </td>
-              <td className="px-4 py-2.5 text-right tabular-nums">
+              </span>
+              <span className="col-span-2 md:col-span-1 md:text-right">
                 <VarianceChip actual={actualTotals.total} estimated={estimatedTotals.total} />
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              </span>
+            </div>
         </div>
       </div>
 
@@ -543,21 +540,24 @@ function CostRow({
   actualTestId?: string;
 }) {
   return (
-    <tr>
-      <td className="px-4 py-2.5">
+    <div className="grid grid-cols-2 gap-x-3 gap-y-2 px-4 py-3 md:grid-cols-[1fr_8rem_8rem_8rem] md:gap-3 md:items-center md:py-2.5">
+      <div className="col-span-2 md:col-span-1">
         <p className="text-sm font-medium">{label}</p>
         {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
-      </td>
-      <td className="px-4 py-2.5 text-right tabular-nums w-32">
+      </div>
+      <div className="tabular-nums md:text-right">
+        <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1 md:hidden">Estimated</p>
         {estimatedInput}
-      </td>
-      <td className="px-4 py-2.5 text-right tabular-nums" data-testid={actualTestId}>
-        {fmtUsd(actual)}
-      </td>
-      <td className="px-4 py-2.5 text-right tabular-nums">
+      </div>
+      <div className="tabular-nums md:text-right">
+        <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1 md:hidden">Actual</p>
+        <span data-testid={actualTestId}>{fmtUsd(actual)}</span>
+      </div>
+      <div className="col-span-2 md:col-span-1 md:text-right">
+        <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1 md:hidden">Variance</p>
         <VarianceChip actual={actual} estimated={estimated} />
-      </td>
-    </tr>
+      </div>
+    </div>
   );
 }
 

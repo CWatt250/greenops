@@ -128,5 +128,11 @@ test.describe('job detail — mobile responsiveness', () => {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow).toBeLessThanOrEqual(1);
+    // The cost matrix must fit its container (no internal horizontal overflow).
+    const matrixOverflow = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="cost-matrix"]');
+      return el ? el.scrollWidth - el.clientWidth : 0;
+    });
+    expect(matrixOverflow).toBeLessThanOrEqual(1);
   });
 });

@@ -144,7 +144,7 @@ export default async function JobDetailPage({ params }: Props) {
               ← Jobs
             </Link>
           </div>
-          <h1 className="text-2xl font-bold mb-3">{job.title}</h1>
+          <h1 className="text-xl md:text-2xl font-bold mb-3 break-words">{job.title}</h1>
 
           {/* Status workflow */}
           <StatusWorkflow jobId={job.id} status={job.status} />

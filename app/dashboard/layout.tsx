@@ -52,8 +52,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Mobile nav drawer — admin only. */}
       {!isCrew && <MobileNav open={mobileOpen} onOpenChange={setMobileOpen} />}
 
-      {/* Main content */}
-      <div className={`flex flex-1 flex-col ${isCrew ? '' : 'md:ml-64'}`}>
+      {/* Main content. `min-w-0` lets this flex column shrink to the viewport
+          instead of growing to its widest child — without it, any wide content
+          (e.g. a table) pushes the whole page past the screen on mobile. */}
+      <div className={`flex flex-1 flex-col min-w-0 ${isCrew ? '' : 'md:ml-64'}`}>
         {/* Mobile top bar. Horizontal padding respects the safe-area insets so
             the right-edge controls (notification bell) are never clipped on
             notched / rounded-corner phones. */}
