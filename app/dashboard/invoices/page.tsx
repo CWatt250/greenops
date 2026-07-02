@@ -73,7 +73,7 @@ export default async function InvoicesPage() {
         steps={[
           'Outstanding / Paid / Overdue tiles up top show health at a glance.',
           'Click + New Invoice to build one from scratch, or use the "Invoice this job" action on any complete job.',
-          'Mark Paid records the payment and stops dunning emails.',
+          'Mark Paid records the payment and clears the invoice from Outstanding.',
         ]}
       />
 
