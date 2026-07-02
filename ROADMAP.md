@@ -70,7 +70,7 @@ Stripe Connect-ready but single-account first. Portal "Pay Now" on invoices; web
 - [ ] Charge failures notify office + customer (F0), retry on a schedule (e.g., days 1/3/7), and fall back to a normal "pay now" email.
 - [ ] Autopay requires explicit customer consent recorded with timestamp.
 
-### F1.3 Customer-facing proposals: public link, e-signature, deposit
+### F1.3 Customer-facing proposals: public link, e-signature, deposit — ✅ SHIPPED 2026-07-02 (except deposit → needs Stripe, and emailed delivery → needs F0.1; link is copy/text for now)
 
 **Acceptance criteria**
 - [ ] "Send" on a proposal generates a tokenized public URL (no login required; token ≥128 bits, revocable, expires with the proposal's `valid_until`) and emails it to the client.
