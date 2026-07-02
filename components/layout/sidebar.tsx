@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Users, Briefcase, Wrench, UsersRound, Settings, LogOut,
   CalendarDays, RadioTower, Route, FileText, Wallet, BarChart2, Globe,
-  ClipboardCheck, Ruler, DollarSign, ClipboardList,
+  ClipboardCheck, Ruler, DollarSign, ClipboardList, FlaskConical,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -32,6 +32,7 @@ const navGroups: NavGroup[] = [
       { href: '/dashboard/forms',    label: 'Forms',            icon: ClipboardList },
       { href: '/dashboard/crews',    label: 'Crews',            icon: UsersRound },
       { href: '/dashboard/services', label: 'Services',         icon: Wrench },
+      { href: '/dashboard/chemicals', label: 'Chemicals',       icon: FlaskConical, title: 'Pesticide/fertilizer products, applicator licenses, and WSDA application records' },
       { href: '/dashboard/measure',  label: 'Measure Property', icon: Ruler },
     ],
   },

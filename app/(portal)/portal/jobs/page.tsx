@@ -5,6 +5,7 @@ import { localDateStr } from '@/lib/dates';
 import { createClient } from '@/lib/supabase/client';
 import { fileSrc } from '@/lib/storage';
 import { JobHistoryCard, type JobPhoto } from '@/components/portal/job-history-card';
+import { ReentryNotice } from '@/components/portal/reentry-notice';
 import { LiveIndicator } from '@/components/shared/live-indicator';
 import { useLiveData } from '@/lib/hooks/use-live-data';
 import { Loader2 } from 'lucide-react';
@@ -101,6 +102,8 @@ export default function PortalJobsPage() {
         <h1 className="text-xl font-bold text-gray-900">Job History</h1>
         <LiveIndicator status={status} updatedAt={updatedAt} />
       </div>
+
+      {clientId && <ReentryNotice clientId={clientId} />}
 
       {/* Filter tabs */}
       <div className="flex gap-2">

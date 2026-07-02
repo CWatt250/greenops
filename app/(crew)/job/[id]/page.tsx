@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { formatCurrency } from '@/lib/utils';
 import { enqueue } from '@/lib/offline-queue';
 import { IssueFlagSheet } from '@/components/crew/issue-flag-sheet';
+import { JobChemicalsSection } from '@/components/chemicals/job-chemicals-section';
 import { JobFormsSection } from '@/components/forms/job-forms-section';
 import {
   MapPin, Clock, ChevronLeft, Navigation, LogIn, LogOut,
@@ -340,6 +341,16 @@ export default function CrewJobDetailPage() {
             <AlertTriangle className="h-3.5 w-3.5" />
             Flag an issue
           </button>
+        )}
+
+        {/* Chemicals — REI warning for this property + application logger. */}
+        {job.client && userId && companyId && (
+          <JobChemicalsSection
+            clientId={job.client.id}
+            jobId={id}
+            companyId={companyId}
+            userId={userId}
+          />
         )}
 
         {userId && companyId && (
