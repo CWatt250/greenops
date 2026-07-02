@@ -14,7 +14,9 @@ import { NextResponse, type NextRequest } from 'next/server';
  */
 
 const PUBLIC_PATHS = ['/login'];
-const PUBLIC_API_PREFIXES = ['/api/optimize-route', '/api/invite-worker'];
+// Pages anyone can view, logged in or not (tokenized proposal links).
+const OPEN_PATHS = ['/p'];
+const PUBLIC_API_PREFIXES = ['/api/optimize-route', '/api/invite-worker', '/api/public'];
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -42,11 +44,12 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   const isLoginPage = PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
+  const isOpenPage = OPEN_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
   const isPublicApi = PUBLIC_API_PREFIXES.some((p) => path.startsWith(p));
   const isApi = path.startsWith('/api/');
 
   // Unauthenticated visitors hitting a protected page → /login.
-  if (!user && !isLoginPage && !isApi) {
+  if (!user && !isLoginPage && !isOpenPage && !isApi) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.searchParams.set('next', path);
@@ -62,6 +65,9 @@ export async function proxy(request: NextRequest) {
 
   // Public API routes: skip role checks (they auth-scope server-side).
   if (isPublicApi) return supabaseResponse;
+
+  // Open pages render for everyone — skip role redirects.
+  if (isOpenPage) return supabaseResponse;
 
   // Role-aware redirects. Run only for authenticated, non-API requests.
   if (user && !isApi) {

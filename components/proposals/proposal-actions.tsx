@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import { Send, FileDown, ThumbsUp, ThumbsDown, Trash2, Loader2, Briefcase } from 'lucide-react';
+import { Send, FileDown, ThumbsUp, ThumbsDown, Trash2, Loader2, Briefcase, Link2, LinkIcon } from 'lucide-react';
 import type { Estimate, EstimateLineItem, EstimateStatus } from '@/types';
 import { annualValue, lineTotal, type LineItemDraft } from '@/lib/proposal-pricing';
 
@@ -20,6 +20,44 @@ export function ProposalActions({ proposal, lineItems }: Props) {
   const supabase = createClient();
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  async function shareLink() {
+    setBusy('share');
+    try {
+      const res = await fetch(`/api/proposals/${proposal.id}/share`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        toast.error(json.error ?? 'Could not create the link.');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(json.url);
+        toast.success('Public link copied — text or email it to the client. They can view, sign, and accept without logging in.');
+      } catch {
+        toast.message(`Public link: ${json.url}`);
+      }
+      router.refresh();
+    } catch (err) {
+      toast.error((err as Error).message ?? 'Network error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function revokeLink() {
+    setBusy('revoke');
+    try {
+      const res = await fetch(`/api/proposals/${proposal.id}/share`, { method: 'DELETE' });
+      if (!res.ok) {
+        toast.error('Could not revoke the link.');
+        return;
+      }
+      toast.success('Link revoked — the public page is dead.');
+      router.refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function setStatus(status: EstimateStatus) {
     setBusy(status);
@@ -140,15 +178,47 @@ export function ProposalActions({ proposal, lineItems }: Props) {
         {status === 'draft' && (
           <Button
             size="sm"
-            onClick={() => setStatus('sent')}
+            onClick={shareLink}
             disabled={busy !== null}
             style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
             className="gap-1.5"
+            title="Creates a no-login link the client can sign and accept from, and copies it"
           >
-            {busy === 'sent'
+            {busy === 'share'
               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
               : <Send className="h-3.5 w-3.5" />}
             Send
+          </Button>
+        )}
+        {status === 'sent' && (
+          <Button
+            variant={proposal.public_token ? 'outline' : 'default'}
+            size="sm"
+            onClick={shareLink}
+            disabled={busy !== null}
+            className="gap-1.5"
+            style={proposal.public_token ? undefined : { backgroundColor: 'var(--orange)', color: '#fff' }}
+            title={proposal.public_token ? 'Copy the client-facing link again' : 'Create the client-facing link'}
+          >
+            {busy === 'share'
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <LinkIcon className="h-3.5 w-3.5" />}
+            {proposal.public_token ? 'Copy Link' : 'Create Link'}
+          </Button>
+        )}
+        {proposal.public_token && !isFinal && status !== 'accepted' && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={revokeLink}
+            disabled={busy !== null}
+            className="gap-1.5 text-muted-foreground"
+            title="Kill the public link"
+          >
+            {busy === 'revoke'
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <Link2 className="h-3.5 w-3.5" />}
+            Revoke
           </Button>
         )}
         {(status === 'sent' || status === 'draft') && !isFinal && (

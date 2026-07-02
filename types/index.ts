@@ -479,6 +479,17 @@ export interface Estimate {
   has_obstacles?: boolean;
   payment_terms?: string | null;
   annual_value?: number | null;
+  // Public share link + e-sign acceptance (migration 054)
+  public_token?: string | null;
+  public_token_created_at?: string | null;
+  viewed_at?: string | null;
+  accepted_at?: string | null;
+  declined_at?: string | null;
+  decline_reason?: string | null;
+  acceptance_name?: string | null;
+  /** Customer signature as a PNG data URL. */
+  acceptance_signature?: string | null;
+  acceptance_ip?: string | null;
   created_by?: string | null;
   created_at: string;
   updated_at: string;

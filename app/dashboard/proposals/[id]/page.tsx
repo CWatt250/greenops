@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { ProposalActions } from '@/components/proposals/proposal-actions';
+import { ProposalResponseTrail } from '@/components/proposals/proposal-response-trail';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
 import { FREQUENCY_LABELS } from '@/lib/proposal-pricing';
 import type { Estimate, EstimateLineItem, EstimateStatus } from '@/types';
@@ -95,6 +96,10 @@ export default async function ProposalDetailPage({ params }: Props) {
         </div>
         <ProposalActions proposal={proposal} lineItems={lineItems} />
       </header>
+
+      <div className="mb-4 empty:hidden">
+        <ProposalResponseTrail proposal={proposal} />
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <div className="rounded-xl border bg-card p-4">
