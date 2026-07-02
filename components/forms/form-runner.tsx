@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet';
@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Loader2, Send, Star } from 'lucide-react';
+import { SignaturePad, type SigCanvasType } from '@/components/shared/signature-pad';
+import { Loader2, Send, Star, Trash2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -239,17 +240,62 @@ function FieldRunner({
         </div>
       )}
       {field.type === 'signature' && (
-        <div className="rounded-md border-dashed border bg-muted/30 px-3 py-4 text-center text-xs text-muted-foreground">
-          ✍️ Signature capture coming soon — for now, type the signer's name
-          to acknowledge.
-          <Input
-            value={(value as string) ?? ''}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder="Type signer's full name"
-            className="h-9 text-sm mt-2"
-          />
-        </div>
+        <SignatureField value={value} onChange={onChange} />
       )}
+    </div>
+  );
+}
+
+function SignatureField({
+  value, onChange,
+}: {
+  value: unknown;
+  onChange: (v: unknown) => void;
+}) {
+  const sigRef = useRef<SigCanvasType>(null);
+  const signed = typeof value === 'string' && value.startsWith('data:image/');
+
+  function handleEnd() {
+    if (!sigRef.current || sigRef.current.isEmpty()) return;
+    // Stored inline in the responses JSONB as a trimmed PNG data URL —
+    // keeps the submission self-contained (no storage bucket dependency).
+    onChange(sigRef.current.getTrimmedCanvas().toDataURL('image/png'));
+  }
+
+  function clear() {
+    sigRef.current?.clear();
+    onChange(undefined);
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="rounded-md border bg-white overflow-hidden touch-none">
+        <SignaturePad
+          ref={sigRef}
+          onEnd={handleEnd}
+          canvasProps={{
+            className: 'w-full',
+            height: 140,
+            style: { touchAction: 'none' },
+          }}
+          backgroundColor="white"
+          penColor="#1C2B1A"
+        />
+      </div>
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          {signed ? 'Signed.' : 'Sign above.'}
+        </p>
+        {signed && (
+          <button
+            type="button"
+            onClick={clear}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Clear
+          </button>
+        )}
+      </div>
     </div>
   );
 }

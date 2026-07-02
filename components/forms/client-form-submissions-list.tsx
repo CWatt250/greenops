@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, ClipboardList } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { ResponseValue } from './response-value';
 
 interface SubmissionRow {
   id: string;
@@ -90,7 +91,7 @@ export function ClientFormSubmissionsList({ clientId }: { clientId: string }) {
                     {k}:
                   </span>{' '}
                   <span className="text-xs">
-                    {Array.isArray(v) ? v.join(', ') : String(v)}
+                    <ResponseValue value={v} />
                   </span>
                 </li>
               ))}

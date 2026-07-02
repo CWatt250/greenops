@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ClipboardList, Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FormRunner } from './form-runner';
+import { ResponseValue } from './response-value';
 import { createClient } from '@/lib/supabase/client';
 import type { FormTemplate, FormSubmission, FormTrigger } from '@/types';
 
@@ -137,7 +138,7 @@ export function JobFormsSection({ jobId, clientId, companyId, userId }: Props) {
                           {k}:
                         </span>{' '}
                         <span className="text-xs">
-                          {Array.isArray(v) ? v.join(', ') : String(v)}
+                          <ResponseValue value={v} />
                         </span>
                       </li>
                     ))}
