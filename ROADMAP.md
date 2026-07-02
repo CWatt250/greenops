@@ -120,7 +120,7 @@ The PWA (`public/sw.js`, manifest) exists; add push so crews get dispatches with
 
 ## Tier 3 — Field Depth & Compliance (3–5 weeks)
 
-### F3.1 Chemical application tracking UI ⚠️ compliance
+### F3.1 Chemical application tracking UI ⚠️ compliance — ✅ SHIPPED 2026-07-02
 
 The schema (migration 015: EPA reg #s, applicator licenses, re-entry intervals, weather-at-application) is complete and RLS'd — build the missing product.
 
