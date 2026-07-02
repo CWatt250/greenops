@@ -28,6 +28,7 @@ interface Schedule {
   template_notes: string | null;
   last_generated_at: string | null;
   auto_send: boolean;
+  tax_rate: number | null;
 }
 
 function dayMsUTC(date: Date) {
@@ -96,7 +97,7 @@ async function run(req: Request) {
 
   const { data: dueRaw, error: dueErr } = await admin
     .from('billing_schedules')
-    .select('id, company_id, client_id, job_id, recurrence_rule, next_invoice_date, template_notes, last_generated_at, auto_send')
+    .select('id, company_id, client_id, job_id, recurrence_rule, next_invoice_date, template_notes, last_generated_at, auto_send, tax_rate')
     .eq('is_active', true)
     .lte('next_invoice_date', today);
   if (dueErr) {
@@ -150,8 +151,9 @@ async function run(req: Request) {
       }
 
       const subtotal = seedItems.reduce((acc, li) => acc + Number(li.total ?? 0), 0);
-      const taxRate = 0; // schedules don't currently carry a tax rate
-      const taxAmount = 0;
+      // Decimal form (0.085 = 8.5%), same convention as invoices.tax_rate.
+      const taxRate = Number(s.tax_rate ?? 0);
+      const taxAmount = Math.round(subtotal * taxRate * 100) / 100;
       const total = subtotal + taxAmount;
 
       // Issue the next invoice number atomically via the per-company counter.

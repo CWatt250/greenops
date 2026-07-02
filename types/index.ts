@@ -670,6 +670,8 @@ export interface BillingSchedule {
   next_invoice_date?: string | null;
   auto_send: boolean;
   is_active: boolean;
+  /** Decimal tax rate applied to generated invoices (0.085 = 8.5%). */
+  tax_rate: number;
   template_notes?: string | null;
   last_generated_at?: string | null;
   created_at: string;
