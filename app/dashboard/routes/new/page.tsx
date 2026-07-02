@@ -168,6 +168,64 @@ export default function RouteBuilderPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const geocodeCache = useRef<Map<string, [number, number]>>(new Map());
+  const [retryingGeocode, setRetryingGeocode] = useState(false);
+
+  // Bulk retry for the ungeocoded banner. The stop loaders geocode only the
+  // street line (clients.service_address); retrying with the full
+  // street+city+state+zip resolves most failures. Successes are written back
+  // to the client row so every future route load skips geocoding entirely.
+  async function handleRetryGeocode() {
+    if (ungeocodedStops.length === 0 || retryingGeocode) return;
+    setRetryingGeocode(true);
+    const total = ungeocodedStops.length;
+    const patches = new Map<string, { lat: number; lng: number }>();
+
+    for (const s of ungeocodedStops) {
+      let coords: [number, number] | null = null;
+      const clientId = s.job?.client?.id ?? null;
+      if (clientId) {
+        const { data: c } = await supabase
+          .from('clients')
+          .select('service_address, service_city, service_state, service_zip')
+          .eq('id', clientId)
+          .single();
+        const full = [c?.service_address, c?.service_city, c?.service_state, c?.service_zip]
+          .filter(Boolean)
+          .join(', ');
+        if (full) coords = await geocodeAddress(full);
+        if (coords) {
+          await supabase
+            .from('clients')
+            .update({ latitude: coords[1], longitude: coords[0] })
+            .eq('id', clientId);
+        }
+      } else if (s.address) {
+        coords = await geocodeAddress(s.address);
+      }
+      if (coords) patches.set(s._key, { lat: coords[1], lng: coords[0] });
+    }
+
+    if (patches.size > 0) {
+      setStops((prev) =>
+        prev.map((s) => {
+          const p = patches.get(s._key);
+          return p ? { ...s, lat: p.lat, lng: p.lng } : s;
+        }),
+      );
+    }
+    setRetryingGeocode(false);
+
+    const located = patches.size;
+    if (located === total) {
+      toast.success(located === 1 ? 'Stop located.' : `All ${located} stops located.`);
+    } else if (located > 0) {
+      toast.message(
+        `Located ${located} of ${total} stops — fix the remaining address${total - located === 1 ? '' : 'es'} on the client record.`,
+      );
+    } else {
+      toast.error('Still couldn’t locate these stops — check the address on the client record.');
+    }
+  }
 
   const mode: 'single' | 'multi' = selectedCrewIds.length <= 1 ? 'single' : 'multi';
   const crewById = useMemo(() => {
@@ -1251,6 +1309,19 @@ export default function RouteBuilderPage() {
                 </li>
               ))}
             </ul>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleRetryGeocode}
+              disabled={retryingGeocode}
+              data-testid="retry-geocode-button"
+              className="mt-2 gap-1.5 border-red-300 text-red-700 hover:bg-red-100"
+            >
+              {retryingGeocode
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <MapPin className="h-3.5 w-3.5" />}
+              Retry geocoding
+            </Button>
           </div>
         )}
 
