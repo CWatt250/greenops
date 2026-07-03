@@ -131,7 +131,7 @@ The schema (migration 015: EPA reg #s, applicator licenses, re-entry intervals, 
 - [ ] WSDA-format application report exportable (CSV/PDF) by date range — the artifact an inspector asks for.
 - [ ] Pre-job form gating (existing mechanism) can require a chemical plan for spray service categories.
 
-### F3.2 Geofenced time tracking + timesheets + payroll export
+### F3.2 Geofenced time tracking + timesheets + payroll export — ✅ SHIPPED 2026-07-02 (shift-level punches/breaks + timesheet edit-approval workflow deferred)
 
 **Acceptance criteria**
 - [ ] Clock-in validates GPS against the job's geocoded location (configurable radius, default 150m); out-of-range asks for a confirmation + reason and flags the event for review — never hard-blocks (rural GPS reality).
