@@ -140,7 +140,7 @@ The schema (migration 015: EPA reg #s, applicator licenses, re-entry intervals, 
 - [ ] Approved timesheets export CSV in Gusto/ADP-compatible format.
 - [ ] Costing pipeline (`lib/job-costing.ts`) is unaffected for approved edits — edits recompute job profit via existing triggers.
 
-### F3.3 Offline job completion
+### F3.3 Offline job completion — ✅ SHIPPED 2026-07-02 (materials logging offline is the remaining gap)
 
 The offline queue (`lib/offline-queue.ts`) covers clock-in/issue-flag; completion still requires connectivity.
 
