@@ -6,11 +6,13 @@ import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { formatCurrency } from '@/lib/utils';
 import { enqueue } from '@/lib/offline-queue';
 import { IssueFlagSheet } from '@/components/crew/issue-flag-sheet';
 import { JobChemicalsSection } from '@/components/chemicals/job-chemicals-section';
+import { distanceMeters } from '@/lib/geo';
 import { JobFormsSection } from '@/components/forms/job-forms-section';
 import {
   MapPin, Clock, ChevronLeft, Navigation, LogIn, LogOut,
@@ -20,7 +22,7 @@ import { toast } from 'sonner';
 import type { Job, JobLineItem, ClockEvent } from '@/types';
 
 type JobDetail = Job & {
-  client: { id: string; name: string; service_address: string; phone?: string } | null;
+  client: { id: string; name: string; service_address: string; phone?: string; latitude?: number | null; longitude?: number | null } | null;
   crew: { name: string; color: string } | null;
 };
 
@@ -54,6 +56,25 @@ export default function CrewJobDetailPage() {
   // Pre-job form gating state
   const [requiredPreJobIds, setRequiredPreJobIds] = useState<string[]>([]);
   const [submittedPreJobIds, setSubmittedPreJobIds] = useState<string[]>([]);
+  // Geofence confirm state (migration 055)
+  const [geofenceRadiusM, setGeofenceRadiusM] = useState(150);
+  const [geoConfirm, setGeoConfirm] = useState<{ lat: number | null; lng: number | null; distance: number } | null>(null);
+  const [geoReason, setGeoReason] = useState('');
+
+  useEffect(() => {
+    if (!companyId) return;
+    supabase
+      .from('companies')
+      .select('geofence_radius_m')
+      .eq('id', companyId)
+      .single()
+      .then(({ data }) => {
+        if (typeof data?.geofence_radius_m === 'number') {
+          setGeofenceRadiusM(data.geofence_radius_m);
+        }
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId]);
 
   // Warm the completion route (RSC payload + chunks) so it still opens if
   // the crew loses signal between arriving on-site and finishing the job.
@@ -71,7 +92,7 @@ export default function CrewJobDetailPage() {
     const [jobRes, lineRes, clockRes] = await Promise.all([
       supabase
         .from('jobs')
-        .select('*, client:clients(id,name,service_address,phone), crew:crews(name,color)')
+        .select('*, client:clients(id,name,service_address,phone,latitude,longitude), crew:crews(name,color)')
         .eq('id', id)
         .single(),
       supabase
@@ -155,6 +176,34 @@ export default function CrewJobDetailPage() {
       setGpsError('GPS unavailable — clocking in without location.');
     }
 
+    // Geofence (migration 055): compare the punch to the client's stored
+    // coordinates. Out of range → confirm + reason, flagged for review on
+    // the office timesheets page. Never a hard block: rural GPS drifts.
+    const cLat = job?.client?.latitude;
+    const cLng = job?.client?.longitude;
+    let distance: number | null = null;
+    if (lat !== null && lng !== null && typeof cLat === 'number' && typeof cLng === 'number') {
+      distance = Math.round(distanceMeters(lat, lng, cLat, cLng) * 10) / 10;
+    }
+    if (distance !== null && distance > geofenceRadiusM) {
+      setGeoConfirm({ lat, lng, distance });
+      setGeoReason('');
+      setClockLoading(false);
+      return;
+    }
+
+    await performClockIn(lat, lng, distance, false, null);
+  }
+
+  async function performClockIn(
+    lat: number | null,
+    lng: number | null,
+    distance: number | null,
+    flagged: boolean,
+    flagReason: string | null,
+  ) {
+    if (!userId || !companyId) return;
+    setClockLoading(true);
     const promote = job?.status === 'scheduled' || job?.status === 'unscheduled';
 
     // Try the live write first. If we're offline (or any network failure),
@@ -166,6 +215,9 @@ export default function CrewJobDetailPage() {
       event_type: 'clock_in',
       latitude: lat,
       longitude: lng,
+      distance_from_site_m: distance,
+      flagged,
+      flag_reason: flagReason,
     });
 
     if (error) {
@@ -177,6 +229,9 @@ export default function CrewJobDetailPage() {
           profile_id: userId,
           latitude: lat,
           longitude: lng,
+          distance_from_site_m: distance,
+          flagged,
+          flag_reason: flagReason,
           promote_to_in_progress: promote,
         },
       });
@@ -191,6 +246,7 @@ export default function CrewJobDetailPage() {
         })
         .eq('id', id);
     }
+    setGeoConfirm(null);
     await loadAll();
     setClockLoading(false);
   }
@@ -264,6 +320,53 @@ export default function CrewJobDetailPage() {
 
         {gpsError && (
           <p className="text-xs text-amber-600">{gpsError}</p>
+        )}
+
+        {/* Geofence confirm — punch landed outside the site radius. */}
+        {geoConfirm && (
+          <div
+            data-testid="geofence-confirm"
+            className="rounded-lg border-l-4 border-amber-500 bg-amber-50 px-3 py-3 space-y-2"
+          >
+            <p className="text-sm font-semibold text-amber-800">
+              You&apos;re {geoConfirm.distance >= 1000
+                ? `${(geoConfirm.distance / 1609.34).toFixed(1)} mi`
+                : `${Math.round(geoConfirm.distance)} m`} from {job.client?.name ?? 'the job site'}.
+            </p>
+            <p className="text-xs text-amber-700">
+              You can still clock in — it&apos;ll be flagged for the office to review.
+              A quick note helps (parked down the street, GPS acting up, …).
+            </p>
+            <Input
+              value={geoReason}
+              onChange={(e) => setGeoReason(e.target.value)}
+              placeholder="Reason (optional)"
+              className="h-9 text-sm bg-white"
+            />
+            <div className="flex gap-2">
+              <Button
+                onClick={() =>
+                  performClockIn(
+                    geoConfirm.lat, geoConfirm.lng, geoConfirm.distance,
+                    true, geoReason.trim() || null,
+                  )}
+                disabled={clockLoading}
+                className="flex-1 h-10 gap-1.5 text-white"
+                style={{ backgroundColor: '#d97706' }}
+              >
+                {clockLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Clock In Anyway
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setGeoConfirm(null)}
+                disabled={clockLoading}
+                className="h-10"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
         )}
 
         {(() => {

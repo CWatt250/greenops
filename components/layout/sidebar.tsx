@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Users, Briefcase, Wrench, UsersRound, Settings, LogOut,
   CalendarDays, RadioTower, Route, FileText, Wallet, BarChart2, Globe,
-  ClipboardCheck, Ruler, DollarSign, ClipboardList, FlaskConical,
+  ClipboardCheck, Ruler, DollarSign, ClipboardList, FlaskConical, Timer,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -42,6 +42,7 @@ const navGroups: NavGroup[] = [
       { href: '/dashboard/proposals', label: 'Proposals', icon: ClipboardCheck },
       { href: '/dashboard/invoices',  label: 'Invoices',  icon: FileText },
       { href: '/dashboard/billing',   label: 'Billing',   icon: Wallet },
+      { href: '/dashboard/timesheets', label: 'Timesheets', icon: Timer, title: 'Crew hours, overtime, flagged punches, and the payroll CSV export' },
     ],
   },
   {

@@ -25,6 +25,10 @@ export interface ClockInPayload {
   profile_id: string;
   latitude: number | null;
   longitude: number | null;
+  /** Geofence result computed at punch time (migration 055). */
+  distance_from_site_m?: number | null;
+  flagged?: boolean;
+  flag_reason?: string | null;
   /** Whether the in-memory job state was already 'in_progress' or
    *  needs to be promoted on replay. */
   promote_to_in_progress: boolean;
@@ -113,6 +117,9 @@ async function replayOne(item: QueuedItem, supabase: SupabaseClient): Promise<bo
         event_type: 'clock_in',
         latitude: p.latitude,
         longitude: p.longitude,
+        distance_from_site_m: p.distance_from_site_m ?? null,
+        flagged: p.flagged ?? false,
+        flag_reason: p.flag_reason ?? null,
       });
       if (error) return false;
       if (p.promote_to_in_progress) {
