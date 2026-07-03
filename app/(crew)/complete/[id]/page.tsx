@@ -12,8 +12,12 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { SignaturePad, type SigCanvasType } from '@/components/shared/signature-pad';
 import { MaterialsEntry } from '@/components/crew/materials-entry';
 import {
+  saveCompletion, getCompletion, removeCompletion, syncCompletions,
+  type QueuedCompletion,
+} from '@/lib/offline-completion';
+import {
   ChevronLeft, PenLine, Trash2, Loader2, CheckCircle2, Camera, X, RotateCcw,
-  Image as ImageIcon,
+  Image as ImageIcon, CloudOff, RefreshCw,
 } from 'lucide-react';
 import type { Job, JobLineItem } from '@/types';
 
@@ -53,12 +57,30 @@ export default function CompleteJobPage() {
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [online, setOnline] = useState(true);
+  const [queued, setQueued] = useState<QueuedCompletion | null>(null);
+  const [queuedSaved, setQueuedSaved] = useState(false);
+  const [syncingNow, setSyncingNow] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) setUserId(user.id);
     });
   }, []);
+
+  // Offline awareness + any completion already queued for this job.
+  useEffect(() => {
+    setOnline(window.navigator.onLine);
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    getCompletion(id).then((q) => setQueued(q ?? null)).catch(() => {});
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, [id]);
 
   useEffect(() => {
     async function load() {
@@ -137,16 +159,20 @@ export default function CompleteJobPage() {
     if (files.length === 0) return;
     if (!companyId) return;
 
-    // Show previews immediately, then upload in the background.
+    // Show previews immediately, then upload in the background. When
+    // offline, skip the doomed upload attempt — the blobs ride along in
+    // the offline queue at submit time instead.
+    const offline = !window.navigator.onLine;
     const fresh: PendingPhoto[] = files.map((f) => ({
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       file: f,
       previewUrl: URL.createObjectURL(f),
       isAfter: true,
-      uploading: true,
+      uploading: !offline,
     }));
     setPhotos((prev) => [...prev, ...fresh]);
     e.target.value = '';
+    if (offline) return;
 
     // Sequential upload — keeps the UI responsive on slow networks and
     // avoids saturating the worker's mobile data plan.
@@ -174,8 +200,89 @@ export default function CompleteJobPage() {
     setPhotos((prev) => prev.filter((p) => p.id !== photoId));
   }
 
+  /** Persist everything (photo/signature blobs included) to IndexedDB and
+   *  let the sync engine finish the job when signal returns. */
+  async function handleOfflineSave() {
+    if (!userId || !companyId || !job) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      let signatureBlob: Blob | null = null;
+      if (!sigRef.current?.isEmpty()) {
+        const dataUrl = sigRef.current!.getTrimmedCanvas().toDataURL('image/png');
+        signatureBlob = await (await fetch(dataUrl)).blob();
+      }
+      // GPS still works without a data connection — quick best-effort try.
+      let lat: number | null = null;
+      let lng: number | null = null;
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: false, timeout: 4000, maximumAge: 300_000,
+          }),
+        );
+        lat = pos.coords.latitude;
+        lng = pos.coords.longitude;
+      } catch { /* fine — RPC accepts nulls */ }
+
+      await saveCompletion({
+        jobId: id,
+        companyId,
+        userId,
+        jobTitle: job.title,
+        clientName: job.client?.name ?? null,
+        notes,
+        signerName,
+        signatureBlob,
+        photos: photos.map((p) => ({
+          id: p.id,
+          blob: p.file,
+          contentType: p.file.type || 'image/jpeg',
+          ext: (p.file.name.split('.').pop() ?? 'jpg').toLowerCase(),
+          isAfter: p.isAfter,
+        })),
+        lat,
+        lng,
+        queuedAt: Date.now(),
+      });
+      // No auto-forward: an offline client-side navigation can wedge the tab
+      // waiting on a dead network stack. The splash links back instead.
+      setQueuedSaved(true);
+    } catch (err) {
+      setError(`Couldn't save offline: ${(err as Error).message ?? 'unknown'}`);
+      setSubmitting(false);
+    }
+  }
+
+  async function handleSyncNow() {
+    setSyncingNow(true);
+    const result = await syncCompletions(supabase);
+    setSyncingNow(false);
+    if (result.synced.some((s) => s.jobId === id)) {
+      setQueued(null);
+      setDone(true);
+      setTimeout(() => router.push('/today'), 1200);
+      return;
+    }
+    const failure = result.failed.find((f) => f.jobId === id);
+    if (failure) {
+      setQueued((prev) => (prev ? { ...prev, lastError: failure.error } : prev));
+      setError(failure.error);
+    }
+  }
+
+  async function handleDiscardQueued() {
+    await removeCompletion(id);
+    setQueued(null);
+    setError(null);
+  }
+
   async function handleSubmit() {
     if (!userId || !companyId) return;
+    if (!window.navigator.onLine) {
+      await handleOfflineSave();
+      return;
+    }
 
     // Block submit if any photo is still uploading or had an upload error.
     // Without this, the job could be marked complete while photos are
@@ -186,6 +293,17 @@ export default function CompleteJobPage() {
     }
     if (photos.some((p) => p.error)) {
       setError('Some photos failed to upload. Tap the red ones to retry, or remove them.');
+      return;
+    }
+    // Photos picked while offline never started uploading — kick them off
+    // now that we're online, then ask for one more tap. Never silently drop.
+    const notUploaded = photos.filter((p) => !p.uploading && !p.error && !p.uploadedPath);
+    if (notUploaded.length > 0) {
+      setPhotos((prev) =>
+        prev.map((x) => (notUploaded.some((n) => n.id === x.id) ? { ...x, uploading: true } : x)),
+      );
+      for (const p of notUploaded) await uploadOne(p);
+      setError('Photos are uploading now — tap Mark Job Complete again when they finish.');
       return;
     }
 
@@ -251,6 +369,13 @@ export default function CompleteJobPage() {
     });
 
     if (rpcErr) {
+      // Connection died between page load and submit — queue instead of
+      // stranding the crew on an error.
+      if (!window.navigator.onLine) {
+        setSubmitting(false);
+        await handleOfflineSave();
+        return;
+      }
       // The RPC transaction rolled back, so no job_photos rows reference the
       // objects we just uploaded — clean them up (best-effort) instead of
       // orphaning them in the bucket, and flip the tiles to tap-to-retry so
@@ -389,6 +514,80 @@ export default function CompleteJobPage() {
     );
   }
 
+  // Saved-offline splash (mirrors the success splash, amber).
+  if (queuedSaved) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-5 py-20 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500">
+          <CloudOff className="h-8 w-8 text-white" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold">Saved offline</h1>
+          <p className="text-sm text-muted-foreground mt-2">
+            {job.client?.name ?? job.title} will be marked complete automatically
+            when you&apos;re back in signal — photos and signature included.
+          </p>
+        </div>
+        <Link
+          href="/today"
+          className="rounded-lg border bg-card px-5 py-3 text-sm font-semibold"
+        >
+          Back to Today
+        </Link>
+      </div>
+    );
+  }
+
+  // A completion is already queued for this job — don't let the crew fill
+  // the form twice; offer sync-now / discard instead.
+  if (queued && !done) {
+    return (
+      <div className="space-y-5 py-10 px-1">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500">
+            <CloudOff className="h-8 w-8 text-white" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold">Completion saved offline</h1>
+            <p className="text-sm text-muted-foreground mt-1.5">
+              {queued.clientName ?? queued.jobTitle} — saved{' '}
+              {new Date(queued.queuedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+              {' '}with {queued.photos.length} photo{queued.photos.length === 1 ? '' : 's'}
+              {queued.signatureBlob ? ' and a signature' : ''}.
+              It syncs automatically when you have signal.
+            </p>
+          </div>
+        </div>
+        {queued.lastError && (
+          <div className="rounded-lg border-l-4 border-red-500 bg-red-50 px-3 py-2.5 text-xs text-red-700">
+            <span className="font-semibold">Last sync attempt failed:</span> {queued.lastError}
+            <br />Nothing was lost — fix the issue (or ask dispatch) and try again, or discard this draft.
+          </div>
+        )}
+        <div className="space-y-2">
+          <Button
+            onClick={handleSyncNow}
+            disabled={!online || syncingNow}
+            className="w-full h-12 text-base font-semibold gap-2 text-white"
+            style={{ backgroundColor: 'var(--color-brand-green-raw)' }}
+          >
+            {syncingNow ? <Loader2 className="h-5 w-5 animate-spin" /> : <RefreshCw className="h-5 w-5" />}
+            {online ? 'Sync Now' : 'Waiting for signal…'}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleDiscardQueued}
+            disabled={syncingNow}
+            className="w-full gap-1.5 text-destructive"
+          >
+            <Trash2 className="h-4 w-4" /> Discard &amp; start over
+          </Button>
+        </div>
+        {error && <p className="text-sm text-destructive text-center">{error}</p>}
+      </div>
+    );
+  }
+
   const grandTotal = lineItems.reduce((s, li) => s + (li.total ?? 0), 0);
 
   // Success state — brief flash before the auto-forward kicks in (1.2s).
@@ -514,6 +713,7 @@ export default function CompleteJobPage() {
               capture="environment"
               multiple
               className="hidden"
+              data-testid="photo-input"
               onChange={handlePhotoPick}
             />
           </label>
@@ -629,19 +829,36 @@ export default function CompleteJobPage() {
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
+      {!online && (
+        <div className="rounded-lg border-l-4 border-amber-500 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 flex items-start gap-2">
+          <CloudOff className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>
+            <span className="font-semibold">No signal.</span> Finish the form and
+            save — everything (photos and signature included) syncs automatically
+            when you&apos;re back online.
+          </span>
+        </div>
+      )}
+
       {/* Submit */}
       <Button
         onClick={handleSubmit}
         disabled={submitting}
+        data-testid="complete-submit"
         className="w-full h-12 text-base font-semibold gap-2"
-        style={{ backgroundColor: 'var(--color-brand-green-raw)', color: '#fff' }}
+        style={{
+          backgroundColor: online ? 'var(--color-brand-green-raw)' : '#d97706',
+          color: '#fff',
+        }}
       >
         {submitting ? (
           <Loader2 className="h-5 w-5 animate-spin" />
-        ) : (
+        ) : online ? (
           <CheckCircle2 className="h-5 w-5" />
+        ) : (
+          <CloudOff className="h-5 w-5" />
         )}
-        {submitting ? 'Submitting…' : 'Mark Job Complete'}
+        {submitting ? 'Saving…' : online ? 'Mark Job Complete' : 'Save Offline — Sync Later'}
       </Button>
     </div>
   );

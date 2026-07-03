@@ -55,6 +55,12 @@ export default function CrewJobDetailPage() {
   const [requiredPreJobIds, setRequiredPreJobIds] = useState<string[]>([]);
   const [submittedPreJobIds, setSubmittedPreJobIds] = useState<string[]>([]);
 
+  // Warm the completion route (RSC payload + chunks) so it still opens if
+  // the crew loses signal between arriving on-site and finishing the job.
+  useEffect(() => {
+    router.prefetch(`/complete/${id}`);
+  }, [id, router]);
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) setUserId(user.id);
