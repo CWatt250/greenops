@@ -67,6 +67,7 @@ export default function TimesheetsPage() {
           .from('clock_events')
           .select(cols)
           .eq('company_id', companyId)
+          .in('event_type', ['clock_in', 'clock_out'])
           .gte('created_at', start.toISOString())
           .lt('created_at', end.toISOString())
           .order('created_at'),
@@ -105,7 +106,11 @@ export default function TimesheetsPage() {
   }, [events]);
 
   const sortedSheets = useMemo(
-    () => [...sheets.values()].sort((a, b) =>
+    () => [...sheets.values()]
+      // Skip members with nothing payable and nothing to warn about —
+      // stray clock-outs with no matching in otherwise render junk rows.
+      .filter((s) => s.intervals.length > 0 || s.openIntervals > 0)
+      .sort((a, b) =>
       (names.get(a.profile_id)?.full_name ?? '').localeCompare(names.get(b.profile_id)?.full_name ?? '')),
     [sheets, names],
   );

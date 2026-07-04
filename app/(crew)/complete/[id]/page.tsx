@@ -406,6 +406,8 @@ export default function CompleteJobPage() {
     // (the RPC's metadata covers the status change + counts; this adds
     // the free-form notes). Failure here doesn't roll back the complete.
     if (notes.trim()) {
+      // supabase-js builders are lazy — .then() forces the fire-and-forget
+      // to actually execute (a bare `void builder` never sends the request).
       void supabase.from('activity_log').insert({
         company_id: companyId,
         entity_type: 'job',
@@ -413,7 +415,7 @@ export default function CompleteJobPage() {
         action: 'completion_notes',
         actor_id: userId,
         metadata: { completion_notes: notes },
-      });
+      }).then(() => {});
     }
 
     // Notify the dispatcher (best-effort; outside the critical transaction).
@@ -435,10 +437,10 @@ export default function CompleteJobPage() {
           entity_type: 'job',
           entity_id: id,
         })),
-      );
+      ).then(() => {});
     }
 
-    void supabase.rpc('refresh_analytics');
+    void supabase.rpc('refresh_analytics').then(() => {});
 
     // Auto-forward to next stop. Find the next scheduled job for the same
     // crew today (drive order first, then scheduled_start). If nothing's

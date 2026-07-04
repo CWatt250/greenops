@@ -203,6 +203,8 @@ async function replayOne(supabase: SupabaseClient, r: QueuedCompletion): Promise
   // 4) Non-critical side effects (notes + dispatcher notification), same as
   //    the online path. Best-effort — the completion itself is already in.
   if (r.notes.trim()) {
+    // supabase-js builders are lazy — .then() forces the fire-and-forget
+    // to actually execute (a bare `void builder` never sends the request).
     void supabase.from('activity_log').insert({
       company_id: r.companyId,
       entity_type: 'job',
@@ -210,7 +212,7 @@ async function replayOne(supabase: SupabaseClient, r: QueuedCompletion): Promise
       action: 'completion_notes',
       actor_id: r.userId,
       metadata: { completion_notes: r.notes, synced_from_offline: true, queued_at: new Date(r.queuedAt).toISOString() },
-    });
+    }).then(() => {});
   }
   void (async () => {
     const { data: dispatchers } = await supabase
@@ -230,5 +232,5 @@ async function replayOne(supabase: SupabaseClient, r: QueuedCompletion): Promise
       })),
     );
   })();
-  void supabase.rpc('refresh_analytics');
+  void supabase.rpc('refresh_analytics').then(() => {});
 }

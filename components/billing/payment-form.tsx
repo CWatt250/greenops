@@ -72,7 +72,7 @@ export function PaymentForm({ open, onOpenChange, invoiceId, companyId, balanceD
       .from('invoices')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', invoiceId);
-    void supabase.rpc('refresh_analytics');
+    void supabase.rpc('refresh_analytics').then(() => {});
 
     toast.success('Payment recorded.');
     onPaymentAdded(payment as Payment);

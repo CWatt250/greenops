@@ -98,6 +98,8 @@ export async function POST(
   }
 
   // Best-effort side effects — never block the response.
+  // supabase-js builders are lazy — .then() forces the fire-and-forget
+  // to actually execute (a bare `void builder` never sends the request).
   void supabase.from('activity_log').insert({
     company_id: job.company_id,
     entity_type: 'job',
@@ -105,7 +107,7 @@ export async function POST(
     action: 'en_route',
     actor_id: user.id,
     metadata: { eta_minutes: etaMinutes },
-  });
+  }).then(() => {});
 
   void (async () => {
     const { data: dispatchers } = await supabase
