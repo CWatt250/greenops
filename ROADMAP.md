@@ -48,7 +48,7 @@ One `notify()` entry point that fans out to in-app (existing tables), email, and
 
 ## Tier 1 — Close the Money Loop (4–6 weeks) — the 10x core
 
-### F1.1 Online payments (Stripe)
+### F1.1 Online payments (Stripe) — ❌ DESCOPED 2026-07-07 (owner decision: no Stripe; payments stay manually recorded — cash/check/ACH)
 
 Stripe Connect-ready but single-account first. Portal "Pay Now" on invoices; webhook writes to the existing `payments` table so the battle-tested balance trigger (`029_invoice_payment_trigger.sql`) does the rest.
 
@@ -62,7 +62,7 @@ Stripe Connect-ready but single-account first. Portal "Pay Now" on invoices; web
 - [ ] Manual recording (`payment-form.tsx`) still works unchanged for cash/check.
 - [ ] E2E test: seed invoice → pay with Stripe test card → assert status/balance/payment row/email log.
 
-### F1.2 Card-on-file + autopay for recurring billing
+### F1.2 Card-on-file + autopay — ❌ DESCOPED 2026-07-07 (requires a payment processor; see F1.1)
 
 **Acceptance criteria**
 - [ ] Customer can save a payment method in portal settings (Stripe SetupIntent; only last4/brand stored locally).

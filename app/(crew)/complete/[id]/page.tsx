@@ -15,6 +15,7 @@ import {
   saveCompletion, getCompletion, removeCompletion, syncCompletions,
   type QueuedCompletion,
 } from '@/lib/offline-completion';
+import { notifyStaff } from '@/lib/notify';
 import {
   ChevronLeft, PenLine, Trash2, Loader2, CheckCircle2, Camera, X, RotateCcw,
   Image as ImageIcon, CloudOff, RefreshCw,
@@ -419,26 +420,15 @@ export default function CompleteJobPage() {
     }
 
     // Notify the dispatcher (best-effort; outside the critical transaction).
-    const { data: dispatchers } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('company_id', companyId)
-      .in('role', ['owner', 'dispatcher']);
-
-    if (dispatchers?.length) {
-      void supabase.from('notifications').insert(
-        dispatchers.map((d: { id: string }) => ({
-          company_id: companyId,
-          profile_id: d.id,
-          title: `Job completed: ${job?.title ?? id}`,
-          body: job?.client?.name
-            ? `${job.client.name} — ${job.client.service_address}`
-            : undefined,
-          entity_type: 'job',
-          entity_id: id,
-        })),
-      ).then(() => {});
-    }
+    void notifyStaff(supabase, {
+      companyId,
+      title: `Job completed: ${job?.title ?? id}`,
+      body: job?.client?.name
+        ? `${job.client.name} — ${job.client.service_address}`
+        : undefined,
+      entityType: 'job',
+      entityId: id,
+    });
 
     void supabase.rpc('refresh_analytics').then(() => {});
 

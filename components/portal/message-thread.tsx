@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { notifyStaff } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Send } from 'lucide-react';
@@ -89,23 +90,13 @@ export function MessageThread({
     if (!error) {
       // Notify the other side
       if (senderType === 'portal_user') {
-        const { data: admins } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('company_id', companyId)
-          .in('role', ['owner', 'dispatcher']);
-        if (admins?.length) {
-          await supabase.from('notifications').insert(
-            admins.map((a: { id: string }) => ({
-              company_id: companyId,
-              profile_id: a.id,
-              title: 'New portal message',
-              body: body.trim().slice(0, 60),
-              entity_type: 'message',
-              entity_id: clientId,
-            }))
-          );
-        }
+        await notifyStaff(supabase, {
+          companyId,
+          title: 'New portal message',
+          body: body.trim().slice(0, 60),
+          entityType: 'message',
+          entityId: clientId,
+        });
       }
 
       setBody('');

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { notifyCustomer } from '@/lib/notify';
 import { fileSrc } from '@/lib/storage';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -54,13 +55,13 @@ export function ComplaintQueue({ complaints, onUpdate }: Props) {
     if (error) { toast.error(error.message); setActioning(null); return; }
 
     if (complaint.portal_user_id) {
-      await supabase.from('portal_notifications').insert({
-        portal_user_id: complaint.portal_user_id,
+      await notifyCustomer(supabase, {
+        portalUserId: complaint.portal_user_id,
         title: `Issue update: ${complaint.title}`,
         body: `Your reported issue is now ${status}${notes ? ` — ${notes.slice(0, 60)}` : ''}`,
         type: 'complaint_update',
-        entity_type: 'complaint',
-        entity_id: complaint.id,
+        entityType: 'complaint',
+        entityId: complaint.id,
       });
     }
 

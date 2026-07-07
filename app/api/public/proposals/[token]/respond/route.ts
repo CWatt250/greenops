@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createClient as createAdminClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { notifyStaff } from '@/lib/notify';
 
 /**
  * Public (no-login) accept/decline for a shared proposal. The token IS the
@@ -56,6 +57,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
 
   const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
   const now = new Date().toISOString();
+  const clientName = (estimate.client as { name?: string } | null)?.name;
 
   if (body.action === 'accept') {
     const name = (body.name ?? '').trim();
@@ -82,7 +84,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     if (!updated?.length) {
       return NextResponse.json({ error: 'This proposal has already been responded to.' }, { status: 409 });
     }
-    await notifyOffice(admin, estimate, `✅ Proposal accepted: ${estimate.title}`, `Signed by ${name}`);
+    await notifyStaff(admin, {
+      companyId: estimate.company_id,
+      title: `✅ Proposal accepted: ${estimate.title}`,
+      body: [clientName, `Signed by ${name}`].filter(Boolean).join(' — ') || null,
+      entityType: 'estimate',
+      entityId: estimate.id,
+    });
     return NextResponse.json({ ok: true, status: 'accepted' });
   }
 
@@ -104,34 +112,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     if (!updated?.length) {
       return NextResponse.json({ error: 'This proposal has already been responded to.' }, { status: 409 });
     }
-    await notifyOffice(admin, estimate, `Proposal declined: ${estimate.title}`, reason ?? undefined);
+    await notifyStaff(admin, {
+      companyId: estimate.company_id,
+      title: `Proposal declined: ${estimate.title}`,
+      body: [clientName, reason].filter(Boolean).join(' — ') || null,
+      entityType: 'estimate',
+      entityId: estimate.id,
+    });
     return NextResponse.json({ ok: true, status: 'declined' });
   }
 
   return NextResponse.json({ error: 'Bad request' }, { status: 400 });
-}
-
-async function notifyOffice(
-  admin: SupabaseClient,
-  estimate: { id: string; company_id: string; client?: unknown },
-  title: string,
-  body?: string,
-) {
-  const { data: staff } = await admin
-    .from('profiles')
-    .select('id')
-    .eq('company_id', estimate.company_id)
-    .in('role', ['owner', 'dispatcher']);
-  if (!staff?.length) return;
-  const clientName = (estimate.client as { name?: string } | null)?.name;
-  await admin.from('notifications').insert(
-    staff.map((s: { id: string }) => ({
-      company_id: estimate.company_id,
-      profile_id: s.id,
-      title,
-      body: [clientName, body].filter(Boolean).join(' — ') || null,
-      entity_type: 'estimate',
-      entity_id: estimate.id,
-    })),
-  );
 }

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { notifyStaff } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -69,24 +70,13 @@ export function RequestForm({ clientId, companyId, portalUserId, services }: Pro
     if (error) { toast.error(error.message); setSubmitting(false); return; }
 
     // Notify admins
-    const { data: admins } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('company_id', companyId)
-      .in('role', ['owner', 'dispatcher']);
-
-    if (admins?.length) {
-      await supabase.from('notifications').insert(
-        admins.map((a: { id: string }) => ({
-          company_id: companyId,
-          profile_id: a.id,
-          title: `New service request: ${title}`,
-          body: `From portal — ${REQUEST_TYPES.find((t) => t.type === type)?.label}`,
-          entity_type: 'service_request',
-          entity_id: req?.id,
-        }))
-      );
-    }
+    await notifyStaff(supabase, {
+      companyId,
+      title: `New service request: ${title}`,
+      body: `From portal — ${REQUEST_TYPES.find((t) => t.type === type)?.label}`,
+      entityType: 'service_request',
+      entityId: req?.id,
+    });
 
     toast.success('Request submitted!');
     router.push('/portal/requests');

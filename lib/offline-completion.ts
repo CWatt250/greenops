@@ -1,6 +1,7 @@
 'use client';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { notifyStaff } from '@/lib/notify';
 
 /**
  * Offline job-completion queue. Unlike lib/offline-queue.ts (small JSON
@@ -214,23 +215,12 @@ async function replayOne(supabase: SupabaseClient, r: QueuedCompletion): Promise
       metadata: { completion_notes: r.notes, synced_from_offline: true, queued_at: new Date(r.queuedAt).toISOString() },
     }).then(() => {});
   }
-  void (async () => {
-    const { data: dispatchers } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('company_id', r.companyId)
-      .in('role', ['owner', 'dispatcher']);
-    if (!dispatchers?.length) return;
-    await supabase.from('notifications').insert(
-      dispatchers.map((d: { id: string }) => ({
-        company_id: r.companyId,
-        profile_id: d.id,
-        title: `Job completed (synced from offline): ${r.jobTitle}`,
-        body: r.clientName,
-        entity_type: 'job',
-        entity_id: r.jobId,
-      })),
-    );
-  })();
+  void notifyStaff(supabase, {
+    companyId: r.companyId,
+    title: `Job completed (synced from offline): ${r.jobTitle}`,
+    body: r.clientName,
+    entityType: 'job',
+    entityId: r.jobId,
+  });
   void supabase.rpc('refresh_analytics').then(() => {});
 }

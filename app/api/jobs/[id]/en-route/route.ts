@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getDriveLeg } from '@/lib/mapbox-directions';
+import { notifyStaff } from '@/lib/notify';
 
 interface EnRouteBody {
   origin_lat?: number | null;
@@ -109,25 +110,14 @@ export async function POST(
     metadata: { eta_minutes: etaMinutes },
   }).then(() => {});
 
-  void (async () => {
-    const { data: dispatchers } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('company_id', job.company_id)
-      .in('role', ['owner', 'dispatcher']);
-    if (!dispatchers?.length) return;
-    const etaSuffix = etaMinutes ? ` — ETA ${etaMinutes} min` : '';
-    await supabase.from('notifications').insert(
-      dispatchers.map((d: { id: string }) => ({
-        company_id: job.company_id,
-        profile_id: d.id,
-        title: `Crew en route to ${job.client?.name ?? 'job'}${etaSuffix}`,
-        body: job.client?.service_address ?? null,
-        entity_type: 'job',
-        entity_id: id,
-      })),
-    );
-  })();
+  const etaSuffix = etaMinutes ? ` — ETA ${etaMinutes} min` : '';
+  void notifyStaff(supabase, {
+    companyId: job.company_id,
+    title: `Crew en route to ${job.client?.name ?? 'job'}${etaSuffix}`,
+    body: job.client?.service_address ?? null,
+    entityType: 'job',
+    entityId: id,
+  });
 
   return NextResponse.json({ ok: true, eta_minutes: etaMinutes });
 }

@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { ClientCombobox } from '@/components/clients/client-combobox';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { createClient } from '@/lib/supabase/client';
+import { notifyStaff } from '@/lib/notify';
 import {
   geocodeAddress, geocodeAddressDetailed, type PlaceSuggestion,
 } from '@/lib/mapbox';
@@ -411,24 +412,14 @@ export function MeasureView({
         return;
       }
       // Notify dispatchers + owners.
-      const { data: admins } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('company_id', companyId)
-        .in('role', ['owner', 'dispatcher']);
       const address = addressInfo?.service_address ?? lockedClientName ?? 'Field measurement';
-      if (admins?.length) {
-        await supabase.from('notifications').insert(
-          admins.map((a: { id: string }) => ({
-            company_id: companyId,
-            profile_id: a.id,
-            title: `Field measurement from ${address}`,
-            body: fieldNote.trim() || 'Crew suggests a quote — review the measurement to follow up.',
-            entity_type: 'property_measurement',
-            entity_id: measId,
-          })),
-        );
-      }
+      await notifyStaff(supabase, {
+        companyId,
+        title: `Field measurement from ${address}`,
+        body: fieldNote.trim() || 'Crew suggests a quote — review the measurement to follow up.',
+        entityType: 'property_measurement',
+        entityId: measId,
+      });
       setSubmittedToOffice(true);
       toast.success('Sent to office. Dispatch will follow up with a quote.');
     } finally {

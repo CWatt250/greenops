@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { notifyStaff } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -62,24 +63,13 @@ export function ComplaintForm({ clientId, companyId, portalUserId, recentJobs }:
     if (error) { toast.error(error.message); setSubmitting(false); return; }
 
     // Notify admins (urgent for high severity)
-    const { data: admins } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('company_id', companyId)
-      .in('role', ['owner', 'dispatcher']);
-
-    if (admins?.length) {
-      await supabase.from('notifications').insert(
-        admins.map((a: { id: string }) => ({
-          company_id: companyId,
-          profile_id: a.id,
-          title: `${severity === 'high' ? '🚨 HIGH PRIORITY — ' : ''}New complaint: ${title}`,
-          body: description.slice(0, 80),
-          entity_type: 'complaint',
-          entity_id: complaint?.id,
-        }))
-      );
-    }
+    await notifyStaff(supabase, {
+      companyId,
+      title: `${severity === 'high' ? '🚨 HIGH PRIORITY — ' : ''}New complaint: ${title}`,
+      body: description.slice(0, 80),
+      entityType: 'complaint',
+      entityId: complaint?.id,
+    });
 
     toast.success('Issue reported. We\'ll be in touch shortly.');
     router.push('/portal/complaints');

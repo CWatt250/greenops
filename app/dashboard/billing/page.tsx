@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
 import { buttonVariants } from '@/components/ui/button';
 import { BillingScheduleCard } from '@/components/billing/billing-schedule-card';
+import { ArAging } from '@/components/billing/ar-aging';
 import { cn } from '@/lib/utils';
 import { Plus, FileText, TrendingUp, Clock, AlertCircle } from 'lucide-react';
 import type { Invoice, BillingSchedule } from '@/types';
@@ -131,6 +132,11 @@ export default function BillingPage() {
           </div>
           <p className="text-2xl font-bold">{schedules.filter((s) => s.is_active).length}</p>
         </div>
+      </div>
+
+      {/* AR aging — the collections worklist */}
+      <div className="mb-8">
+        <ArAging />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">

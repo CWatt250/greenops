@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { notifyCustomer } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -60,13 +61,13 @@ export function RequestQueue({ requests, onUpdate }: Props) {
 
     // Notify portal user
     if (req.portal_user_id) {
-      await supabase.from('portal_notifications').insert({
-        portal_user_id: req.portal_user_id,
+      await notifyCustomer(supabase, {
+        portalUserId: req.portal_user_id,
         title: `Request update: ${req.title}`,
         body: `Status changed to ${status}${notes ? ` — ${notes.slice(0, 60)}` : ''}`,
         type: 'request_update',
-        entity_type: 'service_request',
-        entity_id: req.id,
+        entityType: 'service_request',
+        entityId: req.id,
       });
     }
 
