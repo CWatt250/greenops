@@ -5,6 +5,7 @@ import { localDateStr } from '@/lib/dates';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { getCompanyContext } from '@/lib/company-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -236,34 +237,27 @@ export default function RouteBuilderPage() {
 
   // ── Bootstrapping ──────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return;
-      setUserId(user.id);
-      const { data } = await supabase
-        .from('profiles')
-        .select('company_id')
-        .eq('id', user.id)
+    getCompanyContext(supabase).then(async (ctx) => {
+      if (!ctx) return;
+      setUserId(ctx.userId);
+      setCompanyId(ctx.companyId);
+      // Prefer the company's locked depot coords (migration 038). Fall back
+      // to geocoding the address if depot_latitude/longitude aren't set yet.
+      const { data: company } = await supabase
+        .from('companies')
+        .select('address, city, state, zip, depot_latitude, depot_longitude')
+        .eq('id', ctx.companyId)
         .single();
-      if (data?.company_id) {
-        setCompanyId(data.company_id);
-        // Prefer the company's locked depot coords (migration 038). Fall back
-        // to geocoding the address if depot_latitude/longitude aren't set yet.
-        const { data: company } = await supabase
-          .from('companies')
-          .select('address, city, state, zip, depot_latitude, depot_longitude')
-          .eq('id', data.company_id)
-          .single();
-        const depotLat = company?.depot_latitude;
-        const depotLng = company?.depot_longitude;
-        if (Number.isFinite(depotLng) && Number.isFinite(depotLat)) {
-          setOfficeCoords([Number(depotLng), Number(depotLat)]);
-        } else if (company?.address) {
-          const full = [company.address, company.city, company.state, company.zip]
-            .filter(Boolean)
-            .join(', ');
-          const coords = await geocodeAddress(full);
-          if (coords) setOfficeCoords(coords);
-        }
+      const depotLat = company?.depot_latitude;
+      const depotLng = company?.depot_longitude;
+      if (Number.isFinite(depotLng) && Number.isFinite(depotLat)) {
+        setOfficeCoords([Number(depotLng), Number(depotLat)]);
+      } else if (company?.address) {
+        const full = [company.address, company.city, company.state, company.zip]
+          .filter(Boolean)
+          .join(', ');
+        const coords = await geocodeAddress(full);
+        if (coords) setOfficeCoords(coords);
       }
     });
     supabase.from('crews').select('*').eq('is_active', true).order('name')

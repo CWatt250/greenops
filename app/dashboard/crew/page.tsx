@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { localDateStr } from '@/lib/dates';
 import dynamic from 'next/dynamic';
 import { createClient } from '@/lib/supabase/client';
+import { getCompanyContext } from '@/lib/company-context';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
 import { HowDispatchWorks } from '@/components/help/how-dispatch-works';
@@ -64,13 +65,9 @@ export default function DispatchPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data } = await supabase
-        .from('profiles').select('company_id').eq('id', user.id).single();
+      const ctx = await getCompanyContext(supabase);
       if (cancelled) return;
-      const cid = (data as { company_id?: string } | null)?.company_id ?? null;
-      setCompanyId(cid);
+      setCompanyId(ctx?.companyId ?? null);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

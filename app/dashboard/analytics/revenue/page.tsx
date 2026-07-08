@@ -4,6 +4,7 @@ import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import { getCompanyContext } from '@/lib/company-context';
 import { PageHeader } from '@/components/shared/page-header';
 import { RevenueChart } from '@/components/analytics/revenue-chart';
 import { DateRangePicker, getDateRange } from '@/components/analytics/date-range-picker';
@@ -106,10 +107,10 @@ function RevenueAnalyticsContent() {
   }, [from, to]);
 
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return;
-      const { data: p } = await supabase.from('profiles').select('company_id').eq('id', user.id).single();
-      if (p?.company_id) { setCompanyId(p.company_id); loadData(p.company_id); }
+    getCompanyContext(supabase).then((ctx) => {
+      if (!ctx) return;
+      setCompanyId(ctx.companyId);
+      loadData(ctx.companyId);
     });
   }, [loadData]);
 

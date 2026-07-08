@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import { getCompanyContext } from '@/lib/company-context';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AlertTriangle, CheckCircle2, Play, Calendar, RotateCcw, FileText } from 'lucide-react';
@@ -100,24 +101,16 @@ export function StatusWorkflow({ jobId, status, onStatusChange }: StatusWorkflow
 
     if (!error) {
       // Log to activity_log
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('company_id')
-          .eq('id', user.id)
-          .single();
-
-        if (profile?.company_id) {
-          await supabase.from('activity_log').insert({
-            company_id: profile.company_id,
-            entity_type: 'job',
-            entity_id: jobId,
-            action: `status_changed_to_${next}`,
-            actor_id: user.id,
-            metadata: { from: current, to: next },
-          });
-        }
+      const ctx = await getCompanyContext(supabase);
+      if (ctx) {
+        await supabase.from('activity_log').insert({
+          company_id: ctx.companyId,
+          entity_type: 'job',
+          entity_id: jobId,
+          action: `status_changed_to_${next}`,
+          actor_id: ctx.userId,
+          metadata: { from: current, to: next },
+        });
       }
 
       setCurrent(next);

@@ -4,6 +4,7 @@ import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import { getCompanyContext } from '@/lib/company-context';
 import { InvoiceForm } from '@/components/billing/invoice-form';
 import { InvoicePreview } from '@/components/billing/invoice-preview';
 import { ChevronLeft, Loader2 } from 'lucide-react';
@@ -38,11 +39,10 @@ function NewInvoiceContent() {
   const [loadingPrefill, setLoadingPrefill] = useState(!!jobIdParam);
 
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return;
-      setUserId(user.id);
-      const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', user.id).single();
-      setCompanyId(profile?.company_id ?? null);
+    getCompanyContext(supabase).then((ctx) => {
+      if (!ctx) return;
+      setUserId(ctx.userId);
+      setCompanyId(ctx.companyId);
     });
   }, []);
 

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { clearCompanyContext } from '@/lib/company-context';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -123,6 +124,7 @@ export default function PortalSettingsPage() {
 
   async function handleSignOut() {
     setSigningOut(true);
+    clearCompanyContext();
     await supabase.auth.signOut();
     router.push('/login');
   }

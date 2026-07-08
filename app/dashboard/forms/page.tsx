@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Pencil, Trash2, Loader2, ClipboardList } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { getCompanyContext } from '@/lib/company-context';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
 import { HowFormsWorks } from '@/components/help/how-page-works';
@@ -51,11 +52,8 @@ export default function FormsPage() {
 
   async function load() {
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setLoading(false); return; }
-    const { data: profile } = await supabase
-      .from('profiles').select('company_id').eq('id', user.id).single();
-    const cid = (profile as { company_id?: string } | null)?.company_id ?? null;
+    const ctx = await getCompanyContext(supabase);
+    const cid = ctx?.companyId ?? null;
     setCompanyId(cid);
     if (!cid) { setLoading(false); return; }
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import { getCompanyContext } from '@/lib/company-context';
 import { PageHeader } from '@/components/shared/page-header';
 import { ClientRevenueTable } from '@/components/analytics/client-revenue-table';
 import type { ClientRevenueRow } from '@/components/analytics/client-revenue-table';
@@ -14,15 +15,13 @@ export default function ClientsAnalyticsPage() {
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
-    const { data: user } = await supabase.auth.getUser();
-    if (!user.user) return;
-    const { data: p } = await supabase.from('profiles').select('company_id').eq('id', user.user.id).single();
-    if (!p?.company_id) return;
+    const ctx = await getCompanyContext(supabase);
+    if (!ctx) return;
 
     const { data } = await supabase
       .from('mv_client_revenue')
       .select('*')
-      .eq('company_id', p.company_id)
+      .eq('company_id', ctx.companyId)
       .order('lifetime_revenue', { ascending: false });
 
     setRows((data ?? []).map((r) => ({

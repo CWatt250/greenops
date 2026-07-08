@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { getCompanyContext } from '@/lib/company-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -299,10 +300,10 @@ export function JobForm({
       if (error) { setServerError(error.message); return; }
       jobId = initialData.id;
     } else {
-      const { data: { user } } = await supabase.auth.getUser();
+      const ctx = await getCompanyContext(supabase);
       const { data: job, error } = await supabase
         .from('jobs')
-        .insert({ ...payload, created_by: user?.id })
+        .insert({ ...payload, created_by: ctx?.userId })
         .select('id')
         .single();
       if (error || !job) { setServerError(error?.message ?? 'Failed to create job'); return; }
@@ -323,7 +324,7 @@ export function JobForm({
     if (saveAsTemplate && clientId) {
       const finalTemplateName = (templateName || data.title).trim();
       if (finalTemplateName) {
-        const { data: { user } } = await supabase.auth.getUser();
+        const ctx = await getCompanyContext(supabase);
         const result = await saveJobAsTemplate(supabase, {
           company_id: companyId,
           client_id: clientId,
@@ -342,7 +343,7 @@ export function JobForm({
             quantity: s.quantity,
             unit_price: s.price,
           })),
-          created_by: user?.id ?? null,
+          created_by: ctx?.userId ?? null,
         });
         if (result.ok) {
           const propertyLabel = resolvedClientName ?? 'this property';

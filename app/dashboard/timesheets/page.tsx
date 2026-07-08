@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { getCompanyContext } from '@/lib/company-context';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -39,15 +40,11 @@ export default function TimesheetsPage() {
   const end = useMemo(() => weekEnd(start), [start]);
 
   useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      setUserId(user.id);
-      const { data: profile } = await supabase
-        .from('profiles').select('company_id').eq('id', user.id).single();
-      if (!profile?.company_id) return;
-      setCompanyId(profile.company_id);
-    })();
+    getCompanyContext(supabase).then((ctx) => {
+      if (!ctx) return;
+      setUserId(ctx.userId);
+      setCompanyId(ctx.companyId);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

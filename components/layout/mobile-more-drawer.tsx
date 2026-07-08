@@ -7,6 +7,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { clearCompanyContext } from '@/lib/company-context';
 import {
   Briefcase, ClipboardCheck, ClipboardList, Wrench, UsersRound, Map,
   RadioTower, Wallet, FileText, BarChart2, DollarSign, Globe, Settings,
@@ -80,6 +81,7 @@ export function MobileMoreDrawer({ open, onOpenChange, role }: Props) {
 
   async function signOut() {
     setSigningOut(true);
+    clearCompanyContext();
     await supabase.auth.signOut();
     onOpenChange(false);
     router.push('/login');

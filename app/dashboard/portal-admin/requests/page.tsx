@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { getCompanyContext } from '@/lib/company-context';
 import { RequestQueue } from '@/components/portal-admin/request-queue';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -22,17 +23,13 @@ export default function PortalAdminRequestsPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: profile } = await (async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return { data: null };
-        return supabase.from('profiles').select('company_id').eq('id', user.id).single();
-      })();
-      if (!profile) { setLoading(false); return; }
+      const ctx = await getCompanyContext(supabase);
+      if (!ctx) { setLoading(false); return; }
 
       const { data } = await supabase
         .from('service_requests')
         .select('*, client:clients(name), service:services(name)')
-        .eq('company_id', profile.company_id)
+        .eq('company_id', ctx.companyId)
         .order('created_at', { ascending: false });
 
       setRequests((data ?? []) as ServiceRequest[]);

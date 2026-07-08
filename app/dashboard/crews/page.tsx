@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { getCompanyContext } from '@/lib/company-context';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -87,15 +88,12 @@ export default function CrewsPage() {
       if (error) { setServerError(error.message); return; }
       toast.success('Crew updated.');
     } else {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data: profile } = await supabase
-        .from('profiles').select('company_id').eq('id', user.id).single();
-      if (!profile?.company_id) { setServerError('No company found'); return; }
+      const ctx = await getCompanyContext(supabase);
+      if (!ctx) { setServerError('No company found'); return; }
 
       const { error } = await supabase.from('crews').insert({
         ...data,
-        company_id: profile.company_id,
+        company_id: ctx.companyId,
       });
       if (error) { setServerError(error.message); return; }
       toast.success('Crew created.');

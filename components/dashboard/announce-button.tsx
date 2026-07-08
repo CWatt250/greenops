@@ -12,6 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { createClient } from '@/lib/supabase/client';
+import { getCompanyContext } from '@/lib/company-context';
 import { getAnnouncementWeather, type ForecastQuery } from '@/lib/weather';
 import { suggestAnnouncement } from '@/lib/weather-suggestion';
 import { toast } from 'sonner';
@@ -51,14 +52,8 @@ export function AnnounceButton({ companyId: companyIdProp, variant = 'button' }:
   useEffect(() => {
     if (companyId) return;
     let cancelled = false;
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return;
-      const { data } = await supabase
-        .from('profiles')
-        .select('company_id')
-        .eq('id', user.id)
-        .single();
-      if (!cancelled && data?.company_id) setCompanyId(data.company_id as string);
+    getCompanyContext(supabase).then((ctx) => {
+      if (!cancelled && ctx) setCompanyId(ctx.companyId);
     });
     return () => { cancelled = true; };
   }, [companyId, supabase]);

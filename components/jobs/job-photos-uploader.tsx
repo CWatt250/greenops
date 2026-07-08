@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { getCompanyContext } from '@/lib/company-context';
 import { Camera, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -31,8 +32,8 @@ export function JobPhotosUploader({ companyId, jobId, max = 10 }: Props) {
     e.target.value = '';
     if (files.length === 0) return;
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    const ctx = await getCompanyContext(supabase);
+    if (!ctx) {
       toast.error('Your session expired — please sign in again.');
       return;
     }
@@ -50,7 +51,7 @@ export function JobPhotosUploader({ companyId, jobId, max = 10 }: Props) {
         const { error: insErr } = await supabase.from('job_photos').insert({
           company_id: companyId,
           job_id: jobId,
-          uploaded_by: user.id,
+          uploaded_by: ctx.userId,
           storage_path: path,
           caption: 'Office',
         });

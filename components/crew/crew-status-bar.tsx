@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogOut, Loader2, Wifi, WifiOff, Inbox, CloudOff, RefreshCw } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { clearCompanyContext } from '@/lib/company-context';
 import { drainQueue, queueLength } from '@/lib/offline-queue';
 import {
   listCompletions, syncCompletions, onCompletionsChanged, type QueuedCompletion,
@@ -98,6 +99,7 @@ export function CrewStatusBar({ todayLabel }: Props) {
 
   async function handleSignOut() {
     setSigningOut(true);
+    clearCompanyContext();
     await supabase.auth.signOut();
     router.push('/login');
   }

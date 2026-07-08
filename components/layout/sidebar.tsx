@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
+import { clearCompanyContext } from '@/lib/company-context';
 
 type NavItem = { href: string; label: string; icon: React.ElementType; title?: string };
 type NavGroup = { section: string; items: NavItem[] };
@@ -62,6 +63,7 @@ export function Sidebar() {
   const supabase = createClient();
 
   async function handleSignOut() {
+    clearCompanyContext();
     await supabase.auth.signOut();
     router.push('/login');
   }
