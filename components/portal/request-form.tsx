@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { notifyStaff } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -70,13 +69,18 @@ export function RequestForm({ clientId, companyId, portalUserId, services }: Pro
     if (error) { toast.error(error.message); setSubmitting(false); return; }
 
     // Notify admins
-    await notifyStaff(supabase, {
-      companyId,
-      title: `New service request: ${title}`,
-      body: `From portal — ${REQUEST_TYPES.find((t) => t.type === type)?.label}`,
-      entityType: 'service_request',
-      entityId: req?.id,
-    });
+    // Server-side fan-out: portal users can't read staff profiles, so the
+    // client-side notifyStaff() path would resolve zero recipients.
+    await fetch('/api/portal/notify-staff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: `New service request: ${title}`,
+        body: `From portal — ${REQUEST_TYPES.find((t) => t.type === type)?.label}`,
+        entityType: 'service_request',
+        entityId: req?.id,
+      }),
+    }).catch(() => {});
 
     toast.success('Request submitted!');
     router.push('/portal/requests');

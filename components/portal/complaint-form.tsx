@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { notifyStaff } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -63,13 +62,18 @@ export function ComplaintForm({ clientId, companyId, portalUserId, recentJobs }:
     if (error) { toast.error(error.message); setSubmitting(false); return; }
 
     // Notify admins (urgent for high severity)
-    await notifyStaff(supabase, {
-      companyId,
-      title: `${severity === 'high' ? '🚨 HIGH PRIORITY — ' : ''}New complaint: ${title}`,
-      body: description.slice(0, 80),
-      entityType: 'complaint',
-      entityId: complaint?.id,
-    });
+    // Server-side fan-out: portal users can't read staff profiles, so the
+    // client-side notifyStaff() path would resolve zero recipients.
+    await fetch('/api/portal/notify-staff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: `${severity === 'high' ? '🚨 HIGH PRIORITY — ' : ''}New complaint: ${title}`,
+        body: description.slice(0, 80),
+        entityType: 'complaint',
+        entityId: complaint?.id,
+      }),
+    }).catch(() => {});
 
     toast.success('Issue reported. We\'ll be in touch shortly.');
     router.push('/portal/complaints');

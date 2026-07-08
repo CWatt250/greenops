@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { notifyStaff } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Send } from 'lucide-react';
@@ -38,11 +37,13 @@ export function MessageThread({
   void senderName; // reserved for future per-message sender label
 
   const loadMessages = useCallback(async () => {
-    // Pull the admin's profile via a self-join — for portal_user senders this
-    // returns nothing (they don't have profile rows), which is correct.
+    // No profiles embed: messages.sender_id is polymorphic (portal user OR
+    // staff profile) with no FK, so `profiles!sender_id` 400s and the whole
+    // thread rendered empty for everyone. Sender labels come from
+    // sender_type + companyName instead.
     const { data } = await supabase
       .from('messages')
-      .select('*, sender:profiles!sender_id(full_name)')
+      .select('*')
       .eq('client_id', clientId)
       .order('created_at');
 
@@ -90,13 +91,18 @@ export function MessageThread({
     if (!error) {
       // Notify the other side
       if (senderType === 'portal_user') {
-        await notifyStaff(supabase, {
-          companyId,
-          title: 'New portal message',
-          body: body.trim().slice(0, 60),
-          entityType: 'message',
-          entityId: clientId,
-        });
+        // Server-side fan-out: portal users can't read staff profiles, so
+        // the client-side notifyStaff() path would resolve zero recipients.
+        await fetch('/api/portal/notify-staff', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'New portal message',
+            body: body.trim().slice(0, 60),
+            entityType: 'message',
+            entityId: clientId,
+          }),
+        }).catch(() => {});
       }
 
       setBody('');
@@ -174,6 +180,7 @@ export function MessageThread({
           type="submit"
           disabled={!body.trim() || sending}
           size="icon"
+          aria-label="Send message"
           className="h-10 w-10 rounded-full shrink-0"
           style={{ backgroundColor: 'var(--color-brand-green-raw)' }}
         >
