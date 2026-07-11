@@ -89,6 +89,14 @@ For pesticide/fertilizer work (a legal record-keeping requirement in WA):
 
 Each client gets a branded self-service portal: next scheduled service, **request-a-quote** in three taps, two-way messaging with the office, issue reporting with photos, full job history with before/after proof and signatures, invoices, and chemical re-entry safety notices. Everything they submit lands in the office **Portal Inbox** with live notifications both directions.
 
+### 📐 4:00 PM — Quote the next property without leaving the truck
+
+The **Measure tool** is the sales weapon: pull up any address on satellite imagery and draw the property — turf areas, beds, hardscape, fence lines — with tap-to-place points or a freehand highlighter. Area and perimeter math computes live (unit-tested), shapes save to the client record, and a PDF snapshot is one click.
+
+Then the part that closes deals: **one tap sends the measurement into the proposal builder**, where every measured square foot is pre-applied against your per-sqft service rates — a fully priced, line-itemed proposal generated from a satellite drawing, before you've set foot on the lawn. Send the e-sign link, and the customer can accept it the same afternoon.
+
+Crews get the same tool in the field: a *Measure this property* deep-link on every job page, so a customer's "while you're here, what would mulch cost?" turns into a measured, priced upsell on the spot.
+
 ---
 
 ## 💪 The badass features, in one list
@@ -104,7 +112,8 @@ Each client gets a branded self-service portal: next scheduled service, **reques
 | **Live GPS dispatch board** | "Where's the crew?" answered without a phone call |
 | **Per-job profit tracking** (auto-recomputed) | Kill the clients and services that lose money |
 | **Customer portal** | Fewer calls, faster quote requests, proof-of-work on record |
-| **Property measurement** (satellite draw + area math) | Quote turf/beds by the square foot without a site visit |
+| **Measure tool** (satellite draw + live area math) | Quote turf/beds by the square foot without a site visit |
+| **Measure → auto-priced proposal** (one tap) | A satellite drawing becomes a signed contract the same day |
 
 ## 📏 Built to scale (and cheap to run)
 
