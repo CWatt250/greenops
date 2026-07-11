@@ -91,7 +91,13 @@ Each client gets a branded self-service portal: next scheduled service, **reques
 
 ### 📐 4:00 PM — Quote the next property without leaving the truck
 
-The **Measure tool** is the sales weapon: pull up any address on satellite imagery and draw the property — turf areas, beds, hardscape, fence lines — with tap-to-place points or a freehand highlighter. Area and perimeter math computes live (unit-tested), shapes save to the client record, and a PDF snapshot is one click.
+<p>
+  <img src="docs/screenshots/measure-map.png" width="290" alt="Measure tool — drawing a property on satellite imagery with live edge measurements">
+  &nbsp;
+  <img src="docs/screenshots/measure-pricing.png" width="290" alt="Measured areas with live pricing estimate">
+</p>
+
+The **Measure tool** is the sales weapon: pull up any address on satellite imagery and draw the property — turf areas, beds, hardscape, fence lines — tap-to-place points or a freehand highlighter, with **every edge length labeling live in feet** as you draw. Name each shape ("Back Lawn — 3,908 sq ft"), and the totals roll up by surface type. A **pricing estimate computes right on the screen** — per-visit and annual contract value from your per-sqft rates — before you've saved anything. PDF snapshot is one click.
 
 Then the part that closes deals: **one tap sends the measurement into the proposal builder**, where every measured square foot is pre-applied against your per-sqft service rates — a fully priced, line-itemed proposal generated from a satellite drawing, before you've set foot on the lawn. Send the e-sign link, and the customer can accept it the same afternoon.
 
