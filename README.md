@@ -16,12 +16,16 @@ The best way to understand this app is to follow the work through it — because
 
 ### 🌅 7:00 AM — The office builds the day
 
-The dispatcher opens **Schedule** and drags jobs onto crew lanes — day, week, or month view, live-synced across every open screen. Then one click into the **Route Builder**:
+The dispatcher opens **Schedule** and drags jobs onto crew lanes — day, week, or month view, live-synced across every open screen. Then one click into the **Route Builder**, and the optimizer earns its keep:
 
-![Route builder](docs/screenshots/route-builder.png)
+<p>
+  <img src="docs/screenshots/route-optimized.png" width="340" alt="Route optimizer — two crews' optimized routes drawn on the map with numbered stops and drive-time savings">
+</p>
 
-- **One-click route optimization** (VROOM engine) sequences every stop for minimum drive time — across *multiple crews simultaneously*, balancing workloads, honoring per-job **hard time windows**, and respecting **skill certifications**: a job with a restricted service (say, spraying) can only land on a crew certified for it. Uncertifiable jobs surface in a loud banner instead of silently vanishing.
-- Optimized drive order and leg times are written back to each job, so crews see stops in true drive order with real ETAs between them.
+- **One-click route optimization** (VROOM engine) sequences every stop for minimum drive time — across *multiple crews simultaneously*. In the shot above it split 8 stops between two crews, balanced their workloads, and cut **23 minutes of drive time** off the original order — the toast tells you exactly what it saved.
+- It honors per-job **hard time windows** and **skill certifications**: a job with a restricted service (say, spraying) can only land on a crew certified for it. Uncertifiable jobs surface in a loud banner instead of silently vanishing.
+- Each crew's route draws in its own color with numbered stops; the summary bar totals stops, drive time, work time, and an **estimated done-by clock** for the whole day.
+- Optimized drive order and leg times are written back to each job, so crews see stops in true drive order with real ETAs between them (*"+11m drive"* on every stop card).
 - **Dispatch** sends the day to every crew phone.
 
 ### 📡 7:30 AM — Dispatch goes live
