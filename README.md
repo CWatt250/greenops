@@ -125,9 +125,46 @@ Crews get the same tool in the field: a *Measure this property* deep-link on eve
 | **Measure tool** (satellite draw + live area math) | Quote turf/beds by the square foot without a site visit |
 | **Measure → auto-priced proposal** (one tap) | A satellite drawing becomes a signed contract the same day |
 
-## 📏 Built to scale (and cheap to run)
+## 📏 Capacity — how much operation this runs on $45/mo
 
-Modeled from the app's real write patterns against stock **Supabase Pro + Vercel Pro** ($45/mo total): **~110 crews / 440 field workers / ~19,400 jobs a month** before the first metered limit — and that limit is a billing line, not a wall. A full crew-year adds ~37 MB to the database. At 150 crews the entire infra bill is ≈ $119/mo — about **0.4¢ per completed job**. Compare: feature-equivalent SaaS tiers run $500–$1,600/mo at 10 crews (Jobber/Housecall Pro per-seat pricing) — this platform has **no per-seat anything**.
+Modeled from the app's *measured* write patterns (30-second GPS pings, full-resolution photo uploads, per-job event counts) against stock **Supabase Pro ($25/mo) + Vercel Pro ($20/mo)** allowances. Working unit: a 4-person crew completing 8 jobs/day, 22 days a month.
+
+**Headline: ~110 crews · 440 field workers · 880 jobs/day (~19,400/mo) before the first included limit — and that limit is a billing line, not a wall.** A full crew-year adds ~37 MB to an 8,000 MB database allowance; structured data is never the constraint.
+
+![Crews supported within each included Pro-plan allowance](docs/screenshots/capacity-ceilings.png)
+
+| Crews | Field workers | Jobs/day | Jobs/month | Photo storage growth | Est. infra cost/mo |
+|---:|---:|---:|---:|---:|---:|
+| 5 | 20 | 40 | 880 | 4.8 GB/mo | **$45** |
+| 10 | 40 | 80 | 1,760 | 9.5 GB/mo | **$45** |
+| 25 | 100 | 200 | 4,400 | 24 GB/mo | **$49** |
+| 50 | 200 | 400 | 8,800 | 48 GB/mo | **$70** |
+| 100 | 400 | 800 | 17,600 | 95 GB/mo | **$102** |
+| 150 | 600 | 1,200 | 26,400 | 143 GB/mo | **$119** |
+
+![Monthly infrastructure cost as the operation grows](docs/screenshots/capacity-cost-curve.png)
+
+At 150 crews the entire platform bill is ≈ $119/mo — about **0.4¢ per completed job**. Figures are modeled (not load-tested) from published plan allowances; database compute upgrades (~$15/mo past ~50 crews) are included in the curve.
+
+## 🥊 What the market charges for the same job
+
+Published 2026 list prices for the leading field-service platforms, modeled at a **10-crew operation (44 users)** on feature-comparable tiers. This platform has no per-seat license — its cost is the infrastructure bill above.
+
+![Monthly cost at a 10-crew operation vs competitors](docs/screenshots/market-comparison.png)
+
+| Platform | Pricing model | 3 crews (14 users) | 10 crews (44 users) | 25 crews (107 users) | 5-yr cost @ 10 crews |
+|---|---|---:|---:|---:|---:|
+| **This platform (owned)** | Infra only — no seats | **$45** | **$45** | **$49** | **~$2,700** |
+| Service Autopilot | Flat tiers $279–849 | $499 | $499 | $849 | ~$30,000 |
+| LMN | Flat tiers $297–697 | $598 | $598 | $697 | ~$36,000 |
+| Jobber | $349/10 users + $29/user | $465 | $1,335 | $3,162 | ~$80,000 |
+| Housecall Pro | $299/8 users + $35/user | $509 | $1,559 | $3,764 | ~$94,000 |
+| ServiceTitan | ~$245–500/technician | ~$2,940 | ~$9,800 | ~$24,500 | ~$590,000 + setup |
+| Aspire | Custom (unpublished) | — | *est. $300–500+/user/mo* | — | — |
+
+**The framing:** this isn't a subscription — it's the asset that replaces one. A 10-crew operation displaces $6,000–$115,000/yr of SaaS spend while paying ~$540/yr in infrastructure, keeps its data in its own Postgres, and pays no per-seat tax to grow.
+
+<sub>Prices as of July 2026, annual billing where offered, add-ons excluded on all sides: [Jobber](https://www.getjobber.com/pricing/) · [Housecall Pro](https://www.housecallpro.com/pricing/) · [Service Autopilot](https://www.serviceautopilot.com/pricing/) · [LMN](https://golmn.com/pricing/) · [ServiceTitan](https://www.servicetitan.com/pricing) · [Aspire](https://www.youraspire.com/aspire-plans) · plan allowances: [Supabase](https://supabase.com/pricing), [Vercel](https://vercel.com/pricing).</sub>
 
 ## 🏗️ Architecture notes a reviewer will care about
 
