@@ -173,6 +173,62 @@ describe('suggestAnnouncement — official alerts', () => {
     expect(s?.title).toMatch(/^Heat advisory/);
   });
 
+  it('maps a Red Flag Warning to fire-weather guidance', () => {
+    // The Jul 2026 storm case: a dry-thunderstorm Red Flag Warning was the only
+    // Severe alert active, and the old classifier dropped it as irrelevant →
+    // "conditions look clear" during a windstorm.
+    const s = suggestAnnouncement(
+      input({ alerts: [{ event: 'Red Flag Warning', endLabel: 'Thu 10 AM', severity: 'Severe' }] }),
+    );
+    expect(s?.title).toBe(
+      'Red Flag Warning until Thu 10 AM — no burns, watch sparks, gusty winds',
+    );
+    expect(s?.body).toMatch(/gusty, erratic winds/i);
+    expect(s?.audience).toBe('all_crew');
+  });
+
+  it('classifies a Fire Weather Watch as fire too', () => {
+    const s = suggestAnnouncement(input({ alerts: [{ event: 'Fire Weather Watch', endLabel: null }] }));
+    expect(s?.title).toBe('Fire Weather Watch — no burns, watch sparks, gusty winds');
+  });
+
+  it('prefers the higher-severity alert regardless of category order', () => {
+    // Severe Red Flag Warning beats Moderate Heat Advisory even though heat
+    // outranks fire in the category tie-breaker.
+    const s = suggestAnnouncement(
+      input({
+        alerts: [
+          { event: 'Heat Advisory', endLabel: '9 PM', severity: 'Moderate' },
+          { event: 'Red Flag Warning', endLabel: 'Thu 10 AM', severity: 'Severe' },
+        ],
+      }),
+    );
+    expect(s?.title).toMatch(/^Red Flag Warning/);
+  });
+
+  it('breaks severity ties by category priority, and sorts unknown severity last', () => {
+    // Equal severity → category order (severe beats wind).
+    const tied = suggestAnnouncement(
+      input({
+        alerts: [
+          { event: 'Wind Advisory', endLabel: '5 PM', severity: 'Moderate' },
+          { event: 'Flood Warning', endLabel: '3 PM', severity: 'Moderate' },
+        ],
+      }),
+    );
+    expect(tied?.title).toMatch(/^Flood Warning/);
+    // A known severity beats an alert with none.
+    const known = suggestAnnouncement(
+      input({
+        alerts: [
+          { event: 'Flood Warning', endLabel: '3 PM' },
+          { event: 'Wind Advisory', endLabel: '5 PM', severity: 'Minor' },
+        ],
+      }),
+    );
+    expect(known?.title).toMatch(/^Wind Advisory/);
+  });
+
   it('picks the most disruptive alert when several are active', () => {
     const s = suggestAnnouncement(
       input({

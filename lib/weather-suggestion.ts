@@ -34,6 +34,13 @@ export interface WeatherAlert {
   endLabel: string | null;
   /** Alert tags from the provider, e.g. ["Wind"]; used to aid classification. */
   tags?: string[];
+  /**
+   * NWS severity for the alert, when the source provides it. A more severe
+   * alert wins over a less severe one regardless of category (a Severe Red
+   * Flag Warning should beat a Moderate Heat Advisory); ties fall back to the
+   * category priority order.
+   */
+  severity?: 'Extreme' | 'Severe' | 'Moderate' | 'Minor' | 'Unknown';
 }
 
 export interface WeatherSuggestionInput {
@@ -107,9 +114,9 @@ export interface WeatherSuggestion {
  * Crew-relevant alert categories, most schedule-disruptive first. The order is
  * the tie-breaker when several active alerts apply at once.
  */
-type AlertCategory = 'severe' | 'heat' | 'winter' | 'wind' | 'air';
+type AlertCategory = 'severe' | 'heat' | 'winter' | 'wind' | 'fire' | 'air';
 
-const ALERT_PRIORITY: AlertCategory[] = ['severe', 'heat', 'winter', 'wind', 'air'];
+const ALERT_PRIORITY: AlertCategory[] = ['severe', 'heat', 'winter', 'wind', 'fire', 'air'];
 
 /**
  * Operational guidance per alert category. `titleSuffix` completes the headline
@@ -143,6 +150,13 @@ const ALERT_GUIDANCE: Record<
       `A ${event} is in effect${until}. Hold off on spraying and blowing — drift and ` +
       'flying debris are the risk — and tie down loose gear, bags, and trailer gates.',
   },
+  fire: {
+    titleSuffix: 'no burns, watch sparks, gusty winds',
+    body: (event, until) =>
+      `A ${event} is in effect${until}. Critical fire weather — no burn piles or debris ` +
+      'burning, keep hot mufflers and trimmers off dry grass, and expect gusty, erratic ' +
+      'winds. If thunder starts, get crews out of open fields.',
+  },
   air: {
     titleSuffix: 'masks, limit exertion',
     body: (event, until) =>
@@ -171,14 +185,23 @@ function classifyAlert(event: string, tags: string[]): AlertCategory | null {
   if (/thunderstorm|tornado|flash flood|flood|heavy rain/.test(hay)) return 'severe';
   if (/heat/.test(hay)) return 'heat';
   if (/winter|ice|icy|freez|frost|snow|blizzard|cold|chill|sleet/.test(hay)) return 'winter';
+  if (/red flag|fire/.test(hay)) return 'fire';
   if (/wind|gale|dust/.test(hay)) return 'wind';
   if (/air quality|smoke/.test(hay)) return 'air';
   return null;
 }
 
+/** Lower rank = more urgent. Alerts without a known severity sort last. */
+const SEVERITY_RANK: Record<string, number> = { Extreme: 0, Severe: 1, Moderate: 2, Minor: 3 };
+
+function severityRank(severity: WeatherAlert['severity']): number {
+  return severity != null && severity in SEVERITY_RANK ? SEVERITY_RANK[severity] : 4;
+}
+
 /**
- * Build a suggestion from the highest-priority active, crew-relevant alert, or
- * null when there are no alerts or none are relevant (→ caller falls back to the
+ * Build a suggestion from the most urgent active, crew-relevant alert — highest
+ * provider severity first, category priority as the tie-breaker — or null when
+ * there are no alerts or none are relevant (→ caller falls back to the
  * threshold rules).
  */
 function suggestFromAlerts(alerts: WeatherAlert[] | undefined): WeatherSuggestion | null {
@@ -188,7 +211,17 @@ function suggestFromAlerts(alerts: WeatherAlert[] | undefined): WeatherSuggestio
   for (const alert of alerts) {
     const category = classifyAlert(alert.event, alert.tags ?? []);
     if (!category) continue;
-    if (!best || ALERT_PRIORITY.indexOf(category) < ALERT_PRIORITY.indexOf(best.category)) {
+    if (!best) {
+      best = { category, alert };
+      continue;
+    }
+    const sev = severityRank(alert.severity);
+    const bestSev = severityRank(best.alert.severity);
+    if (
+      sev < bestSev ||
+      (sev === bestSev &&
+        ALERT_PRIORITY.indexOf(category) < ALERT_PRIORITY.indexOf(best.category))
+    ) {
       best = { category, alert };
     }
   }

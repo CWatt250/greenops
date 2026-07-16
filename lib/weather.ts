@@ -283,12 +283,12 @@ export async function getDashboardWeather(
 // ── Announcement weather ──────────────────────────────────────────────────
 //
 // Builds the normalized input for `suggestAnnouncement` (lib/weather-suggestion)
-// from the OpenWeatherMap endpoints already in use by this app — current
-// conditions from the FREE /data/2.5/weather, morning timing from the FREE
-// /data/2.5/forecast 3-hour forecast, plus active official alerts from the SAME
-// One Call 3.0 fetch the dashboard's 7-day forecast already makes (shared via a
-// short TTL cache, so it adds no meaningful API usage). This is the only weather
-// path that needs feels-like / wind / gust, which the dashboard's daily forecast
+// from OpenWeatherMap plus the NWS — current conditions from the FREE
+// /data/2.5/weather, morning timing from the FREE /data/2.5/forecast 3-hour
+// forecast, and active official alerts from the FREE api.weather.gov (with One
+// Call 3.0 `alerts[]` as a fallback for the rare non-US point, sharing the
+// dashboard's cached fetch). This is the only weather path that needs
+// feels-like / wind / gust, which the dashboard's daily forecast
 // (getDashboardWeather) doesn't carry, so it makes its own current/forecast
 // calls rather than reusing that aggregated shape.
 
@@ -397,17 +397,25 @@ export async function getAnnouncementWeather(
     // Leave morning fields at their dry defaults.
   }
 
-  // ── Official alerts (One Call 3.0 `alerts[]`, shared/cached). Best-effort. ─
-  // An active, crew-relevant alert outranks the raw thresholds in the suggester.
-  // Any failure here leaves `alerts` undefined, so the suggestion silently falls
-  // back to v1 — "Suggest from weather" must never break on the alerts path.
+  // ── Official alerts. Best-effort. ─────────────────────────────────────────
+  // An active, crew-relevant alert outranks the raw thresholds in the suggester —
+  // it's the only signal that reliably catches convective storms, which OWM's
+  // model-interpolated "current conditions" can report as calm while it's
+  // actively storming. Primary source is the NWS API directly (free, no key,
+  // CORS-enabled); One Call 3.0 `alerts[]` is the fallback since it needs a paid
+  // plan (it 401s otherwise). Any failure leaves `alerts` undefined, so the
+  // suggestion silently falls back to thresholds — "Suggest from weather" must
+  // never break on the alerts path.
   let alerts: WeatherAlert[] | undefined;
   try {
     const coords = 'lat' in query
       ? { lat: query.lat, lng: query.lng }
       : await geocodeViaOwm(query);
     if (coords) {
-      const active = await fetchActiveAlerts(coords, 'imperial');
+      // null = NWS fetch failed (e.g. non-US point) → try One Call; [] = NWS
+      // answered "no active alerts", which is authoritative.
+      const active = await fetchActiveAlertsNws(coords)
+        ?? await fetchActiveAlerts(coords, 'imperial');
       if (active.length > 0) alerts = active;
     }
   } catch {
@@ -517,9 +525,9 @@ async function fetchOneCall(
         console.error(
           '[weather] OpenWeatherMap One Call 3.0 returned 401 — the API key’s '
           + 'subscription tier likely doesn’t include One Call 3.0 (it needs the '
-          + 'separate “One Call by Call” plan). Official NWS alerts are silently '
-          + 'unavailable until this is fixed; threshold rules still cover '
-          + 'suggestions. Logged once per process.',
+          + 'separate “One Call by Call” plan). The 7-day dashboard forecast falls '
+          + 'back to 5 days; announcement alerts are unaffected (they come from '
+          + 'the NWS API directly). Logged once per process.',
         );
       }
       return null;
@@ -533,12 +541,11 @@ async function fetchOneCall(
 }
 
 /**
- * Format a One Call alert end time (unix seconds) into a short local label, e.g.
- * "11 PM", "11:30 PM", or "Tue 6 AM" when it spills into another day. Lives here
- * (not in the pure suggester) so the timezone math stays in the I/O layer.
+ * Format an alert end time into a short local label, e.g. "11 PM", "11:30 PM",
+ * or "Tue 6 AM" when it spills into another day. Lives here (not in the pure
+ * suggester) so the timezone math stays in the I/O layer.
  */
-function alertEndLabel(endUnix: number): string {
-  const d = new Date(endUnix * 1000);
+function alertEndLabelFromDate(d: Date): string {
   const now = new Date();
   const hour = d.getHours();
   const minute = d.getMinutes();
@@ -546,6 +553,74 @@ function alertEndLabel(endUnix: number): string {
   const h12 = hour % 12 === 0 ? 12 : hour % 12;
   const time = minute === 0 ? `${h12} ${period}` : `${h12}:${String(minute).padStart(2, '0')} ${period}`;
   return localDateStr(d) !== localDateStr(now) ? `${DAY_LABELS[d.getDay()]} ${time}` : time;
+}
+
+/** One Call variant — end times arrive as unix seconds. */
+function alertEndLabel(endUnix: number): string {
+  return alertEndLabelFromDate(new Date(endUnix * 1000));
+}
+
+// ── NWS alerts (api.weather.gov) ──────────────────────────────────────────
+
+const NWS_SEVERITIES = ['Extreme', 'Severe', 'Moderate', 'Minor', 'Unknown'] as const;
+
+interface NwsAlertFeature {
+  properties?: {
+    event?: string;
+    status?: string;
+    messageType?: string;
+    severity?: string;
+    /** ISO 8601 with local offset, or null. */
+    ends?: string | null;
+    expires?: string | null;
+  };
+}
+
+/**
+ * Fetch active official alerts for a point from the NWS API — free, no key, and
+ * CORS-enabled so it works from the browser where "Suggest from weather" runs.
+ * (NWS asks for a User-Agent; browsers always send their own, and Node/server
+ * calls get the explicit one below.)
+ *
+ * Returns [] when NWS answered and there are simply no active alerts, and null
+ * when the fetch itself failed (network error, non-US point, …) so the caller
+ * can fall back to the One Call alerts path.
+ */
+async function fetchActiveAlertsNws(
+  query: ForecastQueryByCoords,
+): Promise<WeatherAlert[] | null> {
+  try {
+    const res = await fetch(
+      `https://api.weather.gov/alerts/active?point=${query.lat.toFixed(4)},${query.lng.toFixed(4)}`,
+      {
+        headers: { Accept: 'application/geo+json', 'User-Agent': 'greenops-tlc (weather announcements)' },
+        next: { revalidate: 300 },
+      },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { features?: NwsAlertFeature[] };
+    return (data.features ?? [])
+      .filter((f) => {
+        const p = f.properties;
+        return p?.event
+          && p.status === 'Actual'
+          && p.messageType !== 'Cancel';
+      })
+      .map((f) => {
+        const p = f.properties!;
+        const endIso = p.ends ?? p.expires;
+        const end = endIso ? new Date(endIso) : null;
+        const severity = NWS_SEVERITIES.find((s) => s === p.severity);
+        return {
+          event: p.event as string,
+          endLabel: end && !Number.isNaN(end.getTime()) ? alertEndLabelFromDate(end) : null,
+          tags: [],
+          severity,
+        };
+      });
+  } catch {
+    return null;
+  }
 }
 
 /**
