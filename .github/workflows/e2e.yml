@@ -43,9 +43,16 @@ jobs:
       - name: Install Playwright (Chromium + system deps)
         run: npx playwright install --with-deps chromium
 
+      # PINNED, do not float to `latest`: somewhere in CLI 2.99–2.109 the local
+      # stack stopped granting SELECT/INSERT/UPDATE/DELETE on postgres-created
+      # public tables to anon/authenticated/service_role (pg_default_acl drops
+      # them to TRUNCATE/REFERENCES/TRIGGER), so the seed — and the app itself —
+      # die with "permission denied for table profiles". That broke every run
+      # from #15 (2026-06-12) to #51. Before bumping, verify a fresh local stack
+      # on the new version still gives service_role full DML on public tables.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.98.2
 
       - name: Start local Supabase + apply migrations
         run: supabase start
