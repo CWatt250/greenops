@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
 import { createClient } from '@/lib/supabase/server';
+import { sendEmail, brandedEmail, emailConfigured } from '@/lib/email';
 
 /**
  * Staff-only share-link management for a proposal.
  *  POST   — mint (or return the existing) public token; drafts flip to 'sent'.
+ *           Body { send: true } also emails the link to the client.
  *  DELETE — revoke the link (token nulled; the public page 404s immediately).
  */
 
@@ -48,7 +50,43 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const origin = new URL(req.url).origin;
-  return NextResponse.json({ ok: true, url: `${origin}/p/${token}`, token });
+  const url = `${origin}/p/${token}`;
+
+  const body = (await req.json().catch(() => null)) as { send?: boolean } | null;
+  let emailed = false;
+  let reason: 'no-provider' | 'no-email' | 'send-failed' | null = null;
+  if (body?.send) {
+    const { data: full } = await supabase
+      .from('estimates')
+      .select('title, valid_until, client:clients(name, email)')
+      .eq('id', id)
+      .single();
+    const client = (full?.client ?? null) as { name?: string; email?: string | null } | null;
+    const { data: company } = await supabase
+      .from('companies').select('name, email, phone').eq('id', estimate.company_id).single();
+    const companyName = company?.name ?? 'Our team';
+    if (!emailConfigured()) reason = 'no-provider';
+    else if (!client?.email) reason = 'no-email';
+    else {
+      const { html, text } = brandedEmail({
+        companyName,
+        heading: `Your proposal from ${companyName}`,
+        lines: [
+          `Hi ${client.name?.split(' ')[0] ?? 'there'},`,
+          `Your proposal "${full?.title ?? 'Proposal'}" is ready to review. Open it to see every line item, then accept with a quick signature — no account needed.`,
+          ...(full?.valid_until ? [`This pricing is valid through ${full.valid_until}.`] : []),
+        ],
+        cta: { label: 'Review and sign', url },
+        note: [company?.phone, company?.email].filter(Boolean).length
+          ? `Questions? Reach us at ${[company?.phone, company?.email].filter(Boolean).join(' · ')}.`
+          : null,
+      });
+      const sent = await sendEmail({ to: client.email, subject: `Your proposal from ${companyName}`, html, text, replyTo: company?.email ?? null });
+      emailed = sent.ok;
+      if (!sent.ok) reason = 'send-failed';
+    }
+  }
+  return NextResponse.json({ ok: true, url, token, emailed, reason });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {

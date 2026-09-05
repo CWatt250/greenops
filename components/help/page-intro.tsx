@@ -70,7 +70,7 @@ export function PageIntro({ id, title, description, steps }: Props) {
         variant="ghost"
         size="sm"
         onClick={dismiss}
-        className="shrink-0 text-[var(--orange-deep)] hover:bg-[var(--orange-soft)]/60 gap-1"
+        className="shrink-0 min-h-10 px-3 text-[var(--orange-deep)] hover:bg-[var(--orange-soft)]/60 gap-1"
         aria-label="Dismiss help banner"
       >
         <X className="h-3.5 w-3.5" /> Got it

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { getCompanyContext } from '@/lib/company-context';
 import { Camera, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { downscaleImage } from '@/lib/image';
 
 interface Props {
   companyId: string;
@@ -40,8 +41,9 @@ export function JobPhotosUploader({ companyId, jobId, max = 10 }: Props) {
 
     setUploading(true);
     let ok = 0;
-    for (const file of files.slice(0, max)) {
+    for (const raw of files.slice(0, max)) {
       try {
+        const file = await downscaleImage(raw);
         const ext = (file.name.split('.').pop() ?? 'jpg').toLowerCase();
         const path = `${companyId}/${jobId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
         const { error: upErr } = await supabase.storage

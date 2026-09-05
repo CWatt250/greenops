@@ -25,7 +25,7 @@ export function QuickAddMenu() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-full"
+        className="inline-flex h-11 w-11 items-center justify-center rounded-full"
         style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
         aria-label="Quick add"
       >

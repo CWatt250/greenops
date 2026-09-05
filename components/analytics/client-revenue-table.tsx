@@ -166,8 +166,8 @@ export function ClientRevenueTable({ data, limit, showFilters = false }: Props) 
           ))}
         </div>
       )}
-      <div className="rounded-xl border overflow-hidden">
-        <table className="w-full text-left">
+      <div className="rounded-xl border overflow-x-auto">
+        <table className="w-full min-w-[560px] text-left">
           <thead className="bg-muted/40 border-b">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>

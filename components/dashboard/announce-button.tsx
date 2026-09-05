@@ -238,7 +238,7 @@ export function AnnounceButton({ companyId: companyIdProp, variant = 'button' }:
           onClick={() => setOpen(true)}
           aria-label="Announcements"
           title="Send an announcement"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full border"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-full border"
           style={{ backgroundColor: 'var(--orange-soft)', color: 'var(--orange-deep)', borderColor: 'var(--orange)' }}
         >
           <Megaphone className="h-4 w-4" />

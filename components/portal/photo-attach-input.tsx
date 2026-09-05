@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Camera, Loader2, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
+import { downscaleImage } from '@/lib/image';
 
 export interface AttachedPhoto {
   id: string;
@@ -48,7 +49,7 @@ export function PhotoAttachInput({ bucket = 'job-photos', pathPrefix, photos, on
       toast.error(`Up to ${max} photos.`);
       return;
     }
-    const toUpload = files.slice(0, remaining);
+    const toUpload = await Promise.all(files.slice(0, remaining).map((f) => downscaleImage(f)));
 
     setUploading(true);
     const next = [...photos];

@@ -23,7 +23,7 @@ const PREF_LABELS: Array<{
   // than letting customers toggle preferences nothing reads. Un-disable each
   // one only when a real producer + delivery path exists for it.
   { key: 'email_job_reminder', label: 'Job Scheduled', sub: 'Email when a new job is scheduled for your property', disabled: true, disabledReason: 'Coming soon' },
-  { key: 'email_invoice', label: 'Invoice Ready', sub: 'Email when a new invoice is available', disabled: true, disabledReason: 'Coming soon' },
+  { key: 'email_invoice', label: 'Invoice Ready', sub: 'Email when a new invoice is available' },
   { key: 'email_request_update', label: 'Request Updates', sub: 'Email when your service request status changes', disabled: true, disabledReason: 'Coming soon' },
   { key: 'sms_crew_enroute', label: 'Crew En Route (SMS)', sub: 'Text when our crew is on the way', disabled: true, disabledReason: 'Coming soon' },
 ];

@@ -6,7 +6,6 @@ import Image from 'next/image';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,18 +15,20 @@ const schema = z.object({ email: z.string().email('Please enter a valid email') 
 type Form = z.infer<typeof schema>;
 
 export default function ForgotPasswordPage() {
-  const supabase = createClient();
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<Form>({ resolver: zodResolver(schema) });
 
   async function onSubmit({ email }: Form) {
     setError(null);
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
-    });
-    // Rate-limit errors are worth surfacing; "no such user" deliberately is not.
-    if (error && /rate|limit|too many/i.test(error.message)) {
+    // Server route: generates the recovery link and emails it through our
+    // own provider (falls back to Supabase's mailer if none is configured).
+    const res = await fetch('/api/auth/forgot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    }).catch(() => null);
+    if (!res || (!res.ok && res.status === 429)) {
       setError('Too many requests — wait a minute and try again.');
       return;
     }

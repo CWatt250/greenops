@@ -66,6 +66,7 @@ export function DashboardShell({ role, children }: { role: DashboardRole; childr
               <Button
                 variant="ghost"
                 size="icon"
+                className="h-11 w-11"
                 onClick={() => setMobileOpen(true)}
                 aria-label="Open menu"
               >
@@ -95,7 +96,7 @@ export function DashboardShell({ role, children }: { role: DashboardRole; childr
             {/* Light bar → override the bell's default white tone to a visible,
                 bordered circle matching the other top-bar tap targets. */}
             <NotificationBell
-              className={`${isCrew ? 'h-11 w-11' : 'h-9 w-9'} rounded-full border bg-background text-foreground hover:bg-accent hover:text-foreground`}
+              className={`h-11 w-11 rounded-full border bg-background text-foreground hover:bg-accent hover:text-foreground`}
             />
           </div>
         </header>

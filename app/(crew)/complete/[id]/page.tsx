@@ -1,5 +1,6 @@
 'use client';
 
+import { downscaleImage } from '@/lib/image';
 import { useRef, useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -156,8 +157,9 @@ export default function CompleteJobPage() {
   }
 
   async function handlePhotoPick(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length === 0) return;
+    const picked = Array.from(e.target.files ?? []);
+    if (picked.length === 0) return;
+    const files = await Promise.all(picked.map((f) => downscaleImage(f)));
     if (!companyId) return;
 
     // Show previews immediately, then upload in the background. When

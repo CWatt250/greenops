@@ -135,8 +135,8 @@ export default async function ProposalDetailPage({ params }: Props) {
         </div>
       </div>
 
-      <div className="rounded-xl border bg-card overflow-hidden mb-6">
-        <table className="w-full text-sm">
+      <div className="rounded-xl border bg-card overflow-x-auto mb-6">
+        <table className="w-full min-w-[560px] text-sm">
           <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="text-left px-4 py-2.5 font-semibold">Service</th>

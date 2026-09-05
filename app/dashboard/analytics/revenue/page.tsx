@@ -164,8 +164,8 @@ function RevenueAnalyticsContent() {
       {/* Two columns: table + service donut */}
       <div className="grid lg:grid-cols-2 gap-4">
         {/* Breakdown table */}
-        <div className="rounded-xl border bg-card overflow-hidden">
-          <table className="w-full text-left text-sm">
+        <div className="rounded-xl border bg-card overflow-x-auto">
+          <table className="w-full min-w-[560px] text-left text-sm">
             <thead className="bg-muted/40 border-b">
               <tr>
                 {['Month', 'Invoices', 'Gross', 'Collected', 'Outstanding', 'Rate'].map((h) => (

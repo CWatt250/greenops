@@ -81,8 +81,8 @@ export function ComplaintQueue({ complaints, onUpdate }: Props) {
 
   return (
     <>
-      <div className="rounded-xl border overflow-hidden">
-        <table className="w-full text-left text-sm">
+      <div className="rounded-xl border overflow-x-auto">
+        <table className="w-full min-w-[640px] text-left text-sm">
           <thead className="bg-muted/40 border-b">
             <tr>
               {['Client', 'Title', 'Severity', 'Status', 'Created', ''].map((h) => (

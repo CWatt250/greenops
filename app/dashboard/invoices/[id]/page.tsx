@@ -86,52 +86,58 @@ export default function InvoiceDetailPage() {
   }
 
   /**
-   * Open the user's mail client with a prefilled message and mark the
-   * invoice as sent. Until we wire a transactional-email provider this is
-   * how Trent actually delivers an invoice — mailto bridges the gap.
+   * Send the invoice. The server route emails the customer a branded message
+   * with a portal link and marks the invoice sent; if no email provider is
+   * configured (or the client has no email) we fall back to the user's mail
+   * client with a prefilled message so the invoice still goes out.
    */
   async function emailInvoice() {
     if (!invoice) return;
-    if (!invoice.client?.email) {
-      toast.error('No email on file for this client.');
-      return;
-    }
     setActioning('email');
-    // Pull the company once so the email signature can be branded.
-    const { data: companyRow } = await supabase
-      .from('companies')
-      .select('name, phone, email, website')
-      .eq('id', invoice.company_id)
-      .single();
-    const company = companyRow as { name?: string; phone?: string | null; email?: string | null; website?: string | null } | null;
-    const companyName = company?.name ?? 'Our team';
-    const portalUrl = `${window.location.origin}/portal/invoices/${invoice.id}`;
-    const lines: string[] = [
-      `Hi ${invoice.client?.name?.split(' ')[0] ?? 'there'},`,
-      '',
-      `Your invoice ${invoice.invoice_number} is ready — ${formatCurrency(invoice.balance_due)} due${invoice.due_date ? ` by ${invoice.due_date}` : ''}.`,
-      '',
-      `View + pay in your portal: ${portalUrl}`,
-      '',
-      "If you'd prefer a PDF, download it from the dashboard and attach it to this email before sending.",
-      '',
-      `Thanks,`,
-      companyName,
-      ...(company?.phone ? [company.phone] : []),
-      ...(company?.email ? [company.email] : []),
-    ];
-    const subject = `Invoice ${invoice.invoice_number} from ${companyName}`;
-    const body = lines.join('\n');
-    const url = `mailto:${encodeURIComponent(invoice.client.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.location.href = url;
-    // Optimistically mark the invoice as sent. If the user cancels their
-    // email client they can still see and use Mark Sent / Mark Draft.
-    const { error } = await supabase
-      .from('invoices')
-      .update({ status: 'sent', sent_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-      .eq('id', id);
-    if (!error) await loadAll();
-    setActioning(null);
+    try {
+      const res = await fetch(`/api/invoices/${id}/send`, { method: 'POST' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(json.error ?? 'Could not send the invoice.');
+        return;
+      }
+      if (json.emailed) {
+        toast.success(`Invoice emailed to ${invoice.client?.email}.`);
+      } else if (json.reason === 'no-email') {
+        toast.error('No email on file for this client — marked as sent; deliver it another way.');
+      } else {
+        // No provider: open the mail client with the message prefilled.
+        const { data: companyRow } = await supabase
+          .from('companies')
+          .select('name, phone, email')
+          .eq('id', invoice.company_id)
+          .single();
+        const company = companyRow as { name?: string; phone?: string | null; email?: string | null } | null;
+        const companyName = company?.name ?? 'Our team';
+        const lines = [
+          `Hi ${invoice.client?.name?.split(' ')[0] ?? 'there'},`,
+          '',
+          `Your invoice ${invoice.invoice_number} is ready — ${formatCurrency(invoice.balance_due)} due${invoice.due_date ? ` by ${invoice.due_date}` : ''}.`,
+          '',
+          `View it in your portal: ${json.portalUrl ?? `${window.location.origin}/portal/invoices/${invoice.id}`}`,
+          '',
+          'Thanks,',
+          companyName,
+          ...(company?.phone ? [company.phone] : []),
+          ...(company?.email ? [company.email] : []),
+        ];
+        const subject = `Invoice ${invoice.invoice_number} from ${companyName}`;
+        if (invoice.client?.email) {
+          window.location.href = `mailto:${encodeURIComponent(invoice.client.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join('\n'))}`;
+        }
+        toast.message('Marked as sent. Email delivery isn’t configured yet, so your mail app opened with the message.');
+      }
+      await loadAll();
+    } catch (err) {
+      toast.error((err as Error).message ?? 'Network error');
+    } finally {
+      setActioning(null);
+    }
   }
 
   async function cancelInvoice() {

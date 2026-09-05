@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Loader2, Plus, Trash2, Camera, X, Package } from 'lucide-react';
 import { toast } from 'sonner';
+import { downscaleImage } from '@/lib/image';
 import { fmtUsd } from '@/lib/job-costing';
 import { fileSrc } from '@/lib/storage';
 import type { JobCostEntry } from '@/types';
@@ -46,8 +47,9 @@ export function MaterialsEntry({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
-  function pickReceipt(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
+  async function pickReceipt(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.files?.[0];
+    const f = raw ? await downscaleImage(raw) : undefined;
     if (f) {
       if (receiptPreview) URL.revokeObjectURL(receiptPreview);
       setReceipt(f);

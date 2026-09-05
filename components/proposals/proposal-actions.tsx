@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import { Send, FileDown, ThumbsUp, ThumbsDown, Trash2, Loader2, Briefcase, Link2, LinkIcon } from 'lucide-react';
+import { Send, FileDown, ThumbsUp, ThumbsDown, Trash2, Loader2, Briefcase, Link2, LinkIcon, Mail } from 'lucide-react';
 import type { Estimate, EstimateLineItem, EstimateStatus } from '@/types';
 import { annualValue, lineTotal, type LineItemDraft } from '@/lib/proposal-pricing';
 
@@ -35,6 +35,36 @@ export function ProposalActions({ proposal, lineItems }: Props) {
         toast.success('Public link copied — text or email it to the client. They can view, sign, and accept without logging in.');
       } catch {
         toast.message(`Public link: ${json.url}`);
+      }
+      router.refresh();
+    } catch (err) {
+      toast.error((err as Error).message ?? 'Network error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function emailLink() {
+    setBusy('email');
+    try {
+      const res = await fetch(`/api/proposals/${proposal.id}/share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ send: true }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        toast.error(json.error ?? 'Could not send the proposal.');
+        return;
+      }
+      if (json.emailed) {
+        toast.success('Proposal emailed to the client. They can review, sign, and accept from the link.');
+      } else if (json.reason === 'no-email') {
+        toast.error('This client has no email on file — link copied instead.');
+        try { await navigator.clipboard.writeText(json.url); } catch { /* fine */ }
+      } else {
+        toast.message(`Email delivery isn’t configured — link copied: ${json.url}`);
+        try { await navigator.clipboard.writeText(json.url); } catch { /* fine */ }
       }
       router.refresh();
     } catch (err) {
@@ -178,19 +208,20 @@ export function ProposalActions({ proposal, lineItems }: Props) {
         {status === 'draft' && (
           <Button
             size="sm"
-            onClick={shareLink}
+            onClick={emailLink}
             disabled={busy !== null}
             style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
             className="gap-1.5"
-            title="Creates a no-login link the client can sign and accept from, and copies it"
+            title="Emails the client a no-login link to review, sign, and accept (copies the link if email isn't available)"
           >
-            {busy === 'share'
+            {busy === 'email'
               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
               : <Send className="h-3.5 w-3.5" />}
             Send
           </Button>
         )}
         {status === 'sent' && (
+          <>
           <Button
             variant={proposal.public_token ? 'outline' : 'default'}
             size="sm"
@@ -205,6 +236,18 @@ export function ProposalActions({ proposal, lineItems }: Props) {
               : <LinkIcon className="h-3.5 w-3.5" />}
             {proposal.public_token ? 'Copy Link' : 'Create Link'}
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={emailLink}
+            disabled={busy !== null}
+            className="gap-1.5"
+            title="Email the client a link to review and sign"
+          >
+            {busy === 'email' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+            Email to Client
+          </Button>
+          </>
         )}
         {proposal.public_token && !isFinal && status !== 'accepted' && (
           <Button

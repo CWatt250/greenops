@@ -86,6 +86,7 @@ export async function notifyCustomer(
       targets = (data ?? []).map((u: { id: string }) => u.id);
     }
     if (targets.length === 0) return { delivered: 0 };
+    void emailCustomers(supabase, n, targets);
     const { error } = await supabase.from('portal_notifications').insert(
       targets.map((portalUserId) => ({
         portal_user_id: portalUserId,
@@ -99,5 +100,54 @@ export async function notifyCustomer(
     return { delivered: error ? 0 : targets.length };
   } catch {
     return { delivered: 0 };
+  }
+}
+
+/**
+ * Email leg of a customer notice. Server-only (the sender needs the provider
+ * key); in the browser this is a no-op and only the in-app row is written.
+ * Honors portal_users.notification_prefs: a customer who turned "Invoice
+ * Ready" emails off gets the bell, not the email. Best-effort, never throws.
+ */
+const PREF_FOR_TYPE: Partial<Record<PortalNoticeType, string>> = {
+  job_scheduled: 'email_job_reminder',
+  invoice_ready: 'email_invoice',
+  request_update: 'email_request_update',
+  complaint_update: 'email_request_update',
+};
+
+async function emailCustomers(supabase: SupabaseClient, n: CustomerNotice, portalUserIds: string[]) {
+  if (typeof window !== 'undefined') return;
+  const prefKey = PREF_FOR_TYPE[n.type];
+  if (!prefKey || !process.env.RESEND_API_KEY) return;
+  try {
+    const { sendEmail, brandedEmail } = await import('@/lib/email');
+    const { data: users } = await supabase
+      .from('portal_users')
+      .select('id, client_id, company_id, notification_prefs, client:clients(name, email), company:companies(name, email)')
+      .in('id', portalUserIds);
+    for (const u of (users ?? []) as Array<{
+      notification_prefs: Record<string, boolean> | null;
+      client: { name?: string; email?: string | null } | null;
+      company: { name?: string; email?: string | null } | null;
+    }>) {
+      if (u.notification_prefs && u.notification_prefs[prefKey] === false) continue;
+      const to = u.client?.email;
+      if (!to) continue;
+      const companyName = u.company?.name ?? 'Your landscaper';
+      const { html, text } = brandedEmail({
+        companyName,
+        heading: n.title,
+        lines: [
+          `Hi ${u.client?.name?.split(' ')[0] ?? 'there'},`,
+          ...(n.body ? [n.body] : []),
+          'Open your customer portal for the details.',
+        ],
+        cta: { label: 'Open my portal', url: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://greenops-rho.vercel.app'}/portal` },
+      });
+      await sendEmail({ to, subject: n.title, html, text, replyTo: u.company?.email ?? null });
+    }
+  } catch {
+    /* best-effort */
   }
 }

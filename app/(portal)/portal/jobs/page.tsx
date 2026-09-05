@@ -112,7 +112,7 @@ export default function PortalJobsPage() {
             key={f}
             onClick={() => setFilter(f)}
             className={cn(
-              'rounded-full px-4 py-1.5 text-sm font-medium capitalize transition-colors',
+              'rounded-full px-4 min-h-11 text-sm font-medium capitalize transition-colors',
               filter === f ? 'text-white' : 'bg-white border border-gray-200 text-gray-600',
             )}
             style={filter === f ? { backgroundColor: 'var(--color-brand-green-raw)' } : {}}
