@@ -1,5 +1,6 @@
 'use client';
 
+import { GlobalSearchTrigger } from '@/components/shared/global-search';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -126,6 +127,10 @@ export function Sidebar() {
         >
           by Watt Systems
         </p>
+      </div>
+
+      <div className="px-3 pt-3">
+        <GlobalSearchTrigger />
       </div>
 
       {/* Nav */}

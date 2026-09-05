@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Menu, ChevronLeft } from 'lucide-react';
 import { WelcomeTour } from '@/components/help/welcome-tour';
 import { HelpButton } from '@/components/help/help-button';
+import { GlobalSearch, GlobalSearchTrigger } from '@/components/shared/global-search';
 
 export type DashboardRole = 'owner' | 'dispatcher' | 'crew';
 
@@ -89,6 +90,7 @@ export function DashboardShell({ role, children }: { role: DashboardRole; childr
                 only once we KNOW the viewer isn't crew. */}
             {(role === 'owner' || role === 'dispatcher') && (
               <>
+                <GlobalSearchTrigger compact />
                 <AnnounceButton variant="icon" />
                 <QuickAddMenu />
               </>
@@ -112,6 +114,7 @@ export function DashboardShell({ role, children }: { role: DashboardRole; childr
         </Suspense>
       )}
       <HelpButton />
+      {!isCrew && <GlobalSearch />}
       <MobileBottomNav role={role} />
     </div>
   );
