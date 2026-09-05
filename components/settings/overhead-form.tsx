@@ -34,7 +34,7 @@ export function OverheadForm({ companyId, initialOverheadPct }: Props) {
       <p className="text-xs text-muted-foreground">
         Add overhead percentage to cover business costs not tied to specific
         jobs (insurance, office, vehicles, etc.). Applied automatically to
-        every job's actual cost.
+        every job&rsquo;s actual cost.
       </p>
       <div className="flex items-end gap-3">
         <div>

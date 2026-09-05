@@ -89,6 +89,7 @@ export function WeatherWatch({ forecast, affectedJobsByDate, ok, locationLabel }
 }
 
 function DayCard({ day }: { day: DashboardWeatherDay }) {
+  // iconForMain returns one of a fixed set of lucide components (a lookup, not a definition).
   const Icon = iconForMain(day.main);
   return (
     <div
@@ -101,6 +102,7 @@ function DayCard({ day }: { day: DashboardWeatherDay }) {
       <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
         {day.dayLabel}
       </p>
+      {/* eslint-disable-next-line react-hooks/static-components -- fixed lucide set, see iconForMain */}
       <Icon
         className="h-5 w-5 mx-auto my-1"
         style={{ color: day.badWeather ? 'var(--orange-deep)' : 'var(--orange)' }}

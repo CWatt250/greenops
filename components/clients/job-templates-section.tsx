@@ -74,7 +74,7 @@ export function JobTemplatesSection({ clientId, clientName }: Props) {
 
       {templates.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No saved templates yet. Check "Save as template for {clientName}" when
+          No saved templates yet. Check &ldquo;Save as template for {clientName}&rdquo; when
           creating a job to reuse its setup later.
         </p>
       ) : (

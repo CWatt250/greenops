@@ -99,7 +99,7 @@ const columns = [
   }),
 ];
 
-function SortableHeader({ column, label }: { column: any; label: string }) {
+function SortableHeader({ column, label }: { column: { getIsSorted: () => false | 'asc' | 'desc'; toggleSorting: (desc?: boolean) => void }; label: string }) {
   const sorted = column.getIsSorted();
   return (
     <button

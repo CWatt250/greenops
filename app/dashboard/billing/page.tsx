@@ -201,7 +201,7 @@ export default function BillingPage() {
             <div className="rounded-xl border border-dashed bg-muted/20 py-12 text-center">
               <p className="text-sm text-muted-foreground mb-2">No billing schedules</p>
               <p className="text-xs text-muted-foreground">
-                Add recurring billing from a job's detail page.
+                Add recurring billing from a job&rsquo;s detail page.
               </p>
             </div>
           ) : (

@@ -11,9 +11,12 @@ import { ChevronRight } from 'lucide-react';
 // stays out of this route's First Load JS. Placeholders match chart heights
 // to avoid layout shift. ssr:false is allowed here because this is a Client
 // Component; the data itself is fetched on the server (see the page).
-const chartFallback = (h: number) => () => (
-  <div className="animate-pulse rounded-md bg-muted/50" style={{ height: h }} />
-);
+function chartFallback(h: number) {
+  function ChartFallback() {
+    return <div className="animate-pulse rounded-md bg-muted/50" style={{ height: h }} />;
+  }
+  return ChartFallback;
+}
 const RevenueChart = dynamic(
   () => import('@/components/analytics/revenue-chart').then((m) => m.RevenueChart),
   { ssr: false, loading: chartFallback(260) },

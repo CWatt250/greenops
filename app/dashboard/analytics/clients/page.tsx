@@ -89,7 +89,7 @@ export default function ClientsAnalyticsPage() {
               {lowValueCount} client{lowValueCount !== 1 ? 's' : ''} flagged for low engagement
             </p>
             <p className="text-xs text-amber-700 mt-0.5">
-              These clients have fewer than 2 invoices or haven't been serviced in 6+ months.
+              These clients have fewer than 2 invoices or haven&rsquo;t been serviced in 6+ months.
               Consider reaching out to re-engage or upsell additional services.
             </p>
           </div>

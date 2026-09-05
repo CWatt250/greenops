@@ -102,7 +102,7 @@ export async function materializeRecurringJob(
 
   // Walk forward from where we left off, never before the parent's anchor.
   const lastMaterialized = fromDateOnly(parent.materialized_through);
-  let walkStart = lastMaterialized && lastMaterialized > seedDate
+  const walkStart = lastMaterialized && lastMaterialized > seedDate
     ? new Date(lastMaterialized.getTime() + 86_400_000) // day after last
     : seedDate;
 

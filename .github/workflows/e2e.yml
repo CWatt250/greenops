@@ -27,9 +27,8 @@ jobs:
         run: npm run test:unit
       - name: Dependency audit (high+)
         run: npm audit --audit-level=high
-      - name: Lint (non-blocking until the backlog is cleared)
+      - name: Lint
         run: npm run lint
-        continue-on-error: true
 
   playwright:
     needs: quality

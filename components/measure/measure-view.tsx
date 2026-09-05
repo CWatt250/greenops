@@ -428,7 +428,7 @@ export function MeasureView({
   }
 
   // ── Return to client form with measurement total ───────────────────────
-  async function useThisMeasurement() {
+  async function applyThisMeasurement() {
     if (shapes.length === 0) {
       toast.error('Draw at least one shape before using the measurement.');
       return;
@@ -465,6 +465,8 @@ export function MeasureView({
   // ── Derived ───────────────────────────────────────────────────────────
   const linkedName = lockedClientName ?? selectedClient?.name ?? null;
   const badgeAddress = addressInfo?.service_address ?? null;
+  // historyTick is bumped on every push/pop, so reading the ref here is fresh.
+  // eslint-disable-next-line react-hooks/refs
   const canUndo = historyRef.current.length > 0;
   void historyTick; // dependency-bumped for canUndo
 
@@ -562,7 +564,7 @@ export function MeasureView({
               onClearAll={() => setConfirmClearAll(true)}
               mobileCta={returnTo === 'client_form' ? (
                 <Button
-                  onClick={() => void useThisMeasurement()}
+                  onClick={() => void applyThisMeasurement()}
                   disabled={saving || shapes.length === 0}
                   className="w-full gap-1.5 h-11 text-sm font-semibold shadow-lg"
                   style={shapes.length > 0
@@ -634,7 +636,7 @@ export function MeasureView({
           <div className="flex flex-col gap-2">
             {returnTo === 'client_form' && (
               <Button
-                onClick={() => void useThisMeasurement()}
+                onClick={() => void applyThisMeasurement()}
                 disabled={saving || shapes.length === 0}
                 className="w-full gap-1.5 font-semibold"
                 style={{ backgroundColor: 'var(--color-brand-green-raw)', color: '#fff' }}
@@ -853,7 +855,7 @@ export function MeasureView({
               <div className="flex flex-col gap-2">
                 {returnTo === 'client_form' && (
                   <Button
-                    onClick={() => void useThisMeasurement()}
+                    onClick={() => void applyThisMeasurement()}
                     disabled={saving || shapes.length === 0}
                     className="w-full gap-1.5 text-xs h-10 font-semibold"
                     style={{ backgroundColor: 'var(--color-brand-green-raw)', color: '#fff' }}

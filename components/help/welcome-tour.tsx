@@ -27,11 +27,11 @@ const STEPS: Step[] = [
     title: 'The sidebar — four sections',
     body: (
       <>
-        <p>The sidebar groups everything by what you'll be doing:</p>
+        <p>The sidebar groups everything by what you&rsquo;ll be doing:</p>
         <ul className="mt-2 space-y-1.5 text-sm">
           <li>
             <strong>Daily</strong> — Dashboard, Schedule, Routes, Dispatch.
-            Today's work.
+            Today&rsquo;s work.
           </li>
           <li>
             <strong>Records</strong> — Clients, Jobs, Forms, Crews, Services,
@@ -79,7 +79,7 @@ const STEPS: Step[] = [
       <>
         <p>
           Drag a job onto a crew lane in <strong>Schedule</strong>. Day / Week
-          / Month toggle is at the top. Drop into the gray "Unassigned" lane
+          / Month toggle is at the top. Drop into the gray &ldquo;Unassigned&rdquo; lane
           to clear a crew without losing the date.
         </p>
       </>

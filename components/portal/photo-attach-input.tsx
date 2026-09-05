@@ -57,6 +57,7 @@ export function PhotoAttachInput({ bucket = 'job-photos', pathPrefix, photos, on
       try {
         const ext = (file.name.split('.').pop() ?? 'jpg').toLowerCase();
         const safePrefix = pathPrefix.replace(/^\/+|\/+$/g, '');
+        // eslint-disable-next-line react-hooks/purity -- inside an event handler, not render
         const path = `${safePrefix}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
         const { error: uploadErr } = await supabase
           .storage
@@ -65,6 +66,7 @@ export function PhotoAttachInput({ bucket = 'job-photos', pathPrefix, photos, on
         if (uploadErr) throw uploadErr;
         const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path);
         next.push({
+          // eslint-disable-next-line react-hooks/purity -- inside an event handler, not render
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
           url: pub.publicUrl,
           storagePath: path,

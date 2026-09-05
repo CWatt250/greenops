@@ -340,6 +340,7 @@ export default function DispatchPage() {
           // quiet signal with no active job is EXPECTED — show neutral
           // "tracking paused" copy, not the amber no-GPS warning.
           const hasActiveJob = crew.todayJobs.some((j) => j.status === 'in_progress');
+          // eslint-disable-next-line react-hooks/purity -- staleness is re-evaluated on every live refresh
           const quiet = loc && Date.now() - new Date(loc.recorded_at).getTime() > STALE_GPS_MS;
           const stale = quiet && hasActiveJob;
           return (

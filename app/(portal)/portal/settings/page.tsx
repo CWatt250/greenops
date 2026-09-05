@@ -25,7 +25,7 @@ const PREF_LABELS: Array<{
   { key: 'email_job_reminder', label: 'Appointment Reminders', sub: 'Email the day before a scheduled visit' },
   { key: 'email_invoice', label: 'Invoice Ready', sub: 'Email when a new invoice is available' },
   { key: 'email_review_request', label: 'Review Requests', sub: 'A quick "how did we do?" after each visit' },
-  { key: 'email_request_update', label: 'Request Updates', sub: 'Email when your service request status changes', disabled: true, disabledReason: 'Coming soon' },
+  { key: 'email_request_update', label: 'Request Updates', sub: 'Email when your service request or reported issue changes status' },
   { key: 'sms_crew_enroute', label: 'Text Messages (SMS)', sub: 'On-my-way texts and reminders. Msg & data rates may apply; reply STOP to opt out.' },
 ];
 

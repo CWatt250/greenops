@@ -4,12 +4,14 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { PageHeader } from '@/components/shared/page-header';
-import { RouteEfficiencyChart } from '@/components/analytics/route-efficiency-chart';
+const RouteEfficiencyChart = dynamic(() => import('@/components/analytics/route-efficiency-chart').then((m) => m.RouteEfficiencyChart), { ssr: false, loading: ChartLoading });
 import { ChevronLeft } from 'lucide-react';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-} from 'recharts';
-import { CHART_COLORS } from '@/components/analytics/revenue-chart';
+import dynamic from 'next/dynamic';
+import { CHART_COLORS } from '@/components/analytics/chart-colors';
+
+// Recharts is ~400 KB; load the charts after the numbers are on screen.
+function ChartLoading() { return <div className="h-[220px] animate-pulse rounded-lg bg-muted/40" />; }
+const CompletionTrendChart = dynamic(() => import('@/components/analytics/completion-trend-chart'), { ssr: false, loading: ChartLoading });
 import { cn } from '@/lib/utils';
 import type { Crew, Job } from '@/types';
 
@@ -185,31 +187,7 @@ export default function CrewAnalyticsPage() {
             {completionTrend.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-10">No data yet</p>
             ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={completionTrend} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
-                  <YAxis
-                    domain={[0, 100]}
-                    tickFormatter={(v) => `${v}%`}
-                    tick={{ fontSize: 11, fill: '#94A3B8' }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={36}
-                  />
-                  <Tooltip content={<TrendTooltip />} />
-                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-                  <Line
-                    type="monotone"
-                    dataKey="rate"
-                    name="Completion %"
-                    stroke={selectedCrew?.color ?? CHART_COLORS.primary}
-                    strokeWidth={2.5}
-                    dot={{ r: 3, fill: selectedCrew?.color ?? CHART_COLORS.primary }}
-                    activeDot={{ r: 5 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <CompletionTrendChart data={completionTrend} color={selectedCrew?.color} />
             )}
           </div>
 

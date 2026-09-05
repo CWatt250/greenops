@@ -116,7 +116,7 @@ export function GroupedStopList({
                 >
                   {stops.length === 0 ? (
                     <p className="text-xs text-muted-foreground text-center italic">
-                      VROOM didn't route any stops to this crew.
+                      VROOM didn&rsquo;t route any stops to this crew.
                     </p>
                   ) : (
                     stops.map((stop, i) => (

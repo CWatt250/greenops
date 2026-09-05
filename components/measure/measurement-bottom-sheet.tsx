@@ -115,6 +115,9 @@ export function MeasurementBottomSheet({
   // Drag-follow translation: positive delta drags the sheet down (decreasing
   // visible height); negative drags it up. We translate the wrapper so the
   // visual responds to the drag without rerunning expensive layouts.
+  // dragRef is read during render on purpose: the sheet follows the finger
+  // without a state update per pointer event.
+  // eslint-disable-next-line react-hooks/refs
   const translateY = dragRef.current.active
     ? `translateY(${Math.max(-200, Math.min(200, dragOffset))}px)`
     : 'translateY(0)';
@@ -127,6 +130,7 @@ export function MeasurementBottomSheet({
         height: sheetHeight,
         maxHeight: `calc(100svh - 6rem)`,
         transform: translateY,
+        // eslint-disable-next-line react-hooks/refs
         transition: dragRef.current.active
           ? 'none'
           : 'height 240ms cubic-bezier(0.32, 0.72, 0, 1), transform 240ms cubic-bezier(0.32, 0.72, 0, 1)',

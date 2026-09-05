@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, ChevronsUpDown, Plus, Home, Building2, Building } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -66,8 +66,8 @@ export function ClientCombobox({ value, onChange, placeholder = 'Search clientsâ
       });
   }, [open, query]);
 
-  const searchClients = useCallback(
-    debounce(async (q: string) => {
+  const searchClients = useMemo(
+    () => debounce(async (q: string) => {
       if (!q) return;
       setLoading(true);
       const { data } = await supabase

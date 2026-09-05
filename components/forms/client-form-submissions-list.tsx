@@ -55,7 +55,7 @@ export function ClientFormSubmissionsList({ clientId }: { clientId: string }) {
         <ClipboardList className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
         <p className="text-sm font-semibold">No forms submitted yet</p>
         <p className="text-xs text-muted-foreground mt-1">
-          Crews can submit forms from a job's detail page; the history is
+          Crews can submit forms from a job&rsquo;s detail page; the history is
           aggregated here per client.
         </p>
       </div>

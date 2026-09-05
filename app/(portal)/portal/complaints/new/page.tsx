@@ -50,7 +50,7 @@ export default function NewComplaintPage() {
       </button>
       <h1 className="text-xl font-bold text-gray-900">Report an Issue</h1>
       <p className="text-sm text-gray-500">
-        Let us know what happened and we'll make it right as quickly as possible.
+        Let us know what happened and we&rsquo;ll make it right as quickly as possible.
       </p>
 
       {loading ? (

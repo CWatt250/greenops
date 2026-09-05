@@ -66,7 +66,7 @@ export function PortalBannerForm({ companyId, initial }: Props) {
         <div>
           <p className="text-sm font-semibold">Show banner</p>
           <p className="text-xs text-muted-foreground">
-            Top of every customer's portal home until expiration.
+            Top of every customer&rsquo;s portal home until expiration.
           </p>
         </div>
         <Switch checked={enabled} onCheckedChange={setEnabled} />

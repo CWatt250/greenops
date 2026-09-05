@@ -6,14 +6,16 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { getCompanyContext } from '@/lib/company-context';
 import { PageHeader } from '@/components/shared/page-header';
-import { RevenueChart } from '@/components/analytics/revenue-chart';
+const RevenueChart = dynamic(() => import('@/components/analytics/revenue-chart').then((m) => m.RevenueChart), { ssr: false, loading: ChartLoading });
 import { DateRangePicker, getDateRange } from '@/components/analytics/date-range-picker';
 import { ChevronLeft, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
-} from 'recharts';
-import { CHART_COLORS } from '@/components/analytics/revenue-chart';
+import dynamic from 'next/dynamic';
+import { CHART_COLORS } from '@/components/analytics/chart-colors';
+
+// Recharts is ~400 KB; load the charts after the numbers are on screen.
+const ServiceBreakdownDonut = dynamic(() => import('@/components/analytics/service-breakdown-donut'), { ssr: false, loading: ChartLoading });
+function ChartLoading() { return <div className="h-[260px] animate-pulse rounded-lg bg-muted/40" />; }
 
 interface MonthRow {
   month: string;
@@ -214,25 +216,7 @@ function RevenueAnalyticsContent() {
           {serviceBreakdown.length === 0 ? (
             <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">No service data</div>
           ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie
-                  data={serviceBreakdown}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={96}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {serviceBreakdown.map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip content={<SvcTooltip />} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-              </PieChart>
-            </ResponsiveContainer>
+            <ServiceBreakdownDonut data={serviceBreakdown} />
           )}
         </div>
       </div>

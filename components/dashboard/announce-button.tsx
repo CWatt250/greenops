@@ -265,7 +265,7 @@ export function AnnounceButton({ companyId: companyIdProp, variant = 'button' }:
           <SheetHeader>
             <SheetTitle>Send an announcement</SheetTitle>
             <SheetDescription>
-              Push a one-off message to crews or customers. They'll see it
+              Push a one-off message to crews or customers. They&rsquo;ll see it
               in their notification bell on next sign-in.
             </SheetDescription>
           </SheetHeader>

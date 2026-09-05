@@ -318,7 +318,7 @@ export default async function TodayPage() {
           <div className="flex items-center gap-2">
             <CalendarDays className="h-5 w-5 text-muted-foreground" />
             <div>
-              <h1 className="text-xl font-bold leading-none">Today's Schedule</h1>
+              <h1 className="text-xl font-bold leading-none">Today&rsquo;s Schedule</h1>
               <p className="text-xs text-muted-foreground mt-0.5">{formatDate(today)}</p>
             </div>
           </div>

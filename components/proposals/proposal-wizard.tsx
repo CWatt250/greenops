@@ -631,7 +631,7 @@ export function ProposalWizard({
       {/* STEP 1 — three paths */}
       {step === 1 && (
         <div className="space-y-4 max-w-xl">
-          <h2 className="text-base font-semibold">Who's this proposal for?</h2>
+          <h2 className="text-base font-semibold">Who&rsquo;s this proposal for?</h2>
 
           {/* Path A — New prospect (default highlighted) */}
           <PathCard

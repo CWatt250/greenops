@@ -59,9 +59,11 @@ export function useLiveData({
   // Stable refs so the effects don't re-run when the caller forgets to
   // useCallback the loader.
   const loaderRef = useRef(loader);
-  loaderRef.current = loader;
   const tablesRef = useRef(tables);
-  tablesRef.current = tables;
+  useEffect(() => {
+    loaderRef.current = loader;
+    tablesRef.current = tables;
+  });
 
   const runLoader = useCallback(async () => {
     await loaderRef.current();

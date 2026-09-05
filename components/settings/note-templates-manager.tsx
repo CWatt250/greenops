@@ -122,7 +122,7 @@ export function NoteTemplatesManager({ companyId }: Props) {
       ) : templates.length === 0 && editingId === null ? (
         <div className="rounded-lg border border-dashed p-4 text-center">
           <p className="text-xs text-muted-foreground">
-            No templates yet. Click "New template" to add one.
+            No templates yet. Click &ldquo;New template&rdquo; to add one.
           </p>
         </div>
       ) : (

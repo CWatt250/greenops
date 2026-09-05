@@ -7,8 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Users, Briefcase, Wrench, UsersRound, Settings, LogOut,
   CalendarDays, RadioTower, Route, FileText, Wallet, BarChart2, Globe,
-  ClipboardCheck, Ruler, DollarSign, ClipboardList, FlaskConical, Timer,
-} from 'lucide-react';
+  ClipboardCheck, Ruler, DollarSign, ClipboardList, FlaskConical, Timer, LayoutTemplate } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 import { clearCompanyContext } from '@/lib/company-context';
@@ -31,6 +30,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: '/dashboard/clients',  label: 'Clients',          icon: Users },
       { href: '/dashboard/jobs',     label: 'Jobs',             icon: Briefcase },
+      { href: '/dashboard/templates', label: 'Job Templates',   icon: LayoutTemplate, title: 'Reusable job setups per client' },
       { href: '/dashboard/forms',    label: 'Forms',            icon: ClipboardList },
       { href: '/dashboard/crews',    label: 'Crews',            icon: UsersRound },
       { href: '/dashboard/services', label: 'Services',         icon: Wrench },

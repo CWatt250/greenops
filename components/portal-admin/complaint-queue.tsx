@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { notifyCustomer } from '@/lib/notify';
 import { fileSrc } from '@/lib/storage';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -39,34 +38,16 @@ export function ComplaintQueue({ complaints, onUpdate }: Props) {
 
   async function updateStatus(complaint: Complaint, status: Complaint['status'], notes?: string) {
     setActioning(status);
-    const patch: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
-    if (notes) patch.resolution_notes = notes;
-    if (status === 'resolved' || status === 'closed') {
-      patch.resolved_at = new Date().toISOString();
-    }
-
-    const { data, error } = await supabase
-      .from('complaints')
-      .update(patch)
-      .eq('id', complaint.id)
-      .select()
-      .single();
-
-    if (error) { toast.error(error.message); setActioning(null); return; }
-
-    if (complaint.portal_user_id) {
-      await notifyCustomer(supabase, {
-        portalUserId: complaint.portal_user_id,
-        title: `Issue update: ${complaint.title}`,
-        body: `Your reported issue is now ${status}${notes ? ` — ${notes.slice(0, 60)}` : ''}`,
-        type: 'complaint_update',
-        entityType: 'complaint',
-        entityId: complaint.id,
-      });
-    }
+    const res = await fetch(`/api/portal-admin/complaints/${complaint.id}/status`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, notes }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) { toast.error(json.error ?? 'Could not update the issue.'); setActioning(null); return; }
+    const data = json.complaint as Complaint;
 
     toast.success(`Complaint ${status}.`);
-    onUpdate(data as Complaint);
+    onUpdate(data);
     setSelected(null);
     setActioning(null);
   }

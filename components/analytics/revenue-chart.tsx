@@ -5,14 +5,8 @@ import {
   ResponsiveContainer, Legend,
 } from 'recharts';
 
-export const CHART_COLORS = {
-  primary: '#3D6B2C',
-  secondary: '#C9A84C',
-  danger: '#EF4444',
-  warning: '#F59E0B',
-  muted: '#94A3B8',
-  complete: '#22C55E',
-};
+import { CHART_COLORS } from './chart-colors';
+export { CHART_COLORS };
 
 export const CustomTooltip = ({ active, payload, label }: {
   active?: boolean;

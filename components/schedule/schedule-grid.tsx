@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useCallback } from 'react';
 import { localDateStr } from '@/lib/dates';
 import {
@@ -398,7 +399,7 @@ export function ScheduleGrid({ weekStart, crews, initialJobs, unassignedInitial 
             {crews.length === 0 && (
               <p className="text-sm text-muted-foreground text-center py-8">
                 No crews yet — add crews on the{' '}
-                <a href="/dashboard/crews" className="underline">Crews page</a>.
+                <Link href="/dashboard/crews" className="underline">Crews page</Link>.
               </p>
             )}
           </div>

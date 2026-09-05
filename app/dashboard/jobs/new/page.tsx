@@ -143,7 +143,7 @@ export default async function NewJobPage({ searchParams }: Props) {
             ))}
           </div>
           <p className="text-[11px] text-amber-800 mt-2">
-            Tap one to start with that template's details.
+            Tap one to start with that template&rsquo;s details.
           </p>
         </div>
       )}

@@ -240,7 +240,7 @@ export function MorningBrief({
       <div className="px-5 py-4 space-y-3">
         {lateStart && (
           <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
-            Looks like today didn't get started yet. Want to begin?
+            Looks like today didn&rsquo;t get started yet. Want to begin?
           </div>
         )}
 

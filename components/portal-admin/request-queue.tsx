@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { notifyCustomer } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -39,40 +38,18 @@ export function RequestQueue({ requests, onUpdate }: Props) {
 
   async function updateStatus(req: ServiceRequest, status: ServiceRequest['status'], notes?: string) {
     setActioning(status);
-    const patch: Record<string, unknown> = {
-      status,
-      updated_at: new Date().toISOString(),
-    };
-    if (notes) patch.admin_notes = notes;
-    if (status === 'scheduled' || status === 'completed' || status === 'declined') {
-      const { data: { user } } = await supabase.auth.getUser();
-      patch.resolved_at = new Date().toISOString();
-      patch.resolved_by = user?.id;
-    }
-
-    const { data, error } = await supabase
-      .from('service_requests')
-      .update(patch)
-      .eq('id', req.id)
-      .select()
-      .single();
-
-    if (error) { toast.error(error.message); setActioning(null); return; }
-
-    // Notify portal user
-    if (req.portal_user_id) {
-      await notifyCustomer(supabase, {
-        portalUserId: req.portal_user_id,
-        title: `Request update: ${req.title}`,
-        body: `Status changed to ${status}${notes ? ` — ${notes.slice(0, 60)}` : ''}`,
-        type: 'request_update',
-        entityType: 'service_request',
-        entityId: req.id,
-      });
-    }
+    // Server route: updates the row and notifies the customer (in-app + email
+    // per their preference) — the email leg only runs server-side.
+    const res = await fetch(`/api/portal-admin/requests/${req.id}/status`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, notes }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) { toast.error(json.error ?? 'Could not update the request.'); setActioning(null); return; }
+    const data = json.request as ServiceRequest;
 
     toast.success(`Request ${status}.`);
-    onUpdate(data as ServiceRequest);
+    onUpdate(data);
     setSelected(null);
     setActioning(null);
   }
