@@ -43,6 +43,7 @@ const clientSchema = z.object({
   access_notes: z.string().optional(),
   gate_code: z.string().optional(),
   status: z.enum(['active', 'inactive', 'prospect', 'lead']),
+  sms_consent: z.boolean(),
 });
 
 type ClientFormData = z.infer<typeof clientSchema>;
@@ -71,6 +72,7 @@ export function ClientForm({ initialData, companyId }: ClientFormProps) {
     resolver: zodResolver(clientSchema),
     defaultValues: {
       preferred_contact: initialData?.preferred_contact ?? 'phone',
+      sms_consent: initialData?.sms_consent ?? false,
       property_type: initialData?.property_type ?? 'residential',
       billing_same_as_service: initialData?.billing_same_as_service ?? true,
       status: initialData?.status ?? 'active',
@@ -225,6 +227,10 @@ export function ClientForm({ initialData, companyId }: ClientFormProps) {
         <div className="space-y-2">
           <Label htmlFor="phone">Phone</Label>
           <Input id="phone" type="tel" {...register('phone')} />
+          <label className="flex items-start gap-2 text-xs text-muted-foreground">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[var(--color-brand-green-raw)]" {...register('sms_consent')} />
+            <span>Customer agreed to receive text messages (on-my-way, reminders). Required before the app will text this number.</span>
+          </label>
         </div>
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>

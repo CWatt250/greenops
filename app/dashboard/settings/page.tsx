@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PortalBannerForm } from '@/components/settings/portal-banner-form';
+import { CommunicationForm } from '@/components/settings/communication-form';
 import { NoteTemplatesManager } from '@/components/settings/note-templates-manager';
 import { OverheadForm } from '@/components/settings/overhead-form';
 import { CompanyInfoForm } from '@/components/settings/company-info-form';
@@ -135,6 +136,29 @@ export default async function SettingsPage() {
             </CardHeader>
             <CardContent>
               <PortalBannerForm companyId={c.id} initial={c} />
+            </CardContent>
+          </Card>
+        )}
+
+        {c && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Customer communication</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CommunicationForm
+                companyId={c.id}
+                slug={c.slug}
+                initial={{
+                  timezone: c.timezone ?? null,
+                  review_url: c.review_url ?? null,
+                  public_requests_enabled: c.public_requests_enabled ?? true,
+                }}
+                channels={{
+                  email: !!process.env.RESEND_API_KEY,
+                  sms: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && (process.env.TWILIO_FROM || process.env.TWILIO_MESSAGING_SERVICE_SID)),
+                }}
+              />
             </CardContent>
           </Card>
         )}

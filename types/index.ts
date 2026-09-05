@@ -16,6 +16,9 @@ export interface Company {
   id: string;
   name: string;
   slug: string;
+  timezone?: string | null;
+  review_url?: string | null;
+  public_requests_enabled?: boolean | null;
   logo_url?: string;
   phone?: string;
   email?: string;
@@ -113,6 +116,8 @@ export interface Client {
   gate_code?: string;
   preferred_crew_id?: string;
   status: ClientStatus;
+  sms_consent?: boolean;
+  sms_opt_out_at?: string | null;
   primary_measurement_id?: string | null;
   /** Cached service-address coordinates (migration 020). Used by the route
    *  builder to skip live geocoding when the address rarely changes. */
@@ -359,6 +364,7 @@ export interface PortalUser {
     email_invoice: boolean;
     email_request_update: boolean;
     sms_crew_enroute: boolean;
+    email_review_request?: boolean;
   };
   last_seen_at?: string | null;
   created_at: string;

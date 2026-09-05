@@ -9,6 +9,9 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getDriveLeg } from '@/lib/mapbox-directions';
 import { notifyStaff } from '@/lib/notify';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { sendSms, smsAllowed, smsConfigured } from '@/lib/sms';
+import { logOutbound } from '@/lib/outbound-log';
 
 interface EnRouteBody {
   origin_lat?: number | null;
@@ -119,5 +122,31 @@ export async function POST(
     entityId: id,
   });
 
+  // Customer "on my way" text — only with recorded consent (client flag or
+  // portal toggle) and never after a STOP. Best-effort, never blocks.
+  void textCustomerEnRoute(job.company_id, job.client?.id ?? null, etaMinutes, id);
+
   return NextResponse.json({ ok: true, eta_minutes: etaMinutes });
+}
+
+async function textCustomerEnRoute(companyId: string, clientId: string | null, etaMinutes: number | null, jobId: string) {
+  try {
+    if (!clientId || !smsConfigured()) return;
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+    const admin = createAdminClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+    const [{ data: client }, { data: portal }, { data: company }] = await Promise.all([
+      admin.from('clients').select('phone, service_address, sms_consent, sms_opt_out_at').eq('id', clientId).single(),
+      admin.from('portal_users').select('notification_prefs').eq('client_id', clientId),
+      admin.from('companies').select('name').eq('id', companyId).single(),
+    ]);
+    if (!client?.phone) return;
+    const prefs = (portal ?? []).map((p: { notification_prefs: Record<string, unknown> | null }) => p.notification_prefs);
+    if (!smsAllowed({ sms_consent: client.sms_consent, sms_opt_out_at: client.sms_opt_out_at, portalPrefs: prefs })) return;
+    const eta = etaMinutes ? `, about ${etaMinutes} min away` : '';
+    const body = `${company?.name ?? 'Our crew'}: we're on the way to ${client.service_address ?? 'your property'}${eta}. Reply STOP to opt out.`;
+    const r = await sendSms({ to: client.phone, body });
+    logOutbound(admin, { companyId, channel: 'sms', recipient: client.phone, template: 'crew_enroute', status: r.ok ? 'sent' : 'failed', providerId: r.ok ? r.sid : null, error: r.ok ? null : ('error' in r ? r.error : r.skipped), entityType: 'job', entityId: jobId });
+  } catch {
+    /* best-effort */
+  }
 }
