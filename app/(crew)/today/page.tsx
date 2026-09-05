@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 
+import { PushPrompt } from '@/components/pwa/push-prompt';
 import { Suspense } from 'react';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
@@ -240,6 +241,7 @@ export default async function TodayPage() {
 
       {/* Unread broadcasts (rain delays etc.) — inline, not bell-only. */}
       <BroadcastBanner profileId={user.id} />
+      <PushPrompt />
 
       {/* Attribute pings to the crew of the job actually being worked — a
           multi-crew member's location used to always tag their first crew,

@@ -1074,6 +1074,17 @@ export default function RouteBuilderPage() {
       }
     }
 
+    // Push the dispatch to crew phones (no-op when push isn't configured).
+    void fetch('/api/push/fanout', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: result.ids.length === 1 ? `Route dispatched: ${result.titles[0]}` : `${result.ids.length} routes dispatched`,
+        body: formatDateLabel(selectedDate),
+        url: '/today',
+        crewIds: selectedCrewIds,
+      }),
+    }).catch(() => {});
+
     setDispatching(false);
     toast.success(
       result.ids.length === 1

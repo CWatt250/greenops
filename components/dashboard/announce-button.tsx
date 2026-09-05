@@ -225,6 +225,11 @@ export function AnnounceButton({ companyId: companyIdProp, variant = 'button' }:
     const { error } = await supabase.from('notifications').insert(rows);
     setSending(false);
     if (error) { toast.error(error.message); return; }
+    // Buzz the phones too (no-op when push isn't configured).
+    void fetch('/api/push/fanout', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title.trim(), body: body.trim() || null, url: '/today', profileIds }),
+    }).catch(() => {});
     toast.success(`Announcement sent to ${rows.length} crew member${rows.length === 1 ? '' : 's'}.`);
     setOpen(false);
     reset();

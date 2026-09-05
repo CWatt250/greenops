@@ -12,7 +12,7 @@
 // next-pwa / Workbox — Next.js 16 + App Router doesn't always play well
 // with the bundled solutions.
 
-const CACHE_VERSION = 'tlc-pwa-v2';
+const CACHE_VERSION = 'tlc-pwa-v3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 
@@ -120,4 +120,34 @@ async function networkFirst(request, cacheName) {
 // Allow the page to ask the SW to update on demand (e.g. after deploy).
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
+});
+
+// ---- Web push -------------------------------------------------------------
+// Payload: { title, body, url, tag } from lib/push.ts. Tapping the
+// notification focuses an open app window (or opens one) at `url`.
+self.addEventListener('push', (event) => {
+  let data = { title: 'TLC', body: '', url: '/', tag: undefined };
+  try { data = { ...data, ...event.data.json() }; } catch { /* plain text or empty */ }
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      tag: data.tag,
+      data: { url: data.url },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const client of list) {
+        if ('focus' in client) { client.navigate(url); return client.focus(); }
+      }
+      return self.clients.openWindow(url);
+    }),
+  );
 });

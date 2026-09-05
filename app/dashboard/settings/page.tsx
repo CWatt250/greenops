@@ -11,6 +11,7 @@ import { NoteTemplatesManager } from '@/components/settings/note-templates-manag
 import { OverheadForm } from '@/components/settings/overhead-form';
 import { CompanyInfoForm } from '@/components/settings/company-info-form';
 import { PasswordForm } from '@/components/settings/password-form';
+import { PushPrompt } from '@/components/pwa/push-prompt';
 import { DepotForm } from '@/components/settings/depot-form';
 import { WeatherSettingsForm } from '@/components/settings/weather-settings-form';
 import type { Company } from '@/types';
@@ -71,6 +72,9 @@ export default async function SettingsPage() {
             <div className="border-t pt-4">
               <p className="text-sm font-medium mb-2">Password</p>
               <PasswordForm />
+            </div>
+            <div className="border-t pt-4">
+              <PushPrompt variant="row" />
             </div>
           </CardContent>
         </Card>

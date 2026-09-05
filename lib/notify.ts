@@ -54,6 +54,7 @@ export async function notifyStaff(
       .map((s: { id: string }) => s.id)
       .filter((id) => id !== n.excludeProfileId);
     if (targets.length === 0) return { delivered: 0 };
+    void pushStaff(supabase, targets, n);
     const { error } = await supabase.from('notifications').insert(
       targets.map((profileId) => ({
         company_id: n.companyId,
@@ -147,6 +148,21 @@ async function emailCustomers(supabase: SupabaseClient, n: CustomerNotice, porta
       });
       await sendEmail({ to, subject: n.title, html, text, replyTo: u.company?.email ?? null });
     }
+  } catch {
+    /* best-effort */
+  }
+}
+
+/** Push leg of a staff notice — server-only, best-effort, needs VAPID keys. */
+async function pushStaff(supabase: SupabaseClient, profileIds: string[], n: StaffNotice) {
+  if (typeof window !== 'undefined' || !process.env.VAPID_PRIVATE_KEY) return;
+  try {
+    const { sendPushToProfiles } = await import('@/lib/push');
+    const url = n.entityType === 'job' && n.entityId ? `/dashboard/jobs/${n.entityId}`
+      : n.entityType === 'estimate' && n.entityId ? `/dashboard/proposals/${n.entityId}`
+      : n.entityType === 'service_request' ? '/dashboard/portal-admin/requests'
+      : '/dashboard';
+    await sendPushToProfiles(supabase, profileIds, { title: n.title, body: n.body ?? null, url });
   } catch {
     /* best-effort */
   }
