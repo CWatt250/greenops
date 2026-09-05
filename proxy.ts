@@ -53,7 +53,9 @@ export async function proxy(request: NextRequest) {
   if (!user && !isLoginPage && !isOpenPage && !isApi) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
-    url.searchParams.set('next', path);
+    url.search = '';
+    // Carry the full path + query so deep links (e.g. ?quick=1) survive sign-in.
+    url.searchParams.set('next', path + request.nextUrl.search);
     return NextResponse.redirect(url);
   }
 
