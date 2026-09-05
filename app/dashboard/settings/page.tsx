@@ -9,6 +9,7 @@ import { PortalBannerForm } from '@/components/settings/portal-banner-form';
 import { NoteTemplatesManager } from '@/components/settings/note-templates-manager';
 import { OverheadForm } from '@/components/settings/overhead-form';
 import { CompanyInfoForm } from '@/components/settings/company-info-form';
+import { PasswordForm } from '@/components/settings/password-form';
 import { DepotForm } from '@/components/settings/depot-form';
 import { WeatherSettingsForm } from '@/components/settings/weather-settings-form';
 import type { Company } from '@/types';
@@ -65,6 +66,10 @@ export default async function SettingsPage() {
             <div>
               <p className="text-xs text-muted-foreground">Role</p>
               <p className="text-sm font-medium capitalize">{p?.role ?? '—'}</p>
+            </div>
+            <div className="border-t pt-4">
+              <p className="text-sm font-medium mb-2">Password</p>
+              <PasswordForm />
             </div>
           </CardContent>
         </Card>

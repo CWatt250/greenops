@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -13,7 +14,7 @@ import { Label } from '@/components/ui/label';
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(1, 'Enter your password'),
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
@@ -41,7 +42,9 @@ export default function LoginPage() {
       return;
     }
 
-    router.push('/');
+    // Honor the proxy's ?next= (relative paths only — never an open redirect).
+    const next = new URLSearchParams(window.location.search).get('next');
+    router.push(next && next.startsWith('/') && !next.startsWith('//') ? next : '/');
     router.refresh();
   }
 
@@ -103,7 +106,16 @@ export default function LoginPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Password</Label>
+              <Link
+                href="/forgot-password"
+                className="text-xs font-medium hover:underline"
+                style={{ color: 'var(--color-brand-green-raw)' }}
+              >
+                Forgot password?
+              </Link>
+            </div>
             <Input
               id="password"
               type="password"

@@ -13,9 +13,10 @@ import { NextResponse, type NextRequest } from 'next/server';
  * still redirect them away.
  */
 
-const PUBLIC_PATHS = ['/login'];
-// Pages anyone can view, logged in or not (tokenized proposal links).
-const OPEN_PATHS = ['/p'];
+const PUBLIC_PATHS = ['/login', '/forgot-password'];
+// Pages anyone can view, logged in or not (tokenized proposal links, the
+// auth code-exchange callback that email links land on).
+const OPEN_PATHS = ['/p', '/auth'];
 const PUBLIC_API_PREFIXES = ['/api/optimize-route', '/api/invite-worker', '/api/public'];
 
 export async function proxy(request: NextRequest) {

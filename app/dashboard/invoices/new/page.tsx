@@ -118,12 +118,10 @@ function NewInvoiceContent() {
   }
 
   return (
-    <div
-      className="-m-4 md:-m-6 lg:-m-8 flex overflow-hidden"
-      style={{ height: 'calc(100svh - 3.5rem)' }}
-    >
-      {/* ─── LEFT PANEL ─── */}
-      <div className="w-[480px] shrink-0 flex flex-col border-r bg-background overflow-hidden">
+    <div className="-mx-4 -mt-4 md:-m-6 lg:-m-8 flex flex-col md:flex-row md:overflow-hidden md:h-[calc(100svh-3.5rem)]">
+      {/* ─── LEFT PANEL ─── Stacks above the preview below `md`; the fixed
+          480px pane only applies once there is room for two columns. */}
+      <div className="w-full md:w-[480px] md:shrink-0 flex flex-col md:border-r bg-background md:overflow-hidden">
         <div className="px-5 py-3 border-b shrink-0">
           <Link
             href="/dashboard/invoices"
@@ -134,7 +132,7 @@ function NewInvoiceContent() {
           <h1 className="text-sm font-bold">New Invoice</h1>
         </div>
 
-        <div className="flex-1 overflow-y-auto min-h-0 px-5 py-4">
+        <div className="md:flex-1 md:overflow-y-auto md:min-h-0 px-4 md:px-5 py-4">
           <InvoiceForm
             companyId={companyId}
             userId={userId}
@@ -147,7 +145,7 @@ function NewInvoiceContent() {
       </div>
 
       {/* ─── RIGHT PANEL — PREVIEW ─── */}
-      <div className="flex-1 overflow-y-auto bg-muted/30 p-6">
+      <div className="md:flex-1 md:overflow-y-auto bg-muted/30 p-4 md:p-6 border-t md:border-t-0">
         <p className="text-xs text-muted-foreground font-medium mb-3">Live Preview</p>
         <InvoicePreview
           invoice={{ ...previewData.invoice, client: prefilled.client ?? undefined }}

@@ -6,7 +6,46 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+type SelectItemsList = Array<{ value: unknown; label: React.ReactNode }>
+
+/**
+ * Deliberate local override of the shadcn primitive (see CLAUDE.md note).
+ *
+ * base-ui's `Select.Value` renders the raw `value` string unless the root
+ * receives an `items` map — so every pre-filled select in the app showed
+ * UUIDs and enum keys ("scheduled") instead of the option label. Rather than
+ * thread `items` through all ~36 call sites (and every future one), derive
+ * the map from the rendered `<SelectItem>`s when the caller doesn't pass it.
+ */
+function collectItems(children: React.ReactNode, out: SelectItemsList) {
+  React.Children.forEach(children, (child) => {
+    if (!React.isValidElement(child)) return
+    const props = child.props as { value?: unknown; children?: React.ReactNode }
+    if (child.type === SelectItem) {
+      out.push({ value: props.value, label: props.children })
+      return
+    }
+    if (props.children) collectItems(props.children, out)
+  })
+}
+
+function Select<Value, Multiple extends boolean | undefined = false>({
+  items,
+  children,
+  ...props
+}: SelectPrimitive.Root.Props<Value, Multiple>) {
+  let derived = items
+  if (derived == null) {
+    const list: SelectItemsList = []
+    collectItems(children, list)
+    if (list.length) derived = list as SelectPrimitive.Root.Props<Value, Multiple>["items"]
+  }
+  return (
+    <SelectPrimitive.Root<Value, Multiple> items={derived} {...props}>
+      {children}
+    </SelectPrimitive.Root>
+  )
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (

@@ -119,7 +119,11 @@ export function LineItemsTable({ jobId, initialItems = [], onChange }: LineItems
   const grandTotal = items.reduce((sum, i) => sum + (i.total ?? i.quantity * i.unit_price), 0);
 
   return (
-    <div className="space-y-2">
+    // The 5-column grid needs ~330px of fixed columns plus a usable
+    // description column; below that it scrolls sideways inside this wrapper
+    // instead of clipping the Total column and delete button off-screen.
+    <div className="overflow-x-auto -mx-1 px-1">
+    <div className="min-w-[460px] space-y-2">
       {/* Header */}
       <div className="grid grid-cols-[1fr_80px_100px_90px_36px] gap-2 px-1">
         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Service / Description</span>
@@ -220,6 +224,7 @@ export function LineItemsTable({ jobId, initialItems = [], onChange }: LineItems
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
