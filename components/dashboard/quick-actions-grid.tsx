@@ -7,7 +7,7 @@ const ACTIONS = [
   { label: 'New estimate',           icon: ClipboardCheck, href: '/dashboard/proposals/new' },
   { label: 'New invoice',            icon: Receipt,        href: '/dashboard/invoices/new' },
   { label: 'Add client',             icon: UserPlus,       href: '/dashboard/clients/new' },
-  { label: 'Build route',            icon: Map,            href: '/dashboard/routes/new' },
+  { label: "Build today's routes",   icon: Map,            href: '/dashboard/routes/new?quick=1' },
   { label: 'Dispatch crew',          icon: RadioTower,     href: '/dashboard/crew' },
   { label: "View today's schedule",  icon: CalendarDays,   href: '/dashboard/schedule?view=day' },
 ] as const;

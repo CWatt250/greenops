@@ -11,8 +11,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  ChevronLeft, ChevronRight, Plus, MapPin, Clock, Timer, ChevronDown, ChevronUp,
-} from 'lucide-react';
+  ChevronLeft, ChevronRight, Plus, MapPin, Clock, Timer, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Route, RouteStop, Crew } from '@/types';
 
@@ -118,11 +117,18 @@ export default function RoutesPage() {
       <PageHeader title="Routes" description="Daily route management and optimization">
         <HowRoutesWorks />
         <Link
-          href="/dashboard/routes/new"
+          href="/dashboard/routes/new?quick=1"
           className={buttonVariants()}
-          style={{ backgroundColor: 'var(--color-brand-gold-raw)', color: '#fff' }}
+          style={{ backgroundColor: 'var(--orange)', color: '#fff' }}
+          title="Today, every active crew, every scheduled job, optimized — review and dispatch"
         >
-          <Plus className="h-4 w-4 mr-1.5" /> Build Route
+          <Sparkles className="h-4 w-4 mr-1.5" /> Build today&rsquo;s routes
+        </Link>
+        <Link
+          href="/dashboard/routes/new"
+          className={buttonVariants({ variant: 'outline' })}
+        >
+          <Plus className="h-4 w-4 mr-1.5" /> Custom route
         </Link>
       </PageHeader>
 

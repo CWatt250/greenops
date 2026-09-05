@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Home, CalendarDays, Ruler, Users, MoreHorizontal,
+  Home, CalendarDays, Ruler, Route, MoreHorizontal,
   ClipboardList,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -38,8 +38,8 @@ const ADMIN_TABS: NavItem[] = [
   { label: 'Measure',  href: '/dashboard/measure',           icon: Ruler,
     match: (p) => p.startsWith('/dashboard/measure'),
     primary: true },
-  { label: 'Clients',  href: '/dashboard/clients',           icon: Users,
-    match: (p) => p.startsWith('/dashboard/clients') },
+  { label: 'Routes',   href: '/dashboard/routes',            icon: Route,
+    match: (p) => p.startsWith('/dashboard/routes') },
   { label: 'More',     href: '__more__',                     icon: MoreHorizontal },
 ];
 

@@ -19,6 +19,46 @@ interface OptimizeButtonProps {
   disabled?: boolean;
 }
 
+export interface SingleOptimizeResult {
+  finalStops: StopDraft[];
+  blocked: StopDraft[];
+  /** Minutes of driving saved vs the incoming order (may be ≤ 0). */
+  saved: number;
+}
+
+/**
+ * Single-crew VROOM optimization, shared by the button and the route
+ * builder's one-tap path. Returns null when the service is unavailable.
+ */
+export async function optimizeSingleStops(stops: StopDraft[], vehicleSkills?: number[]): Promise<SingleOptimizeResult | null> {
+  const geocodedStops = stops.filter((s) => s.lat !== null && s.lng !== null);
+  const vroomStops: VroomStop[] = geocodedStops.map((s, i) => ({
+    id: i,
+    location: [s.lng!, s.lat!],
+    service: (s.estimated_duration_minutes ?? 30) * 60,
+    ...(s.skills && s.skills.length > 0 ? { skills: s.skills } : {}),
+  }));
+  const depot = routeCentroid(vroomStops.map((s) => s.location));
+  const origDrive = stops.reduce((sum, s) => sum + (s.drive_minutes_from_prev ?? 0), 0);
+  const orderedIds = await optimizeRoute(vroomStops, depot, vehicleSkills);
+  if (!orderedIds) return null;
+  const reordered: StopDraft[] = orderedIds.map((idx, position) => ({ ...geocodedStops[idx], stop_order: position + 1 }));
+  const assignedIdx = new Set(orderedIds);
+  const blocked: StopDraft[] = geocodedStops.filter((_, i) => !assignedIdx.has(i));
+  const nonGeocoded = stops.filter((s) => s.lat === null || s.lng === null);
+  const finalStops = [...reordered, ...blocked, ...nonGeocoded].map((s, i) => ({ ...s, stop_order: i + 1 }));
+  const geocodedCoords = reordered.map((s) => ({ lat: s.lat!, lng: s.lng! }));
+  const matrix = await getDriveMatrix(geocodedCoords);
+  if (matrix) {
+    for (let i = 1; i < finalStops.length; i++) {
+      const driveSecs = matrix[i - 1]?.[i] ?? 0;
+      finalStops[i] = { ...finalStops[i], drive_minutes_from_prev: Math.round(driveSecs / 60) };
+    }
+  }
+  const newDrive = finalStops.reduce((sum, s) => sum + (s.drive_minutes_from_prev ?? 0), 0);
+  return { finalStops, blocked, saved: Math.round(origDrive - newDrive) };
+}
+
 export function OptimizeButton({ stops, onOptimized, vehicleSkills, onUnroutable, disabled }: OptimizeButtonProps) {
   const [state, setState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
@@ -30,81 +70,24 @@ export function OptimizeButton({ stops, onOptimized, vehicleSkills, onUnroutable
     }
 
     setState('loading');
-
-    const vroomStops: VroomStop[] = geocodedStops.map((s, i) => ({
-      id: i,
-      location: [s.lng!, s.lat!],
-      service: (s.estimated_duration_minutes ?? 30) * 60,
-      // Restricted-service certifications required for this stop (migration 045).
-      ...(s.skills && s.skills.length > 0 ? { skills: s.skills } : {}),
-    }));
-
-    const depot = routeCentroid(vroomStops.map((s) => s.location));
-
-    // Calculate original total drive time
-    const origDrive = stops.reduce((sum, s) => sum + (s.drive_minutes_from_prev ?? 0), 0);
-
-    const orderedIds = await optimizeRoute(vroomStops, depot, vehicleSkills);
-
-    if (!orderedIds) {
+    const result = await optimizeSingleStops(stops, vehicleSkills);
+    if (!result) {
       setState('error');
       toast.error('Optimization service unavailable. Try again or reorder manually.');
       setTimeout(() => setState('idle'), 3000);
       return;
     }
-
-    // Build the reordered stops array using the VROOM result indices
-    const reordered: StopDraft[] = orderedIds.map((idx, position) => ({
-      ...geocodedStops[idx],
-      stop_order: position + 1,
-    }));
-
-    // Any geocoded stop VROOM didn't place is skill-blocked for this crew —
-    // never drop it: keep it in the list (at the end) and surface it.
-    const assignedIdx = new Set(orderedIds);
-    const blocked: StopDraft[] = geocodedStops.filter((_, i) => !assignedIdx.has(i));
+    const { finalStops, blocked, saved } = result;
     onUnroutable?.(blocked);
     if (blocked.length > 0) {
       toast.warning(
         `${blocked.length} stop${blocked.length === 1 ? '' : 's'} couldn't be routed — this crew isn't certified for the required service(s).`,
       );
     }
-
-    // Re-add blocked + non-geocoded stops at the end so nothing vanishes.
-    const nonGeocoded = stops.filter((s) => s.lat === null || s.lng === null);
-    const finalStops = [...reordered, ...blocked, ...nonGeocoded].map((s, i) => ({
-      ...s,
-      stop_order: i + 1,
-    }));
-
-    // Fetch new drive times from Mapbox matrix
-    const geocodedCoords = reordered
-      .filter((s) => s.lat !== null && s.lng !== null)
-      .map((s) => ({ lat: s.lat!, lng: s.lng! }));
-
-    const matrix = await getDriveMatrix(geocodedCoords);
-    if (matrix) {
-      for (let i = 1; i < finalStops.length; i++) {
-        const driveSecs = matrix[i - 1]?.[i] ?? 0;
-        finalStops[i] = {
-          ...finalStops[i],
-          drive_minutes_from_prev: Math.round(driveSecs / 60),
-        };
-      }
-    }
-
-    const newDrive = finalStops.reduce((sum, s) => sum + (s.drive_minutes_from_prev ?? 0), 0);
-    const saved = Math.round(origDrive - newDrive);
-
     setState('success');
     onOptimized(finalStops);
-
-    if (saved > 0) {
-      toast.success(`Route optimized! Saved ~${saved} minutes of driving.`);
-    } else {
-      toast.success('Route optimized — already near-optimal!');
-    }
-
+    if (saved > 0) toast.success(`Route optimized! Saved ~${saved} minutes of driving.`);
+    else toast.success('Route optimized — already near-optimal!');
     setTimeout(() => setState('idle'), 4000);
   }
 

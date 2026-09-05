@@ -51,6 +51,8 @@ interface StopListProps {
   onStopSelect: (id: string | null) => void;
   readonly?: boolean;
   emptyState?: React.ReactNode;
+  /** Phone-friendly reorder; when provided, cards get up/down buttons. */
+  onMove?: (key: string, direction: -1 | 1) => void;
 }
 
 export function StopList({
@@ -63,6 +65,7 @@ export function StopList({
   onStopSelect,
   readonly = false,
   emptyState,
+  onMove,
 }: StopListProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -117,6 +120,8 @@ export function StopList({
               onRemove={() => onRemove(stop._key)}
               onDurationChange={(mins) => onDurationChange(stop._key, mins)}
               readonly={readonly}
+              onMoveUp={onMove && i > 0 ? () => onMove(stop._key, -1) : undefined}
+              onMoveDown={onMove && i < stops.length - 1 ? () => onMove(stop._key, 1) : undefined}
             />
           ))}
         </div>

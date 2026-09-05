@@ -1,9 +1,11 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
+import { toast } from 'sonner';
 import { localDateStr } from '@/lib/dates';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, Plus, Filter, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Filter, Check, UsersRound, Loader2 } from 'lucide-react';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 import type { Job, Crew } from '@/types';
@@ -53,9 +55,69 @@ function formatMobileDayLabel(d: Date): string {
 
 interface MobileJobCardProps {
   job: Job;
+  crews: Crew[];
 }
 
-function MobileJobCard({ job }: MobileJobCardProps) {
+/**
+ * Tap-to-assign: drag-and-drop between crew lanes is a desktop gesture, so on
+ * phones each card gets an "Assign" control that opens a crew menu. The
+ * schedule page's realtime subscription refreshes the list after the write.
+ */
+function AssignCrewMenu({ job, crews }: { job: Job; crews: Crew[] }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const current = job.crew as { id: string; name: string; color?: string } | undefined;
+
+  async function assign(crewId: string | null) {
+    setBusy(true);
+    const supabase = createClient();
+    const patch: Record<string, unknown> = { crew_id: crewId, updated_at: new Date().toISOString() };
+    if (crewId && job.status === 'unscheduled') patch.status = 'scheduled';
+    const { error } = await supabase.from('jobs').update(patch).eq('id', job.id);
+    setBusy(false);
+    setOpen(false);
+    if (error) { toast.error(error.message); return; }
+    const name = crewId ? crews.find((c) => c.id === crewId)?.name ?? 'crew' : 'Unassigned';
+    toast.success(`${job.title} → ${name}`);
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((v) => !v); }}
+        aria-expanded={open}
+        aria-label={`Assign crew for ${job.title}`}
+        className="inline-flex min-h-9 items-center gap-1.5 rounded-full border bg-background px-3 text-xs font-medium active:bg-muted"
+      >
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UsersRound className="h-3.5 w-3.5" />}
+        {current?.name ? 'Reassign' : 'Assign crew'}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 w-56 rounded-md border bg-popover p-1 shadow-md" role="menu" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+          {[{ id: null as string | null, name: 'Unassigned', color: UNASSIGNED_COLOR }, ...crews.map((c) => ({ id: c.id as string | null, name: c.name, color: c.color }))].map((opt) => {
+            const active = (job.crew_id ?? null) === opt.id;
+            return (
+              <button
+                key={opt.id ?? '__none__'}
+                type="button"
+                role="menuitem"
+                onClick={() => { void assign(opt.id); }}
+                className={cn('flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-sm', active ? 'bg-muted font-medium' : 'hover:bg-muted/50')}
+              >
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: opt.color }} />
+                <span className="flex-1 truncate">{opt.name}</span>
+                {active && <Check className="h-4 w-4 text-[var(--orange)]" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MobileJobCard({ job, crews }: MobileJobCardProps) {
   const crew = job.crew as { id: string; name: string; color?: string } | undefined;
   const stripeColor = crew?.color ?? UNASSIGNED_COLOR;
   const start = formatHHMM(job.scheduled_start as string | null);
@@ -90,15 +152,18 @@ function MobileJobCard({ job }: MobileJobCardProps) {
             {client.service_address ? ` · ${client.service_address}` : ''}
           </p>
         )}
-        <div className="flex items-center gap-1.5 mt-1.5">
-          <span
-            className="h-2 w-2 rounded-full shrink-0"
-            style={{ backgroundColor: stripeColor }}
-            aria-hidden
-          />
-          <span className="text-[11px] text-muted-foreground truncate">
-            {crew?.name ?? 'Unassigned'}
-          </span>
+        <div className="flex items-center justify-between gap-2 mt-1.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span
+              className="h-2 w-2 rounded-full shrink-0"
+              style={{ backgroundColor: stripeColor }}
+              aria-hidden
+            />
+            <span className="text-[11px] text-muted-foreground truncate">
+              {crew?.name ?? 'Unassigned'}
+            </span>
+          </div>
+          <AssignCrewMenu job={job} crews={crews} />
         </div>
       </div>
     </Link>
@@ -280,7 +345,7 @@ export function MobileDayView({
           <ul className="flex flex-col gap-2">
             {filteredJobs.map((job) => (
               <li key={job.id}>
-                <MobileJobCard job={job} />
+                <MobileJobCard job={job} crews={crews} />
               </li>
             ))}
           </ul>

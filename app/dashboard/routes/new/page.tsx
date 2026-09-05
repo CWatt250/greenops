@@ -1,5 +1,7 @@
 'use client';
 
+import { List as ListIcon, Map as MapIcon, ChevronDown as ChevronDownIcon, RotateCcw, CheckCircle2 as CheckIcon } from 'lucide-react';
+import { optimizeSingleStops } from '@/components/routes/optimize-button';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { localDateStr } from '@/lib/dates';
 import dynamic from 'next/dynamic';
@@ -171,6 +173,21 @@ export default function RouteBuilderPage() {
   const geocodeCache = useRef<Map<string, [number, number]>>(new Map());
   const [retryingGeocode, setRetryingGeocode] = useState(false);
 
+  // ── Phone flow ────────────────────────────────────────────────────────
+  // ?quick=1 → today, every active crew, auto-load, auto-optimize, review.
+  const [quickRun, setQuickRun] = useState(false);
+  const quickRequested = useRef(false);
+  const [mobileTab, setMobileTab] = useState<'list' | 'map'>('list');
+  const [setupOpen, setSetupOpen] = useState(true);
+  const [savedMinutes, setSavedMinutes] = useState<number | null>(null);
+  const preOptimizeDrive = useRef<number | null>(null);
+  // Draft autosave (localStorage) so a phone call mid-build doesn't cost the route.
+  type RouteDraft = { date: string; crewIds: string[]; title: string; order: Array<{ job_id: string | null; crew_id: string | null }> };
+  const DRAFT_KEY = 'tlc-route-draft';
+  const [draftOffer, setDraftOffer] = useState<RouteDraft | null>(null);
+  const pendingDraft = useRef<RouteDraft | null>(null);
+  const draftReady = useRef(false);
+
   // Bulk retry for the ungeocoded banner. The stop loaders geocode only the
   // street line (clients.service_address); retrying with the full
   // street+city+state+zip resolves most failures. Successes are written back
@@ -229,6 +246,36 @@ export default function RouteBuilderPage() {
   }
 
   const mode: 'single' | 'multi' = selectedCrewIds.length <= 1 ? 'single' : 'multi';
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const quick = new URLSearchParams(window.location.search).get('quick') === '1';
+    if (quick) { quickRequested.current = true; return; }
+    try {
+      const raw = window.localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw) as RouteDraft;
+      if (d && d.date === localDateStr(new Date()) && d.order?.length > 0 && d.crewIds?.length > 0) setDraftOffer(d);
+      else window.localStorage.removeItem(DRAFT_KEY);
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!quickRequested.current || crews.length === 0 || !companyId) return;
+    quickRequested.current = false;
+    const ids = crews.filter((c) => c.is_active !== false).map((c) => c.id);
+    setSelectedDate(localDateStr(new Date()));
+    setSelectedCrewIds(ids);
+    setPickerMode(false);
+    setStops([]);
+    setQuickRun(true);
+  }, [crews, companyId]);
+
+  // Collapse the setup section on phones once there is something to review.
+  useEffect(() => {
+    setSetupOpen(stops.length === 0);
+  }, [stops.length]);
   const crewById = useMemo(() => {
     const m = new Map<string, Crew>();
     crews.forEach((c) => m.set(c.id, c));
@@ -528,6 +575,114 @@ export default function RouteBuilderPage() {
   }, [selectedCrewIds.join(','), selectedDate, companyId, crewById, pickerMode]);
 
   // ── Single-crew handlers ───────────────────────────────────────────────
+  /**
+   * Up/down reorder for phones. The grouped (multi-crew) list renders each
+   * crew's stops sorted by stop_order, so swap those values; the single-crew
+   * list renders array order, so swap positions and renumber.
+   */
+  async function handleMove(key: string, direction: -1 | 1) {
+    const me = stops.find((st) => st._key === key);
+    if (!me) return;
+    let next: StopDraft[];
+    if (mode === 'multi') {
+      const ordered = stops
+        .filter((st) => (st.assigned_crew_id ?? null) === (me.assigned_crew_id ?? null))
+        .sort((a, b) => a.stop_order - b.stop_order);
+      const pos = ordered.findIndex((st) => st._key === key);
+      const other = ordered[pos + direction];
+      if (!other) return;
+      next = stops.map((st) =>
+        st._key === me._key ? { ...st, stop_order: other.stop_order }
+        : st._key === other._key ? { ...st, stop_order: me.stop_order }
+        : st,
+      );
+    } else {
+      const a = stops.findIndex((st) => st._key === key);
+      const b = a + direction;
+      if (b < 0 || b >= stops.length) return;
+      const swapped = [...stops];
+      [swapped[a], swapped[b]] = [swapped[b], swapped[a]];
+      next = swapped.map((st, i) => ({ ...st, stop_order: i + 1 }));
+    }
+    setOptimized(false);
+    setSavedMinutes(null);
+    setStops(next);
+    const withGeometry = await rebuildGeometry(next, mode === 'multi');
+    setStops(withGeometry);
+  }
+
+  async function runOptimize() {
+    preOptimizeDrive.current = stops.reduce((sum, st) => sum + (st.drive_minutes_from_prev ?? 0), 0);
+    if (mode === 'multi') { await handleOptimizeMulti(); return; }
+    if (stops.filter((st) => st.lat !== null && st.lng !== null).length < 2) return;
+    setOptimizingMulti(true);
+    const result = await optimizeSingleStops(stops, crewSkillMap.get(selectedCrewIds[0]) ?? []);
+    setOptimizingMulti(false);
+    if (!result) { toast.error('Optimization service unavailable. Try again or reorder manually.'); return; }
+    handleSingleUnroutable(result.blocked);
+    handleOptimizedSingle(result.finalStops);
+    toast.success(result.saved > 0 ? `Route optimized! Saved ~${result.saved} minutes of driving.` : 'Route optimized — already near-optimal!');
+  }
+
+  /** One-tap path: as soon as the day's jobs are on screen, optimize them. */
+  useEffect(() => {
+    if (!quickRun || loadingJobs || !autoLoaded) return;
+    const hasUngeocoded = stops.some((st) => st.lat === null || st.lng === null);
+    if (stops.length < 2 || optimized || hasUngeocoded) { setQuickRun(false); return; }
+    setQuickRun(false);
+    void runOptimize();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quickRun, loadingJobs, autoLoaded, stops.length, optimized]);
+
+  // Savings readout for the phone action bar (computed once the stops settle).
+  useEffect(() => {
+    if (!optimized || preOptimizeDrive.current === null) return;
+    const now = stops.reduce((sum, st) => sum + (st.drive_minutes_from_prev ?? 0), 0);
+    setSavedMinutes(Math.max(0, Math.round(preOptimizeDrive.current - now)));
+    preOptimizeDrive.current = null;
+  }, [optimized, stops]);
+
+  // Draft: persist while building; apply a resumed draft once its jobs load.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!draftReady.current) { draftReady.current = true; return; }
+    try {
+      if (stops.length === 0) return;
+      const d: RouteDraft = {
+        date: selectedDate, crewIds: selectedCrewIds, title: routeTitle,
+        order: stops.map((st) => ({ job_id: st.job_id, crew_id: st.assigned_crew_id ?? null })),
+      };
+      window.localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+    } catch { /* ignore */ }
+  }, [stops, selectedCrewIds, selectedDate, routeTitle]);
+
+  useEffect(() => {
+    const d = pendingDraft.current;
+    if (!d || loadingJobs || !autoLoaded || stops.length === 0) return;
+    pendingDraft.current = null;
+    const rank = new Map(d.order.map((o, i) => [o.job_id, { i, crew: o.crew_id }]));
+    const ordered = [...stops]
+      .map((st) => ({ st: { ...st, assigned_crew_id: rank.get(st.job_id)?.crew ?? st.assigned_crew_id }, r: rank.get(st.job_id)?.i ?? 9999 }))
+      .sort((a, b) => a.r - b.r)
+      .map(({ st }, i) => ({ ...st, stop_order: i + 1 }));
+    void rebuildGeometry(ordered, mode === 'multi').then((withGeometry) => { setStops(withGeometry); toast.success('Draft restored.'); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingJobs, autoLoaded, stops.length]);
+
+  function resumeDraft() {
+    if (!draftOffer) return;
+    pendingDraft.current = draftOffer;
+    setRouteTitle(draftOffer.title ?? '');
+    setSelectedDate(draftOffer.date);
+    setSelectedCrewIds(draftOffer.crewIds);
+    setPickerMode(false);
+    setDraftOffer(null);
+  }
+  function discardDraft() {
+    try { window.localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+    setDraftOffer(null);
+  }
+
   async function handleReorderSingle(reordered: StopDraft[]) {
     const withGeometry = await rebuildGeometry(reordered, false);
     setStops(withGeometry);
@@ -1085,6 +1240,7 @@ export default function RouteBuilderPage() {
       }),
     }).catch(() => {});
 
+    try { window.localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
     setDispatching(false);
     toast.success(
       result.ids.length === 1
@@ -1176,13 +1332,63 @@ export default function RouteBuilderPage() {
     </div>
   );
 
+  const step: 1 | 2 | 3 = stops.length === 0 ? 1 : optimized ? 3 : 2;
+  const hasUnrouted = unroutable.length > 0 || ungeocodedStops.length > 0;
+
   return (
-    <div className="-m-4 md:-m-6 lg:-m-8 flex flex-col md:flex-row md:h-[calc(100svh_-_3.5rem)] md:overflow-hidden">
+    <div className="-m-4 md:-m-6 lg:-m-8 flex flex-col md:flex-row md:h-[calc(100svh_-_3.5rem)] md:overflow-hidden pb-36 md:pb-0">
       {/* ─── LEFT PANEL ─── (stacks above map below md) */}
-      <div className="w-full md:w-[420px] md:shrink-0 flex flex-col border-r bg-background md:overflow-hidden">
+      <div className={`w-full md:w-[420px] md:shrink-0 flex flex-col border-r bg-background md:overflow-hidden ${mobileTab === 'map' ? 'hidden md:flex' : ''}`}>
+
+        {/* Phone: step indicator + resumable draft */}
+        <div className="md:hidden border-b px-4 py-2" data-testid="route-steps">
+          <ol className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide">
+            {(['Setup', 'Stops', 'Dispatch'] as const).map((label, i) => {
+              const n = (i + 1) as 1 | 2 | 3;
+              const state = n < step ? 'done' : n === step ? 'current' : 'todo';
+              return (
+                <li key={label} className="flex items-center gap-1.5">
+                  <span
+                    className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] ${state === 'todo' ? 'bg-muted text-muted-foreground' : 'text-white'}`}
+                    style={state === 'todo' ? undefined : { backgroundColor: 'var(--orange)' }}
+                  >
+                    {state === 'done' ? <CheckIcon className="h-3 w-3" /> : n}
+                  </span>
+                  <span className={state === 'current' ? 'text-foreground' : 'text-muted-foreground'}>{label}</span>
+                  {i < 2 && <span className="mx-1 h-px w-4 bg-border" />}
+                </li>
+              );
+            })}
+          </ol>
+          {draftOffer && (
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs" style={{ backgroundColor: 'var(--orange-soft)' }}>
+              <span className="font-medium" style={{ color: 'var(--orange-deep)' }}>Resume this morning&rsquo;s route? ({draftOffer.order.length} stops)</span>
+              <span className="flex shrink-0 gap-1">
+                <button type="button" onClick={resumeDraft} className="rounded-md px-2.5 py-1.5 font-semibold text-white" style={{ backgroundColor: 'var(--orange)' }}>Resume</button>
+                <button type="button" onClick={discardDraft} className="rounded-md px-2 py-1.5 text-muted-foreground">Discard</button>
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Phone: collapsed setup summary once stops exist */}
+        {!setupOpen && (
+          <button
+            type="button"
+            onClick={() => setSetupOpen(true)}
+            className="md:hidden flex w-full items-center justify-between gap-2 border-b px-4 py-3 text-left"
+            aria-expanded={false}
+          >
+            <span className="min-w-0 truncate text-sm">
+              <span className="font-semibold">{formatDateLabel(selectedDate)}</span>
+              <span className="text-muted-foreground"> · {selectedCrewIds.length === crews.length ? 'All crews' : `${selectedCrewIds.length} crew${selectedCrewIds.length === 1 ? '' : 's'}`} · {stops.length} stop{stops.length === 1 ? '' : 's'}</span>
+            </span>
+            <span className="flex shrink-0 items-center gap-1 text-xs font-medium" style={{ color: 'var(--orange)' }}>Change <ChevronDownIcon className="h-4 w-4" /></span>
+          </button>
+        )}
 
         {/* Top: date + crew picker + (single) title */}
-        <div className="p-4 border-b space-y-3 shrink-0">
+        <div className={`p-4 border-b space-y-3 shrink-0 ${setupOpen ? '' : 'hidden md:block'}`}>
           <div>
             <Label className="text-xs mb-1 block">Date</Label>
             <Input
@@ -1215,7 +1421,7 @@ export default function RouteBuilderPage() {
         </div>
 
         {/* Pick-jobs CTA — primary path. Auto-load is the secondary link. */}
-        <div className="px-3 pb-2 shrink-0">
+        <div className={`px-3 pb-2 shrink-0 ${stops.length > 0 && !setupOpen ? 'hidden md:block' : ''}`}>
           <Button
             type="button"
             onClick={() => setPickerOpen(true)}
@@ -1240,8 +1446,8 @@ export default function RouteBuilderPage() {
           </button>
         </div>
 
-        {/* Action bar */}
-        <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/20 shrink-0 flex-wrap">
+        {/* Action bar (desktop; phones use the fixed bar at the bottom) */}
+        <div className="hidden md:flex items-center gap-2 px-3 py-2 border-b bg-muted/20 shrink-0 flex-wrap">
           {mode === 'single' ? (
             <OptimizeButton
               stops={stops}
@@ -1387,6 +1593,7 @@ export default function RouteBuilderPage() {
                     onRemove={handleRemove}
                     onDurationChange={handleDurationChange}
                     onStopSelect={setSelectedStopKey}
+                    onMove={handleMove}
                     emptyState={
                       selectedCrewIds.length > 0 && autoLoaded ? emptyState : undefined
                     }
@@ -1429,6 +1636,7 @@ export default function RouteBuilderPage() {
                       onDurationChange={handleDurationChange}
                       crews={crews}
                       onStopCrewChange={handleStopCrewChange}
+                      onMove={handleMove}
                     />
                   )}
                 </>
@@ -1441,8 +1649,8 @@ export default function RouteBuilderPage() {
         <RouteSummaryBar stops={stops} />
       </div>
 
-      {/* ─── RIGHT PANEL — MAP ─── (full-width below the panel on mobile) */}
-      <div className="relative h-[60vh] md:h-auto md:flex-1">
+      {/* ─── RIGHT PANEL — MAP ─── (a tab on phones, side-by-side on desktop) */}
+      <div className={`relative md:h-auto md:flex-1 ${mobileTab === 'map' ? 'block h-[calc(100svh-15rem)]' : 'hidden md:block'}`}>
         <RouteMap
           stops={mapStops}
           polylines={mapPolylines}
@@ -1458,6 +1666,80 @@ export default function RouteBuilderPage() {
             <p className="text-sm font-medium text-foreground bg-background rounded-lg px-4 py-2.5 shadow border">
               Select one or more crews to build the route
             </p>
+          </div>
+        )}
+      </div>
+
+      {/* ─── Phone action bar: List/Map switch + one primary action per step ─── */}
+      <div
+        className="md:hidden fixed inset-x-0 z-40 border-t bg-background/95 backdrop-blur px-3 pt-2"
+        style={{ bottom: 'calc(4.25rem + env(safe-area-inset-bottom, 0px))', paddingBottom: '0.5rem' }}
+        data-testid="route-mobile-bar"
+      >
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex rounded-full border bg-muted/40 p-0.5 text-xs font-medium">
+            {(['list', 'map'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => { setMobileTab(t); setTimeout(() => window.dispatchEvent(new Event('resize')), 50); }}
+                aria-pressed={mobileTab === t}
+                className={`flex min-h-9 items-center gap-1 rounded-full px-3 ${mobileTab === t ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}
+              >
+                {t === 'list' ? <ListIcon className="h-3.5 w-3.5" /> : <MapIcon className="h-3.5 w-3.5" />}
+                {t === 'list' ? 'Stops' : 'Map'}
+              </button>
+            ))}
+          </div>
+          <div className="min-w-0 text-right text-xs text-muted-foreground">
+            {optimizingMulti ? (
+              <span className="inline-flex items-center gap-1"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Optimizing…</span>
+            ) : optimized ? (
+              <span className="inline-flex items-center gap-1 font-medium text-green-700"><CheckIcon className="h-3.5 w-3.5" /> Optimized{savedMinutes ? ` · saved ${savedMinutes} min` : ''}</span>
+            ) : stops.length > 0 ? (
+              <span>{stops.length} stop{stops.length === 1 ? '' : 's'}{hasUnrouted ? ' · needs attention' : ''}</span>
+            ) : null}
+          </div>
+        </div>
+        {step === 1 ? (
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              className="h-12 flex-1 text-base font-semibold text-white"
+              style={{ backgroundColor: 'var(--orange)' }}
+              disabled={loadingJobs || !companyId || selectedCrewIds.length === 0}
+              onClick={() => { setPickerMode(false); setStops([]); }}
+            >
+              {loadingJobs ? <Loader2 className="h-5 w-5 animate-spin" /> : `Load jobs for ${formatDateLabel(selectedDate)}`}
+            </Button>
+            <Button type="button" variant="outline" className="h-12" disabled={!companyId} onClick={() => setPickerOpen(true)}>Choose</Button>
+          </div>
+        ) : step === 2 ? (
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              className="h-12 flex-1 text-base font-semibold text-white"
+              style={{ backgroundColor: 'var(--orange)' }}
+              disabled={optimizingMulti || loadingJobs || ungeocodedStops.length > 0 || stops.length < 2}
+              onClick={() => { void runOptimize(); }}
+            >
+              {optimizingMulti ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Sparkles className="mr-2 h-4 w-4" /> Optimize</>}
+            </Button>
+            <Button type="button" variant="outline" className="h-12" disabled={saving || dispatching || stops.length === 0} onClick={handleDispatch}>Dispatch as is</Button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              className="h-12 flex-1 text-base font-semibold text-white"
+              style={{ backgroundColor: 'var(--orange)' }}
+              disabled={saving || dispatching || stops.length === 0}
+              onClick={handleDispatch}
+            >
+              {dispatching ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Send className="mr-2 h-4 w-4" /> Dispatch to crews</>}
+            </Button>
+            <Button type="button" variant="outline" className="h-12" aria-label="Re-optimize" disabled={optimizingMulti} onClick={() => { void runOptimize(); }}><RotateCcw className="h-4 w-4" /></Button>
+            <Button type="button" variant="outline" className="h-12" disabled={saving || dispatching} onClick={handleSave}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}</Button>
           </div>
         )}
       </div>

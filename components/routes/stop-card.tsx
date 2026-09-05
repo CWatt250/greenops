@@ -2,7 +2,7 @@
 
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, X, MapPin, Clock } from 'lucide-react';
+import { GripVertical, X, MapPin, Clock, ChevronUp, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { StopDraft } from './stop-list';
 import { CrewAssignSelect } from '@/components/jobs/crew-assign-select';
@@ -24,6 +24,9 @@ interface StopCardProps {
    */
   crews?: Crew[];
   onCrewChange?: (newCrewId: string | null) => void;
+  /** Thumb-friendly reorder (rendered on phones only). */
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }
 
 export function StopCard({
@@ -37,6 +40,8 @@ export function StopCard({
   readonly = false,
   crews,
   onCrewChange,
+  onMoveUp,
+  onMoveDown,
 }: StopCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: stop._key });
@@ -153,15 +158,39 @@ export function StopCard({
         )}
       </div>
 
-      {/* Remove button */}
-      {!readonly && (
+      {/* Right rail: move up/down on phones (drag is desktop), then remove. */}
+      <div className="flex shrink-0 flex-col items-center gap-0.5">
+        {(onMoveUp || onMoveDown) && (
+          <div className="flex flex-col md:hidden">
+            <button
+              type="button"
+              aria-label="Move up"
+              disabled={!onMoveUp}
+              onClick={(e) => { e.stopPropagation(); onMoveUp?.(); }}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground active:bg-muted disabled:opacity-25"
+            >
+              <ChevronUp className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              aria-label="Move down"
+              disabled={!onMoveDown}
+              onClick={(e) => { e.stopPropagation(); onMoveDown?.(); }}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground active:bg-muted disabled:opacity-25"
+            >
+              <ChevronDown className="h-5 w-5" />
+            </button>
+          </div>
+        )}
         <button
+          type="button"
+          aria-label="Remove stop"
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          className="shrink-0 text-muted-foreground hover:text-destructive transition-colors rounded-full p-0.5"
+          className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-destructive md:h-6 md:w-6"
         >
           <X className="h-4 w-4" />
         </button>
-      )}
+      </div>
     </div>
   );
 }

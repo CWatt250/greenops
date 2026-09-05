@@ -18,6 +18,8 @@ interface GroupedStopListProps {
   crews?: Crew[];
   /** Called with the stop _key + new crew_id (null = unassigned). */
   onStopCrewChange?: (key: string, newCrewId: string | null) => void;
+  /** Phone-friendly reorder within a crew's list. */
+  onMove?: (key: string, direction: -1 | 1) => void;
 }
 
 function formatMinutes(mins: number): string {
@@ -36,6 +38,7 @@ export function GroupedStopList({
   onDurationChange,
   crews,
   onStopCrewChange,
+  onMove,
 }: GroupedStopListProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -138,6 +141,8 @@ export function GroupedStopList({
                         readonly
                         crews={crews}
                         onCrewChange={(c) => onStopCrewChange?.(stop._key, c)}
+                        onMoveUp={onMove && i > 0 ? () => onMove(stop._key, -1) : undefined}
+                        onMoveDown={onMove && i < stops.length - 1 ? () => onMove(stop._key, 1) : undefined}
                       />
                     ))
                   )}
