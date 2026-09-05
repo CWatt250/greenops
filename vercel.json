@@ -1,6 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["pdx1"],
+  "regions": [
+    "pdx1"
+  ],
   "crons": [
     {
       "path": "/api/cron/generate-recurring-invoices",
@@ -9,10 +11,6 @@
     {
       "path": "/api/cron/materialize-recurring-jobs",
       "schedule": "0 7 * * *"
-    },
-    {
-      "path": "/api/keep-alive",
-      "schedule": "0 9 * * *"
     }
   ]
 }

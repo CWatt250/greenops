@@ -16,7 +16,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 const PUBLIC_PATHS = ['/login', '/forgot-password'];
 // Pages anyone can view, logged in or not (tokenized proposal links, the
 // auth code-exchange callback that email links land on).
-const OPEN_PATHS = ['/p', '/auth'];
+const OPEN_PATHS = ['/p', '/auth', '/legal'];
 const PUBLIC_API_PREFIXES = ['/api/optimize-route', '/api/invite-worker', '/api/public'];
 
 export async function proxy(request: NextRequest) {

@@ -116,7 +116,7 @@ export function HelpButton() {
             </span>
           </a>
           <a
-            href="mailto:wattattack@yahoo.com?subject=TLC%20Management%20Platform%20question"
+            href="mailto:support@watt-systems.com?subject=TLC%20Management%20Platform%20question"
             onClick={() => setOpen(false)}
             className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-accent/60"
           >
@@ -124,7 +124,7 @@ export function HelpButton() {
             <span className="flex-1 text-xs">
               <span className="block font-semibold">Contact Watt Systems</span>
               <span className="block text-[11px] text-muted-foreground">
-                Email the dev team.
+                support@watt-systems.com
               </span>
             </span>
           </a>

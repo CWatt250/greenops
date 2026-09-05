@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { Leaf } from 'lucide-react';
 import { PortalNav } from '@/components/portal/portal-nav';
 import { PortalNotificationBell } from '@/components/portal/portal-notification-bell';
@@ -88,9 +89,14 @@ export default async function PortalLayout({ children }: { children: React.React
       </header>
 
       {/* Main content with bottom nav padding */}
-      <main className="flex-1 pb-20 max-w-lg mx-auto w-full">
+      <main className="flex-1 max-w-lg mx-auto w-full">
         {children}
       </main>
+      <footer className="pb-24 pt-6 text-center text-[11px] text-muted-foreground">
+        <Link href="/legal/terms" className="hover:underline">Terms</Link>
+        <span className="mx-1.5">·</span>
+        <Link href="/legal/privacy" className="hover:underline">Privacy</Link>
+      </footer>
 
       {/* Bottom navigation */}
       <PortalNav />

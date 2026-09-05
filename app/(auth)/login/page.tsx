@@ -146,6 +146,13 @@ export default function LoginPage() {
         <p className="mt-6 text-center text-xs text-muted-foreground">
           Contact your administrator to get access.
         </p>
+        <p className="mt-3 text-center text-[11px] text-muted-foreground">
+          <Link href="/legal/terms" className="hover:underline">Terms</Link>
+          <span className="mx-1.5">·</span>
+          <Link href="/legal/privacy" className="hover:underline">Privacy</Link>
+          <span className="mx-1.5">·</span>
+          <a href="mailto:support@watt-systems.com" className="hover:underline">Support</a>
+        </p>
       </div>
     </div>
   );

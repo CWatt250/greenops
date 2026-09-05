@@ -3,11 +3,13 @@
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
+import { reportClientError } from '@/lib/report-error';
 
 /** Keeps the sidebar and nav intact when a single dashboard page throws. */
 export default function DashboardError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
     console.error('[dashboard error]', error);
+    reportClientError(error);
   }, [error]);
 
   return (

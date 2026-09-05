@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
+import { reportClientError } from '@/lib/report-error';
 
 /**
  * Route-segment error boundary for everything under the root layout. Keeps
@@ -14,6 +15,7 @@ import { RefreshCw } from 'lucide-react';
 export default function RootError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
     console.error('[app error]', error);
+    reportClientError(error);
   }, [error]);
 
   return (
