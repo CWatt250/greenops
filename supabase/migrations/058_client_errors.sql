@@ -6,7 +6,7 @@
 -- Idempotent. Apply with `supabase db push`.
 
 create table if not exists client_errors (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   company_id uuid references companies(id) on delete cascade,
   profile_id uuid references profiles(id) on delete set null,
   path text,
