@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { ListSearch, StatusPills, ListPager } from '@/components/shared/list-controls';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { JobCard } from '@/components/jobs/job-card';
@@ -26,32 +27,37 @@ const statusFilters: { label: string; value: JobStatus | 'all' }[] = [
 
 /**
  * Interactive shell for the jobs list. Jobs + crews are fetched on the server
- * (see app/dashboard/jobs/page.tsx) and handed in as initial props, so the
- * card grid is already in the server-rendered HTML — no client fetch
- * waterfall. Status filtering runs in-memory over the initial set (status is
- * already a column); multi-select, bulk reassign and inline crew changes mutate
- * via the browser client and patch local state.
+ * (see app/dashboard/jobs/page.tsx) — already status-filtered, searched, and
+ * paged from the URL — and handed in as initial props, so the card grid is in
+ * the server-rendered HTML. The page remounts this component (key) whenever
+ * the URL params change. Multi-select, bulk reassign and inline crew changes
+ * mutate via the browser client and patch local state.
  */
 export function JobsView({
   initialJobs,
   initialCrews,
+  total,
+  page,
+  status,
+  q,
 }: {
   initialJobs: Job[];
   initialCrews: Crew[];
+  total: number;
+  page: number;
+  status: JobStatus | 'all';
+  q: string;
 }) {
   const router = useRouter();
   const supabase = createClient();
   const [jobs, setJobs] = useState<Job[]>(initialJobs);
   const [crews] = useState<Crew[]>(initialCrews);
-  const [statusFilter, setStatusFilter] = useState<JobStatus | 'all'>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
 
-  const filteredJobs = useMemo(
-    () => (statusFilter === 'all' ? jobs : jobs.filter((j) => j.status === statusFilter)),
-    [jobs, statusFilter]
-  );
+  const filteredJobs = jobs;
+  const statusFilter = status;
 
   function toggleSelect(id: string, on: boolean) {
     setSelectedIds((prev) => {
@@ -115,22 +121,9 @@ export function JobsView({
 
   return (
     <>
-      <div className="flex gap-2 flex-wrap mb-4">
-        {statusFilters.map(({ label, value }) => (
-          <button
-            key={value}
-            onClick={() => setStatusFilter(value)}
-            className={cn(
-              'rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
-              statusFilter === value
-                ? 'text-white'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            )}
-            style={statusFilter === value ? { backgroundColor: 'var(--orange)' } : {}}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+        <ListSearch placeholder="Search by job title or client…" className="sm:flex-1 sm:max-w-sm" />
+        <StatusPills options={statusFilters} activeColor="var(--orange)" />
       </div>
 
       {/* Bulk action bar */}
@@ -199,17 +192,19 @@ export function JobsView({
       {filteredJobs.length === 0 ? (
         <EmptyState
           icon={Briefcase}
-          title={statusFilter === 'all' ? 'No jobs yet' : `No ${statusFilter.replace('_', ' ')} jobs`}
+          title={q ? `No jobs match “${q}”` : statusFilter === 'all' ? 'No jobs yet' : `No ${statusFilter.replace('_', ' ')} jobs`}
           description={
-            statusFilter === 'all'
-              ? 'A job is a unit of work for one client on one date. Create one to drop it onto the schedule and assign a crew.'
-              : 'Try a different status filter or create a new job.'
+            q
+              ? 'Try a shorter search, or clear the status filter.'
+              : statusFilter === 'all'
+                ? 'A job is a unit of work for one client on one date. Create one to drop it onto the schedule and assign a crew.'
+                : 'Try a different status filter or create a new job.'
           }
           action={{
             label: '+ Create your first job',
             onClick: () => router.push('/dashboard/jobs/new'),
           }}
-          secondaryAction={statusFilter === 'all' ? {
+          secondaryAction={statusFilter === 'all' && !q ? {
             label: 'Learn more about jobs →',
             onClick: () => window.open('https://tlclandscapemanagement.com/learn', '_blank'),
           } : undefined}
@@ -229,6 +224,7 @@ export function JobsView({
           ))}
         </div>
       )}
+      <ListPager page={page} total={total} label="jobs" />
     </>
   );
 }

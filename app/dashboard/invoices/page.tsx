@@ -10,7 +10,8 @@ import { InvoicesView } from '@/components/billing/invoices-view';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Plus } from 'lucide-react';
-import type { Invoice } from '@/types';
+import type { Invoice, InvoiceStatus } from '@/types';
+import { parseListParams, ilikePattern, inList, type SearchParams } from '@/lib/list-params';
 
 type InvoiceWithClient = Invoice & { client: { name: string } | null };
 
@@ -18,20 +19,63 @@ function fmt(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
 }
 
-export default async function InvoicesPage() {
+const INVOICE_STATUSES = ['draft', 'sent', 'overdue', 'partial', 'paid', 'cancelled'] as const satisfies readonly InvoiceStatus[];
+const OPEN = '("paid","cancelled")'; // statuses that can never be overdue
+
+/**
+ * "Overdue" is derived, not stored: any unpaid, uncancelled invoice past its
+ * due date. The tab filters and the summary tiles all use this one definition
+ * so the counts agree with the rows.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function withStatus<T extends { eq: any; not: any; lt: any; or: any }>(q: T, status: InvoiceStatus | 'all', today: string): T {
+  if (status === 'all') return q;
+  if (status === 'overdue') return q.not('status', 'in', OPEN).lt('due_date', today);
+  if (status === 'paid' || status === 'cancelled') return q.eq('status', status);
+  return q.eq('status', status).or(`due_date.is.null,due_date.gte.${today}`);
+}
+
+export default async function InvoicesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  // Server-side fetch via the cookie-based SSR client: RLS scopes rows to the
-  // user's company (idx_invoices_company_id). Same shape the table renders.
-  const { data } = await supabase
-    .from('invoices')
-    .select('*, client:clients(name)')
-    .order('created_at', { ascending: false });
+  const params = parseListParams(await searchParams, INVOICE_STATUSES);
+  const today = localDateStr();
+  const monthStart = `${today.slice(0, 7)}-01`;
 
-  // Mark overdue invoices (UTC date cutoff, same as before — no tz drift).
-  const now = localDateStr();
+  // Server-side fetch via the cookie-based SSR client: RLS scopes rows to the
+  // user's company (idx_invoices_company_id). Status, search, and paging run
+  // here so the list stays under PostgREST's 1,000-row cap.
+  let query = withStatus(
+    supabase.from('invoices').select('*, client:clients(name)', { count: 'exact' }),
+    params.status,
+    today,
+  ).order('created_at', { ascending: false });
+  if (params.q) {
+    const pattern = ilikePattern(params.q);
+    const { data: matches } = await supabase.from('clients').select('id').ilike('name', pattern).limit(100);
+    const ids = inList((matches ?? []).map((c) => c.id));
+    query = ids ? query.or(`invoice_number.ilike.${pattern},client_id.in.(${ids})`) : query.ilike('invoice_number', pattern);
+  }
+  const countFor = (status: InvoiceStatus | 'all') =>
+    withStatus(supabase.from('invoices').select('id', { count: 'exact', head: true }), status, today);
+
+  const [
+    { data, count },
+    { count: allCount }, { count: draftCount }, { count: sentCount }, { count: overdueCount }, { count: partialCount }, { count: paidCount },
+    { data: openRows }, { data: paidRows },
+  ] = await Promise.all([
+    query.range(params.from, params.to),
+    countFor('all'), countFor('draft'), countFor('sent'), countFor('overdue'), countFor('partial'), countFor('paid'),
+    // Summary tiles: narrow columns over the bounded open set and this
+    // month's paid set, instead of the whole table.
+    supabase.from('invoices').select('balance_due, due_date').not('status', 'in', OPEN),
+    supabase.from('invoices').select('total').eq('status', 'paid').gte('paid_at', monthStart),
+  ]);
+
+  // Mark derived overdue on the rows we render.
+  const now = today;
   const invoices = (data ?? []).map((inv) => ({
     ...inv,
     status: (
@@ -42,17 +86,20 @@ export default async function InvoicesPage() {
     ) ? 'overdue' : inv.status,
   })) as InvoiceWithClient[];
 
-  // Summary strip — derived from the full set, rendered server-side.
-  const totalOutstanding = invoices
-    .filter((i) => i.status !== 'paid' && i.status !== 'cancelled')
-    .reduce((s, i) => s + i.balance_due, 0);
-  const totalOverdue = invoices
-    .filter((i) => i.status === 'overdue')
-    .reduce((s, i) => s + i.balance_due, 0);
-  const thisMonth = new Date().toISOString().slice(0, 7);
-  const totalPaidThisMonth = invoices
-    .filter((i) => i.status === 'paid' && i.paid_at?.startsWith(thisMonth))
-    .reduce((s, i) => s + i.total, 0);
+  const total = count ?? invoices.length;
+  const counts: Record<string, number> = {
+    all: allCount ?? 0, draft: draftCount ?? 0, sent: sentCount ?? 0,
+    overdue: overdueCount ?? 0, partial: partialCount ?? 0, paid: paidCount ?? 0,
+  };
+
+  // Summary strip — from the bounded open + paid-this-month sets.
+  const open = (openRows ?? []) as Array<{ balance_due: number; due_date: string | null }>;
+  const totalOutstanding = open.reduce((s, i) => s + Number(i.balance_due ?? 0), 0);
+  const totalOverdue = open
+    .filter((i) => i.due_date && i.due_date < now)
+    .reduce((s, i) => s + Number(i.balance_due ?? 0), 0);
+  const totalPaidThisMonth = ((paidRows ?? []) as Array<{ total: number }>)
+    .reduce((s, i) => s + Number(i.total ?? 0), 0);
 
   return (
     <div>
@@ -95,7 +142,14 @@ export default async function InvoicesPage() {
         </div>
       </div>
 
-      <InvoicesView invoices={invoices} />
+      <InvoicesView
+        key={`${params.page}|${params.status}|${params.q}`}
+        invoices={invoices}
+        counts={counts}
+        total={total}
+        page={params.page}
+        q={params.q}
+      />
     </div>
   );
 }

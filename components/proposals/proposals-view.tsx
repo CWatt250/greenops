@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { EmptyState } from '@/components/shared/empty-state';
+import { ListSearch, StatusPills, ListPager } from '@/components/shared/list-controls';
 import { FileText } from 'lucide-react';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import type { Estimate, EstimateStatus } from '@/types';
@@ -37,38 +37,34 @@ export type ProposalRow = Estimate & {
  * waterfall. Status filtering runs in-memory over the initial set (status is
  * already a column) — equivalent to the old per-filter re-fetch but instant.
  */
-export function ProposalsView({ initialProposals }: { initialProposals: ProposalRow[] }) {
+export function ProposalsView({
+  initialProposals,
+  total,
+  page,
+  status,
+  q,
+}: {
+  initialProposals: ProposalRow[];
+  total: number;
+  page: number;
+  status: EstimateStatus | 'all';
+  q: string;
+}) {
   const router = useRouter();
-  const [filter, setFilter] = useState<EstimateStatus | 'all'>('all');
-
-  const proposals = filter === 'all'
-    ? initialProposals
-    : initialProposals.filter((p) => p.status === filter);
+  const filter = status;
+  const proposals = initialProposals;
 
   return (
     <div>
-      <div className="flex gap-2 flex-wrap mb-5">
-        {STATUS_CHIPS.map(({ label, value }) => (
-          <button
-            key={value}
-            onClick={() => setFilter(value)}
-            className={cn(
-              'rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
-              filter === value
-                ? 'text-white'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            )}
-            style={filter === value ? { backgroundColor: 'var(--orange)' } : {}}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
+        <ListSearch placeholder="Search by proposal title or client…" className="sm:flex-1 sm:max-w-sm" />
+        <StatusPills options={STATUS_CHIPS} activeColor="var(--orange)" />
       </div>
 
       {proposals.length === 0 ? (
         <EmptyState
           icon={FileText}
-          title={filter === 'all' ? 'No proposals yet' : `No ${filter} proposals`}
+          title={q ? `No proposals match “${q}”` : filter === 'all' ? 'No proposals yet' : `No ${filter} proposals`}
           description="Build your first proposal to send a polished estimate to a client."
           action={{
             label: '+ New Proposal',
@@ -173,6 +169,7 @@ export function ProposalsView({ initialProposals }: { initialProposals: Proposal
           </div>
         </>
       )}
+      <ListPager page={page} total={total} label="proposals" />
     </div>
   );
 }

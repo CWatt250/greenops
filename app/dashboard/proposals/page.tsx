@@ -9,19 +9,35 @@ import { HowProposalsWorks } from '@/components/help/how-page-works';
 import { ProposalsView, type ProposalRow } from '@/components/proposals/proposals-view';
 import { buttonVariants } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
+import type { EstimateStatus } from '@/types';
+import { parseListParams, ilikePattern, inList, type SearchParams } from '@/lib/list-params';
 
-export default async function ProposalsPage() {
+const ESTIMATE_STATUSES = ['draft', 'sent', 'accepted', 'declined', 'expired', 'converted'] as const satisfies readonly EstimateStatus[];
+
+export default async function ProposalsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
+  const params = parseListParams(await searchParams, ESTIMATE_STATUSES);
+
   // Server-side fetch via the cookie-based SSR client: RLS scopes rows to the
-  // user's company (idx_estimates_company_id). Same shape the list renders.
-  const { data } = await supabase
+  // user's company (idx_estimates_company_id). Status, search, and paging run
+  // here so the list stays under PostgREST's 1,000-row cap.
+  let query = supabase
     .from('estimates')
-    .select('*, client:clients(id,name), estimate_line_items(total)')
+    .select('*, client:clients(id,name), estimate_line_items(total)', { count: 'exact' })
     .order('created_at', { ascending: false });
+  if (params.status !== 'all') query = query.eq('status', params.status);
+  if (params.q) {
+    const pattern = ilikePattern(params.q);
+    const { data: matches } = await supabase.from('clients').select('id').ilike('name', pattern).limit(100);
+    const ids = inList((matches ?? []).map((c) => c.id));
+    query = ids ? query.or(`title.ilike.${pattern},client_id.in.(${ids})`) : query.ilike('title', pattern);
+  }
+  const { data, count } = await query.range(params.from, params.to);
   const proposals = (data ?? []) as ProposalRow[];
+  const total = count ?? proposals.length;
 
   return (
     <div>
@@ -51,7 +67,14 @@ export default async function ProposalsPage() {
         ]}
       />
 
-      <ProposalsView initialProposals={proposals} />
+      <ProposalsView
+        key={`${params.page}|${params.status}|${params.q}`}
+        initialProposals={proposals}
+        total={total}
+        page={params.page}
+        status={params.status}
+        q={params.q}
+      />
     </div>
   );
 }

@@ -8,26 +8,45 @@ import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
 import { buttonVariants } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import type { Job, Crew } from '@/types';
+import type { Job, JobStatus, Crew } from '@/types';
+import { parseListParams, ilikePattern, inList, type SearchParams } from '@/lib/list-params';
 
-export default async function JobsPage() {
+const JOB_STATUSES = ['unscheduled', 'scheduled', 'in_progress', 'complete', 'cancelled', 'issue'] as const satisfies readonly JobStatus[];
+
+export default async function JobsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
+  const params = parseListParams(await searchParams, JOB_STATUSES);
+
   // Server-side fetch via the cookie-based SSR client: RLS scopes rows to the
-  // user's company. Jobs use idx_jobs_* on the company scope; crews use
-  // idx_crews_company_id. Only the columns JobCard + the bulk bar render.
-  const [{ data: jobsData }, { data: crewData }] = await Promise.all([
-    supabase
-      .from('jobs')
-      .select('id, title, status, scheduled_date, scheduled_start, crew_id, client:clients(name), crew:crews(id,name,color)')
-      .order('scheduled_date', { ascending: false }),
+  // user's company. Status, search, and paging all happen here so the list
+  // stays bounded (PostgREST caps responses at 1,000 rows). Only the columns
+  // JobCard + the bulk bar render.
+  let jobsQuery = supabase
+    .from('jobs')
+    .select('id, title, status, scheduled_date, scheduled_start, crew_id, client:clients(name), crew:crews(id,name,color)', { count: 'exact' })
+    .order('scheduled_date', { ascending: false })
+    .order('id');
+  if (params.status !== 'all') jobsQuery = jobsQuery.eq('status', params.status);
+  if (params.q) {
+    const pattern = ilikePattern(params.q);
+    // Client name lives on a joined table; resolve matching ids first so the
+    // search covers "Whitmore" as well as "Fall cleanup".
+    const { data: matches } = await supabase.from('clients').select('id').ilike('name', pattern).limit(100);
+    const ids = inList((matches ?? []).map((c) => c.id));
+    jobsQuery = ids ? jobsQuery.or(`title.ilike.${pattern},client_id.in.(${ids})`) : jobsQuery.ilike('title', pattern);
+  }
+
+  const [{ data: jobsData, count }, { data: crewData }] = await Promise.all([
+    jobsQuery.range(params.from, params.to),
     supabase.from('crews').select('*').eq('is_active', true).order('name'),
   ]);
 
   const jobs = (jobsData ?? []) as unknown as Job[];
   const crews = (crewData ?? []) as Crew[];
+  const total = count ?? jobs.length;
 
   return (
     <div>
@@ -52,7 +71,15 @@ export default async function JobsPage() {
         ]}
       />
 
-      <JobsView initialJobs={jobs} initialCrews={crews} />
+      <JobsView
+        key={`${params.page}|${params.status}|${params.q}`}
+        initialJobs={jobs}
+        initialCrews={crews}
+        total={total}
+        page={params.page}
+        status={params.status}
+        q={params.q}
+      />
     </div>
   );
 }

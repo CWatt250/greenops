@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import { InvoiceTable } from '@/components/billing/invoice-table';
-import { cn } from '@/lib/utils';
+import { ListSearch, StatusPills, ListPager } from '@/components/shared/list-controls';
+import { EmptyState } from '@/components/shared/empty-state';
+import { Receipt } from 'lucide-react';
 import type { Invoice, InvoiceStatus } from '@/types';
 
 type InvoiceWithClient = Invoice & { client: { name: string } | null };
@@ -17,50 +18,40 @@ const STATUS_TABS: Array<{ label: string; value: InvoiceStatus | 'all' }> = [
 ];
 
 /**
- * Interactive shell for the invoices list. Rows are fetched + overdue-marked on
- * the server (see app/dashboard/invoices/page.tsx) and handed in as `invoices`,
- * so the table is already in the server-rendered HTML — no client fetch
- * waterfall. Only the status-tab selection is stateful here; filtering is
- * delegated to InvoiceTable.
+ * Interactive shell for the invoices list. Rows arrive from the server already
+ * status-filtered (overdue derived from due_date), searched, and paged from
+ * the URL (see app/dashboard/invoices/page.tsx); tab counts come from the
+ * same definitions so they always agree with the rows.
  */
-export function InvoicesView({ invoices }: { invoices: InvoiceWithClient[] }) {
-  const [activeTab, setActiveTab] = useState<InvoiceStatus | 'all'>('all');
-
+export function InvoicesView({
+  invoices,
+  counts,
+  total,
+  page,
+  q,
+}: {
+  invoices: InvoiceWithClient[];
+  counts: Record<string, number>;
+  total: number;
+  page: number;
+  q: string;
+}) {
   return (
     <>
-      {/* Filter tabs */}
-      <div className="flex items-center gap-1 mb-4 flex-wrap">
-        {STATUS_TABS.map((tab) => {
-          const count = tab.value === 'all'
-            ? invoices.length
-            : invoices.filter((i) => i.status === tab.value).length;
-          return (
-            <button
-              key={tab.value}
-              onClick={() => setActiveTab(tab.value)}
-              className={cn(
-                'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
-                activeTab === tab.value
-                  ? 'text-white'
-                  : 'bg-muted text-muted-foreground hover:text-foreground'
-              )}
-              style={activeTab === tab.value ? { backgroundColor: 'var(--color-brand-green-raw)' } : {}}
-            >
-              {tab.label}
-              {count > 0 && (
-                <span className={cn(
-                  'rounded-full px-1.5 py-0.5 text-[10px] font-bold',
-                  activeTab === tab.value ? 'bg-white/20' : 'bg-background'
-                )}>
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+        <ListSearch placeholder="Search by invoice number or client…" className="sm:flex-1 sm:max-w-sm" />
+        <StatusPills options={STATUS_TABS} activeColor="var(--color-brand-green-raw)" counts={counts} />
       </div>
-
-      <InvoiceTable invoices={invoices} statusFilter={activeTab} />
+      {invoices.length === 0 && q ? (
+        <EmptyState
+          icon={Receipt}
+          title={`No invoices match “${q}”`}
+          description="Try a shorter search, or clear the status filter."
+        />
+      ) : (
+        <InvoiceTable invoices={invoices} statusFilter="all" />
+      )}
+      <ListPager page={page} total={total} label="invoices" />
     </>
   );
 }

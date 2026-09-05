@@ -8,21 +8,33 @@ import { PageHeader } from '@/components/shared/page-header';
 import { PageIntro } from '@/components/help/page-intro';
 import { buttonVariants } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import type { Client } from '@/types';
+import type { Client, ClientStatus } from '@/types';
+import { parseListParams, ilikePattern, type SearchParams } from '@/lib/list-params';
 
-export default async function ClientsPage() {
+const CLIENT_STATUSES = ['active', 'inactive', 'prospect', 'lead'] as const satisfies readonly ClientStatus[];
+
+export default async function ClientsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
+  const params = parseListParams(await searchParams, CLIENT_STATUSES);
+
   // Server-side fetch via the cookie-based SSR client: RLS scopes rows to the
-  // user's company, and the company-scoped read uses idx_clients_company_id.
-  // Only the columns the list + ClientTable render.
-  const { data } = await supabase
+  // user's company (idx_clients_company_id). Search, status, and paging run
+  // here so the list stays under PostgREST's 1,000-row cap.
+  let query = supabase
     .from('clients')
-    .select('id, name, property_type, service_address, status, phone, email')
+    .select('id, name, property_type, service_address, status, phone, email', { count: 'exact' })
     .order('name');
+  if (params.status !== 'all') query = query.eq('status', params.status);
+  if (params.q) {
+    const pattern = ilikePattern(params.q);
+    query = query.or(`name.ilike.${pattern},service_address.ilike.${pattern},phone.ilike.${pattern},email.ilike.${pattern}`);
+  }
+  const { data, count } = await query.range(params.from, params.to);
   const clients = (data ?? []) as Client[];
+  const total = count ?? clients.length;
 
   return (
     <div>
@@ -47,7 +59,13 @@ export default async function ClientsPage() {
         ]}
       />
 
-      <ClientsView initialClients={clients} />
+      <ClientsView
+        key={`${params.page}|${params.status}|${params.q}`}
+        initialClients={clients}
+        total={total}
+        page={params.page}
+        q={params.q}
+      />
 
       {/* Mobile FAB — fixed above bottom nav */}
       <Link
