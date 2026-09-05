@@ -6,12 +6,19 @@ import { loadEnvTest } from './helpers/env';
  * users (idempotent) so both the fresh-login `auth` specs and the `setup`
  * project's storage-state capture have accounts to log into, then re-pins the
  * date-relative route seed to the real tomorrow so the route-optimizer specs
- * are reproducible on a long-lived local DB. Both scripts are idempotent and
- * reuse the canonical CLI/CI path to avoid duplicated logic.
+ * are reproducible on a long-lived local DB. In between, the fixture script
+ * restores any seed-020 rows (geocoded clients, tomorrow jobs, crews) that
+ * demo curation or manual testing removed, so a fixture drift never reads as
+ * a product regression. All three scripts are idempotent and reuse the
+ * canonical CLI/CI path to avoid duplicated logic.
  */
 export default function globalSetup() {
   loadEnvTest();
   execFileSync('node', ['scripts/seed-e2e-users.mjs'], {
+    stdio: 'inherit',
+    env: process.env,
+  });
+  execFileSync('node', ['scripts/ensure-e2e-fixtures.mjs'], {
     stdio: 'inherit',
     env: process.env,
   });
