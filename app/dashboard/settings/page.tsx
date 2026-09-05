@@ -12,6 +12,9 @@ import { OverheadForm } from '@/components/settings/overhead-form';
 import { CompanyInfoForm } from '@/components/settings/company-info-form';
 import { PasswordForm } from '@/components/settings/password-form';
 import { PushPrompt } from '@/components/pwa/push-prompt';
+import { TeamManager } from '@/components/settings/team-manager';
+import { DataExportButton } from '@/components/settings/data-export-button';
+import Link from 'next/link';
 import { DepotForm } from '@/components/settings/depot-form';
 import { WeatherSettingsForm } from '@/components/settings/weather-settings-form';
 import type { Company } from '@/types';
@@ -78,6 +81,35 @@ export default async function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {(p?.role === 'owner' || p?.role === 'dispatcher') && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Team</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TeamManager />
+            </CardContent>
+          </Card>
+        )}
+
+        {(p?.role === 'owner' || p?.role === 'dispatcher') && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Your data</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Everything in this account — clients, jobs, invoices, payments, timesheets, chemical records, messages — as one ZIP of CSV files, plus a photo manifest with download links good for seven days. Owners only.
+              </p>
+              {p?.role === 'owner' && <DataExportButton />}
+              <p className="text-xs">
+                <Link href="/dashboard/settings/logs" className="font-medium underline">Message &amp; error log →</Link>
+                <span className="text-muted-foreground"> every email and text the app sent, and every crash a user hit.</span>
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {c && (
           <Card>

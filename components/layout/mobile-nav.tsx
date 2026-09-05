@@ -24,21 +24,28 @@ interface MobileNavProps {
   onOpenChange: (open: boolean) => void;
 }
 
-export function MobileNav({ open, onOpenChange }: MobileNavProps) {
+export function MobileNav({ open, onOpenChange, brand }: MobileNavProps & { brand?: { name: string | null; logoUrl: string | null } }) {
   const pathname = usePathname();
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" className="p-0 w-64 border-r-[var(--moss-800)]" style={{ backgroundColor: '#000' }}>
         <SheetHeader className="px-5 pt-6 pb-4 border-b border-[var(--moss-800)] text-center">
-          <SheetTitle className="sr-only">TLC Management Platform</SheetTitle>
-          <Image
-            src="/tlc-logo.png"
-            alt="TLC Landscape Management"
-            width={275}
-            height={120}
-            className="mx-auto mb-2 h-auto w-full max-w-[180px]"
-          />
+          <SheetTitle className="sr-only">{brand?.name ?? 'TLC'} Management Platform</SheetTitle>
+          {brand?.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={brand.logoUrl} alt={brand.name ?? ''} className="mx-auto mb-2 h-auto max-h-16 w-auto max-w-[180px] object-contain" />
+          ) : brand?.name ? (
+            <p className="mb-2 text-base font-bold leading-tight text-white">{brand.name}</p>
+          ) : (
+            <Image
+              src="/tlc-logo.png"
+              alt="TLC Landscape Management"
+              width={275}
+              height={120}
+              className="mx-auto mb-2 h-auto w-full max-w-[180px]"
+            />
+          )}
           <p
             className="text-white uppercase leading-tight"
             style={{

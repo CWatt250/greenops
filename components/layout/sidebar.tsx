@@ -58,7 +58,7 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-export function Sidebar() {
+export function Sidebar({ brand }: { brand?: { name: string | null; logoUrl: string | null } } = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
@@ -97,14 +97,21 @@ export function Sidebar() {
     >
       {/* Brand */}
       <div className="px-5 pt-6 pb-4 text-center border-b border-[var(--moss-800)]">
-        <Image
-          src="/tlc-logo.png"
-          alt="TLC Landscape Management"
-          width={275}
-          height={120}
-          className="mx-auto mb-2 h-auto w-full max-w-[200px]"
-          priority
-        />
+        {brand?.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={brand.logoUrl} alt={brand.name ?? ''} className="mx-auto mb-2 h-auto max-h-20 w-auto max-w-[200px] object-contain" />
+        ) : brand?.name ? (
+          <p className="mb-2 px-1 text-lg font-bold leading-tight text-white">{brand.name}</p>
+        ) : (
+          <Image
+            src="/tlc-logo.png"
+            alt="TLC Landscape Management"
+            width={275}
+            height={120}
+            className="mx-auto mb-2 h-auto w-full max-w-[200px]"
+            priority
+          />
+        )}
         <p
           className="text-white uppercase leading-tight mt-1"
           style={{

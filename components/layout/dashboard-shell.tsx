@@ -25,7 +25,9 @@ export type DashboardRole = 'owner' | 'dispatcher' | 'crew';
  * chrome — no owner sidebar/drawer, no megaphone or quick-add (which expose
  * the broadcast composer), and a clear way back to /today.
  */
-export function DashboardShell({ role, children }: { role: DashboardRole; children: React.ReactNode }) {
+export interface Brand { name: string | null; logoUrl: string | null }
+
+export function DashboardShell({ role, brand, children }: { role: DashboardRole; brand?: Brand; children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const isCrew = role === 'crew';
 
@@ -34,12 +36,12 @@ export function DashboardShell({ role, children }: { role: DashboardRole; childr
       {/* Desktop sidebar — admin only (every link would bounce a crew user). */}
       {!isCrew && (
         <div className="hidden md:flex">
-          <Sidebar />
+          <Sidebar brand={brand} />
         </div>
       )}
 
       {/* Mobile nav drawer — admin only. */}
-      {!isCrew && <MobileNav open={mobileOpen} onOpenChange={setMobileOpen} />}
+      {!isCrew && <MobileNav open={mobileOpen} onOpenChange={setMobileOpen} brand={brand} />}
 
       {/* Main content. `min-w-0` lets this flex column shrink to the viewport
           instead of growing to its widest child — without it, any wide content
@@ -82,7 +84,7 @@ export function DashboardShell({ role, children }: { role: DashboardRole; childr
                 letterSpacing: '0.1em',
               }}
             >
-              TLC
+              {brand?.name ? brand.name.split(' ')[0] : 'TLC'}
             </span>
           </div>
           <div className="flex items-center gap-1.5">

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Ruler } from 'lucide-react';
 import { NotificationBell } from '@/components/shared/notification-bell';
 import { MobileBottomNav } from '@/components/layout/mobile-bottom-nav';
+import { DeactivatedScreen } from '@/components/shared/deactivated-screen';
 
 export default async function CrewLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -13,7 +14,7 @@ export default async function CrewLayout({ children }: { children: React.ReactNo
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role, full_name')
+    .select('role, full_name, is_active, company_id')
     .eq('id', user.id)
     .single();
 
@@ -21,6 +22,10 @@ export default async function CrewLayout({ children }: { children: React.ReactNo
   if (profile?.role === 'owner' || profile?.role === 'dispatcher') {
     redirect('/');
   }
+  if (profile?.is_active === false) return <DeactivatedScreen />;
+  const { data: company } = profile?.company_id
+    ? await supabase.from('companies').select('name, logo_url').eq('id', profile.company_id).maybeSingle()
+    : { data: null };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -29,13 +34,18 @@ export default async function CrewLayout({ children }: { children: React.ReactNo
         style={{ backgroundColor: '#000' }}
       >
         <div className="flex items-center gap-2.5">
-          <Image
-            src="/tlc-logo.png"
-            alt="TLC"
-            width={275}
-            height={120}
-            className="h-9 w-auto"
-          />
+          {company?.logo_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={company.logo_url} alt={company.name ?? ''} className="h-9 w-auto max-w-[120px] object-contain" />
+          ) : (
+            <Image
+              src="/tlc-logo.png"
+              alt={company?.name ?? 'TLC'}
+              width={275}
+              height={120}
+              className="h-9 w-auto"
+            />
+          )}
           <div>
             <p
               className="text-white uppercase leading-none"
